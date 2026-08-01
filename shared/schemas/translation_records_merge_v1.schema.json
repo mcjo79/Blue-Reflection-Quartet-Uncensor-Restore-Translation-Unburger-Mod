@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://unburger.example/schemas/translation_records_merge_v1.schema.json",
+  "title": "translation_records_merge/v1 patch member",
+  "description": "Logical English-text changes for one canonical Blue Reflection translation unit. This document is referenced by a WORKSTREAM_UPDATE.json entry whose capability is translation_records_merge/v1.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "type",
+    "format_version",
+    "target_array",
+    "stable_key",
+    "mutable_field",
+    "changes"
+  ],
+  "properties": {
+    "type": {
+      "const": "br_translation_records_merge"
+    },
+    "format_version": {
+      "const": 1
+    },
+    "target_array": {
+      "const": "/records"
+    },
+    "stable_key": {
+      "const": "logical_id"
+    },
+    "mutable_field": {
+      "const": "en"
+    },
+    "changes": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "logical_id",
+          "old_value",
+          "new_value"
+        ],
+        "properties": {
+          "logical_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "old_value": {
+            "type": "string"
+          },
+          "new_value": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}

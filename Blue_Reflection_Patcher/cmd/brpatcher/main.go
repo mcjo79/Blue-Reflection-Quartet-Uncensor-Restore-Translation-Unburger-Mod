@@ -15,7 +15,7 @@ import (
 	"local/blue-reflection-patcher/internal/targets"
 )
 
-const version = "0.0.8-dev"
+const version = "0.0.9-dev"
 
 type rootsFlag []string
 
@@ -42,6 +42,18 @@ func main() {
 		err = commandPlan(os.Args[2:])
 	case "state-path":
 		err = commandStatePath(os.Args[2:])
+	case "quartet-profile-activate":
+		err = commandQuartetProfileActivate(os.Args[2:])
+	case "quartet-profile-status":
+		err = commandQuartetProfileStatus(os.Args[2:])
+	case "quartet-profile-rollback":
+		err = commandQuartetProfileRollback(os.Args[2:])
+	case "quartet-shader-profile-activate":
+		err = commandQuartetShaderProfileActivate(os.Args[2:])
+	case "quartet-shader-profile-status":
+		err = commandQuartetShaderProfileStatus(os.Args[2:])
+	case "quartet-shader-profile-rollback":
+		err = commandQuartetShaderProfileRollback(os.Args[2:])
 	case "help", "-h", "--help":
 		usage()
 	default:
@@ -183,8 +195,14 @@ Commands:
   inspect-bundle --bundle FILE
   plan --bundle FILE [--modules ID,ID] [--root PATH] [--json FILE]
   state-path [--app-id ID]
+  quartet-profile-activate --project-root PATH --game-root PATH PROFILE_ID
+  quartet-profile-status --project-root PATH --game-root PATH
+  quartet-profile-rollback --project-root PATH --game-root PATH
+  quartet-shader-profile-activate --project-root PATH --game-root PATH PROFILE_ID
+  quartet-shader-profile-status --project-root PATH --game-root PATH
+  quartet-shader-profile-rollback --project-root PATH --game-root PATH
 
-The apply/repack engine remains gated until EBM/XML import and PAK rebuild
+The general apply/repack engine remains gated until EBM/XML import and PAK rebuild
 validation are complete. This development binary already validates bundle
 manifests, detects Steam/manual installations and creates deterministic plans.
 `)

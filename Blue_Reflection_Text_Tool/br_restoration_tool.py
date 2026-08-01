@@ -32,7 +32,7 @@ from collections import Counter, defaultdict
 from pathlib import Path, PurePosixPath
 from typing import Any, Iterable, Sequence
 
-TOOL_VERSION = "0.0.26"
+TOOL_VERSION = "0.0.38"
 FORMAT_VERSION = 1
 SAMPLE_BLOCK_SIZE = 4096
 SAMPLE_BLOCKS = 32
@@ -82,6 +82,34 @@ EVENT_SCENE_CUE_REPORT_NAME = "BR_quartet_restoration_event_scene_cue_evidence.t
 EVENT_SCENE_CUE_EVIDENCE_DIR = "event_scene_cue_evidence"
 EVENT_PRESENTATION_COHORT_REPORT_NAME = "BR_quartet_restoration_event_presentation_cohort_evidence.tar.zst"
 EVENT_PRESENTATION_COHORT_EVIDENCE_DIR = "event_presentation_cohort_evidence"
+EVENT_DELTA_CONTEXT_REPORT_NAME = "BR_quartet_restoration_event_delta_context_evidence.tar.zst"
+EVENT_DELTA_CONTEXT_EVIDENCE_DIR = "event_delta_context_evidence"
+EVENT_PROTOTYPE_REPORT_NAME = "BR_quartet_restoration_event_prototype_evidence.tar.zst"
+EVENT_PROTOTYPE_EVIDENCE_DIR = "event_prototype_evidence"
+EVENT_PROTOTYPE_BUILD_DIR = "prototypes/events"
+EVENT_REPACK_TEST_REPORT_NAME = "BR_quartet_restoration_event_repack_test_evidence.tar.zst"
+EVENT_REPACK_TEST_EVIDENCE_DIR = "event_repack_test_evidence"
+EVENT_REPACK_TEST_BUILD_DIR = "repack_tests/events"
+EVENT_REPACK_TEST_MARKER = "HARNESS.json"
+EVENT_ACTIVATION_REQUEST_REPORT_NAME = "BR_quartet_restoration_event_activation_request.tar.zst"
+EVENT_ACTIVATION_REQUEST_EVIDENCE_DIR = "event_activation_request"
+G1S_REPACK_TEST_REPORT_NAME = "BR_quartet_restoration_g1s_repack_test_evidence.tar.zst"
+G1S_REPACK_TEST_EVIDENCE_DIR = "g1s_repack_test_evidence"
+G1S_REPACK_TEST_BUILD_DIR = "repack_tests/g1s"
+G1S_REPACK_TEST_MARKER = "HARNESS.json"
+G1S_ACTIVATION_REQUEST_REPORT_NAME = "BR_quartet_restoration_g1s_activation_request.tar.zst"
+G1S_ACTIVATION_REQUEST_EVIDENCE_DIR = "g1s_activation_request"
+SINGLE_SCENE_COMPOSITE_REPORT_NAME = "BR_quartet_restoration_single_scene_composite_evidence.tar.zst"
+SINGLE_SCENE_COMPOSITE_EVIDENCE_DIR = "single_scene_composite_evidence"
+SINGLE_SCENE_EVENT_PROTOTYPE_REPORT_NAME = "BR_quartet_restoration_single_scene_event_prototype_evidence.tar.zst"
+SINGLE_SCENE_EVENT_PROTOTYPE_EVIDENCE_DIR = "single_scene_event_prototype_evidence"
+SINGLE_SCENE_EVENT_PROTOTYPE_BUILD_DIR = "prototypes/events_single_scene"
+SINGLE_SCENE_EVENT_REPACK_TEST_REPORT_NAME = "BR_quartet_restoration_single_scene_event_repack_test_evidence.tar.zst"
+SINGLE_SCENE_EVENT_REPACK_TEST_EVIDENCE_DIR = "single_scene_event_repack_test_evidence"
+SINGLE_SCENE_EVENT_REPACK_TEST_BUILD_DIR = "repack_tests/events_single_scene"
+SINGLE_SCENE_EVENT_REPACK_TEST_MARKER = "HARNESS.json"
+SINGLE_SCENE_EVENT_ACTIVATION_REQUEST_REPORT_NAME = "BR_quartet_restoration_single_scene_event_activation_request.tar.zst"
+SINGLE_SCENE_EVENT_ACTIVATION_REQUEST_EVIDENCE_DIR = "single_scene_event_activation_request"
 EARC_MAGIC = 0x45415243
 EARC_HEADER_SIZE = 0x1C
 DEFAULT_MAX_EARC_BYTES = 256 * 1024 * 1024
@@ -13775,6 +13803,4727 @@ def cmd_collect_event_presentation_cohorts(args: argparse.Namespace) -> int:
     print(f"Report: {output}")
     return 0
 
+
+
+# Stage 23: inspect bounded scalar/opaque contexts around the statistically
+# enriched residual tag shapes selected by stage 22.  Context values remain
+# numeric/hashed metadata; raw EBD payloads and dialogue are not exported.
+# Simple insert/delete shapes are also reversed in memory to measure whether
+# the selected coarse delta disappears without introducing other coarse tag
+# deltas.  No candidate EBD is written by this stage.
+
+_EVENT_CONTEXT_IMPORTANT_DOMAINS: frozenset[str] = frozenset({
+    "bath_or_hot_spring", "shower", "pool_or_swimming", "water_visibility",
+    "steam_or_vapor", "godray_or_light_occlusion", "clothing_state",
+    "costume_or_coverage", "wet_fabric",
+})
+
+
+def event_atom_word_span(
+    atoms: Sequence[dict[str, Any]], start_atom: int, end_atom: int, word_count: int,
+) -> tuple[int, int]:
+    if not (0 <= start_atom <= end_atom <= len(atoms)):
+        raise RestorationError(
+            f"Invalid atom span {start_atom}:{end_atom} for {len(atoms)} atoms"
+        )
+    start_word = int(atoms[start_atom]["word_index"]) if start_atom < len(atoms) else word_count
+    end_word = int(atoms[end_atom]["word_index"]) if end_atom < len(atoms) else word_count
+    if not (0 <= start_word <= end_word <= word_count):
+        raise RestorationError(
+            f"Invalid word span {start_word}:{end_word} for {word_count} words"
+        )
+    return start_word, end_word
+
+
+def export_event_context_word(value: int) -> dict[str, Any]:
+    kind = classify_ebd_u32_word(value)
+    raw = struct.pack("<I", value)
+    exported_hex = f"0x{value:08x}" if kind != "opaque_u32" else ""
+    opaque_hash = hashlib.sha256(raw).hexdigest() if kind == "opaque_u32" else ""
+    float_candidate = ""
+    if kind == "opaque_u32":
+        number = struct.unpack("<f", raw)[0]
+        if math.isfinite(number) and abs(number) <= 1_000_000 and (number == 0.0 or abs(number) >= 1e-12):
+            float_candidate = f"{number:.9g}"
+    return {
+        "word_kind": kind,
+        "structural_token": structural_ebd_word_token(value),
+        "safe_value_hex": exported_hex,
+        "opaque_word_sha256": opaque_hash,
+        "float32_candidate": float_candidate,
+    }
+
+
+def event_delta_context_window(
+    *, words: Sequence[int], header_end: int, span_start: int, span_end: int,
+    context_words: int,
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    if not (0 <= span_start <= span_end <= len(words)):
+        raise RestorationError("Event delta context span escapes post-header words")
+    window_start = max(0, span_start - context_words)
+    window_end = min(len(words), span_end + context_words)
+    rows: list[dict[str, Any]] = []
+    signature_parts: list[str] = []
+    for word_index in range(window_start, window_end):
+        if word_index < span_start:
+            relation = "before_delta"
+            relative = word_index - span_start
+        elif word_index < span_end:
+            relation = "delta_span"
+            relative = word_index - span_start
+        else:
+            relation = "after_delta"
+            relative = word_index - span_end
+        exported = export_event_context_word(int(words[word_index]))
+        signature_parts.append(f"{relation}:{exported['structural_token']}")
+        rows.append({
+            "word_index": word_index,
+            "byte_offset": header_end + word_index * 4,
+            "relative_word_offset": relative,
+            "relationship": relation,
+            **exported,
+            "review_status": "opaque_values_are_hashed_and_float32_values_are_undecoded_candidates",
+        })
+    span_bytes = (
+        struct.pack(f"<{span_end-span_start}I", *words[span_start:span_end])
+        if span_end > span_start else b""
+    )
+    before_tokens = [row["structural_token"] for row in rows if row["relationship"] == "before_delta"]
+    delta_tokens = [row["structural_token"] for row in rows if row["relationship"] == "delta_span"]
+    after_tokens = [row["structural_token"] for row in rows if row["relationship"] == "after_delta"]
+    metadata = {
+        "span_start_word_index": span_start,
+        "span_end_word_index": span_end,
+        "span_word_count": span_end - span_start,
+        "span_sha256": hashlib.sha256(span_bytes).hexdigest(),
+        "window_start_word_index": window_start,
+        "window_end_word_index": window_end,
+        "before_structural_tokens": ";".join(before_tokens),
+        "delta_structural_tokens": ";".join(delta_tokens),
+        "after_structural_tokens": ";".join(after_tokens),
+        "context_signature_sha256": sha256_text("|".join(signature_parts)),
+        "small_scalar_word_count": sum(row["word_kind"] in {"zero", "minus_one", "small_scalar"} for row in rows),
+        "tag_word_count": sum(row["word_kind"] == "high_u16_tag_candidate" for row in rows),
+        "opaque_word_count": sum(row["word_kind"] == "opaque_u32" for row in rows),
+        "float32_candidate_count": sum(bool(row["float32_candidate"]) for row in rows),
+    }
+    return metadata, rows
+
+
+def _counter_shape_ids(delta_rows: Sequence[dict[str, Any]]) -> Counter[str]:
+    return Counter(event_residual_delta_shape_id(row) for row in delta_rows)
+
+
+def simulate_inverse_event_delta_splice(
+    *, source_payload: bytes, target_payload: bytes,
+    source_header: dict[str, Any], target_header: dict[str, Any],
+    source_profile: dict[str, Any], target_profile: dict[str, Any],
+    delta: dict[str, Any], shape_id: str,
+) -> dict[str, Any]:
+    source_atoms = source_profile["atoms"]
+    target_atoms = target_profile["atoms"]
+    source_start, source_end = event_atom_word_span(
+        source_atoms, int(delta["source_atom_start"]), int(delta["source_atom_end"]),
+        int(source_profile["word_count"]),
+    )
+    target_start, target_end = event_atom_word_span(
+        target_atoms, int(delta["target_atom_start"]), int(delta["target_atom_end"]),
+        int(target_profile["word_count"]),
+    )
+    source_words = list(source_profile["words"])
+    target_words = list(target_profile["words"])
+    candidate_words = target_words[:target_start] + source_words[source_start:source_end] + target_words[target_end:]
+    target_header_end = int(target_header["header_end"])
+    target_word_bytes_end = target_header_end + int(target_profile["word_count"]) * 4
+    trailing = target_payload[target_word_bytes_end:]
+    candidate_payload = (
+        target_payload[:target_header_end]
+        + (struct.pack(f"<{len(candidate_words)}I", *candidate_words) if candidate_words else b"")
+        + trailing
+    )
+    candidate_header = parse_ebd_header_schema(candidate_payload)
+    candidate_profile = profile_ebd_post_header_words(
+        candidate_payload, int(candidate_header.get("header_end", 0)), maximum_words=max(1, len(candidate_words) + 8)
+    )
+    before_deltas = compare_ebd_tag_atoms(source_atoms, target_atoms)
+    after_deltas = compare_ebd_tag_atoms(source_atoms, candidate_profile["atoms"])
+    before = _counter_shape_ids(before_deltas)
+    after = _counter_shape_ids(after_deltas)
+    introduced = after - before
+    removed = before - after
+    selected_before = before[shape_id]
+    selected_after = after[shape_id]
+    removed_other = sum(count for candidate_id, count in removed.items() if candidate_id != shape_id)
+    introduced_count = sum(int(value) for value in introduced.values())
+    if selected_after < selected_before and introduced_count == 0 and removed_other == 0:
+        status = "selected_shape_removed_without_other_coarse_delta_changes"
+    elif selected_after < selected_before and introduced_count == 0:
+        status = "selected_shape_removed_but_other_coarse_deltas_also_realign"
+    elif selected_after < selected_before:
+        status = "selected_shape_reduced_but_new_coarse_deltas_appear"
+    else:
+        status = "selected_shape_not_removed_by_inverse_span_splice"
+    return {
+        "source_span_start_word_index": source_start,
+        "source_span_end_word_index": source_end,
+        "target_span_start_word_index": target_start,
+        "target_span_end_word_index": target_end,
+        "source_span_word_count": source_end - source_start,
+        "target_span_word_count": target_end - target_start,
+        "candidate_size": len(candidate_payload),
+        "target_size": len(target_payload),
+        "candidate_size_delta": len(candidate_payload) - len(target_payload),
+        "candidate_sha256": hashlib.sha256(candidate_payload).hexdigest(),
+        "target_header_preserved": candidate_payload[:target_header_end] == target_payload[:target_header_end],
+        "candidate_header_classification": candidate_header.get("classification", ""),
+        "candidate_post_header_family": candidate_profile.get("family", ""),
+        "candidate_trailing_bytes": candidate_profile.get("trailing_bytes", ""),
+        "selected_shape_count_before": selected_before,
+        "selected_shape_count_after": selected_after,
+        "introduced_coarse_shape_count": introduced_count,
+        "removed_other_coarse_shape_count": removed_other,
+        "in_memory_splice_status": status,
+        "review_status": "in_memory_structural_test_only_candidate_payload_not_written",
+    }
+
+
+def _split_ids(value: Any) -> list[str]:
+    return [part for part in str(value or "").split(";") if part]
+
+
+def collect_event_delta_context_evidence(
+    *, project_root: Path, workspace_root: Path, report_root: Path,
+    maximum_event_bytes: int, context_words: int,
+    maximum_single_scene_shapes_per_event: int,
+) -> tuple[Path, dict[str, Any]]:
+    cohort_dir = report_root / EVENT_PRESENTATION_COHORT_EVIDENCE_DIR
+    cohort_summary = load_json(cohort_dir / "SUMMARY.json")
+    if cohort_summary.get("type") != "br_quartet_restoration_event_presentation_cohort_evidence_summary":
+        raise RestorationError(f"Not an event-presentation-cohort report: {cohort_dir / 'SUMMARY.json'}")
+    migration_dir = report_root / EVENT_TAG_MIGRATION_EVIDENCE_DIR
+    migration_summary = load_json(migration_dir / "SUMMARY.json")
+    if migration_summary.get("type") != "br_quartet_restoration_event_tag_migration_evidence_summary":
+        raise RestorationError(f"Not an event-tag-migration report: {migration_dir / 'SUMMARY.json'}")
+    if context_words < 1 or context_words > 64:
+        raise RestorationError("context_words must be in the range 1..64")
+    if maximum_single_scene_shapes_per_event < 0 or maximum_single_scene_shapes_per_event > 64:
+        raise RestorationError("maximum_single_scene_shapes_per_event must be in the range 0..64")
+
+    shape_rows = read_tsv(cohort_dir / "EVENT_RESIDUAL_DELTA_SHAPE_FREQUENCY.tsv")
+    slot_rows = read_tsv(cohort_dir / "EVENT_PRESENTATION_SLOT_COHORTS.tsv")
+    sequence_rows = read_tsv(cohort_dir / "EVENT_ROUTE_SEQUENCE_CLUSTERS.tsv")
+    focused_rows = read_tsv(cohort_dir / "FOCUSED_PRESENTATION_COHORT_REVIEW.tsv")
+    cue_shape_rows = read_tsv(cohort_dir / "CUE_LINKED_RESIDUAL_DELTA_SHAPES.tsv")
+    residual_rows = read_tsv(migration_dir / "RESIDUAL_EVENT_TAG_DELTAS.tsv")
+    shape_by_id = {str(row.get("shape_id", "")): row for row in shape_rows}
+    focused_by_path = {str(row.get("normalized_path", "")): row for row in focused_rows}
+    cue_shape_by_pair = {
+        (str(row.get("normalized_path", "")), str(row.get("shape_id", ""))): row
+        for row in cue_shape_rows
+    }
+
+    selected: dict[str, dict[str, Any]] = {}
+    def select_shape(shape_id: str, reason: str, priority: str, cohort_id: str = "") -> None:
+        if not shape_id or shape_id not in shape_by_id:
+            return
+        item = selected.setdefault(shape_id, {"reasons": set(), "priorities": set(), "cohort_ids": set()})
+        item["reasons"].add(reason)
+        item["priorities"].add(priority)
+        if cohort_id:
+            item["cohort_ids"].add(cohort_id)
+
+    for row in slot_rows:
+        if str(row.get("review_priority", "")) not in {"critical", "high"}:
+            continue
+        for shape_id in _split_ids(row.get("enriched_common_delta_shape_ids", "")):
+            select_shape(shape_id, "repeated_slot_enriched_common_shape", str(row.get("review_priority", "")), str(row.get("cohort_id", "")))
+    for row in sequence_rows:
+        if str(row.get("review_priority", "")) not in {"critical", "high"}:
+            continue
+        for shape_id in _split_ids(row.get("enriched_common_delta_shape_ids", "")):
+            select_shape(shape_id, "route_sequence_enriched_common_shape", str(row.get("review_priority", "")), str(row.get("sequence_id", "")))
+
+    single_scene_by_path: defaultdict[str, list[dict[str, Any]]] = defaultdict(list)
+    for row in cue_shape_rows:
+        path = str(row.get("normalized_path", ""))
+        shape_id = str(row.get("shape_id", ""))
+        focused = focused_by_path.get(path, {})
+        priority = str(focused.get("review_priority", ""))
+        classification = str(row.get("shape_classification", ""))
+        domains = _split_semicolon_cell(row.get("cue_domains", ""))
+        if priority in {"critical", "high"} and classification in {
+            "presentation_repeated_delta_shape_candidate", "presentation_associated_delta_shape_candidate",
+        }:
+            select_shape(shape_id, "high_priority_enriched_cue_shape", priority)
+        elif classification == "presentation_single_scene_delta_shape_candidate" and domains & _EVENT_CONTEXT_IMPORTANT_DOMAINS:
+            single_scene_by_path[path].append(row)
+    for path, rows in single_scene_by_path.items():
+        priority = str(focused_by_path.get(path, {}).get("review_priority", "medium"))
+        ordered = sorted(rows, key=lambda row: (-float(row.get("cue_enrichment_ratio", 0) or 0), str(row.get("shape_id", ""))))
+        for row in ordered[:maximum_single_scene_shapes_per_event]:
+            select_shape(str(row.get("shape_id", "")), "domain_single_scene_context_shape", priority)
+
+    priority_rank = {"critical": 0, "high": 1, "medium": 2, "low": 3, "deferred": 4}
+    selected_shape_rows: list[dict[str, Any]] = []
+    for shape_id, meta in selected.items():
+        row = shape_by_id[shape_id]
+        priority = min(meta["priorities"], key=lambda value: priority_rank.get(value, 9)) if meta["priorities"] else "medium"
+        simple = (
+            str(row.get("sequence_tag", "")) in {"insert", "delete"}
+            and min(_parse_int_cell(row.get("source_atom_count")), _parse_int_cell(row.get("target_atom_count"))) == 0
+            and max(_parse_int_cell(row.get("source_atom_count")), _parse_int_cell(row.get("target_atom_count"))) <= 4
+        )
+        selected_shape_rows.append({
+            "shape_id": shape_id,
+            "selection_reasons": ";".join(sorted(meta["reasons"])),
+            "selection_priority": priority,
+            "cohort_or_sequence_ids": ";".join(sorted(meta["cohort_ids"])),
+            "sequence_tag": row.get("sequence_tag", ""),
+            "source_atom_count": row.get("source_atom_count", ""),
+            "target_atom_count": row.get("target_atom_count", ""),
+            "source_tag_values": row.get("source_tag_values", ""),
+            "target_tag_values": row.get("target_tag_values", ""),
+            "all_residual_file_count": row.get("all_residual_file_count", ""),
+            "cue_positive_file_count": row.get("cue_positive_file_count", ""),
+            "identical_message_cue_file_count": row.get("identical_message_cue_file_count", ""),
+            "cue_domains": row.get("cue_domains", ""),
+            "cue_enrichment_ratio": row.get("cue_enrichment_ratio", ""),
+            "stage22_classification": row.get("classification", ""),
+            "simple_inverse_splice_eligible": simple,
+            "review_status": "shape_selection_is_context_triage_not_field_semantics_or_censorship_proof",
+        })
+    selected_shape_rows.sort(key=lambda row: (priority_rank.get(str(row["selection_priority"]), 9), str(row["shape_id"])))
+    selected_ids = set(selected)
+
+    reports = load_report_jsons(report_root, "differences")
+    event_report = next((row for row in reports if str(row.get("source_archive_group", "")) == "br1_events"), None)
+    if event_report is None:
+        raise RestorationError("Missing br1_events difference report")
+    entry_by_path = {
+        str(row.get("normalized_path", "")): row
+        for row in event_report.get("entries", [])
+        if row.get("scope_status") == "in_scope" and row.get("source") and row.get("target")
+    }
+    selected_paths = sorted({
+        str(row.get("normalized_path", "")) for row in residual_rows
+        if event_residual_delta_shape_id(row) in selected_ids
+    }, key=_event_path_sort_key)
+
+    occurrence_rows: list[dict[str, Any]] = []
+    word_rows: list[dict[str, Any]] = []
+    splice_rows: list[dict[str, Any]] = []
+    skipped_rows: list[dict[str, Any]] = []
+    archetype_groups: dict[tuple[str, str], dict[str, Any]] = {}
+    occurrences_by_shape: defaultdict[str, list[dict[str, Any]]] = defaultdict(list)
+
+    for path in selected_paths:
+        entry = entry_by_path.get(path)
+        if not entry:
+            skipped_rows.append({"normalized_path": path, "side": "both", "reason": "difference_entry_missing"})
+            continue
+        source_ref = entry.get("source") or {}
+        target_ref = entry.get("target") or {}
+        source_path = inventory_workspace_file(workspace_root, "source", "br1_events", str(source_ref.get("archive", "")), str(source_ref.get("path", "")))
+        target_path = inventory_workspace_file(workspace_root, "target", "br1_events", str(target_ref.get("archive", "")), str(target_ref.get("path", "")))
+        if not source_path.is_file() or not target_path.is_file():
+            skipped_rows.append({"normalized_path": path, "side": "both", "reason": "workspace_file_missing"})
+            continue
+        if source_path.stat().st_size > maximum_event_bytes or target_path.stat().st_size > maximum_event_bytes:
+            skipped_rows.append({"normalized_path": path, "side": "both", "reason": "maximum_event_bytes_exceeded"})
+            continue
+        source_payload = source_path.read_bytes()
+        target_payload = target_path.read_bytes()
+        source_header = parse_ebd_header_schema(source_payload)
+        target_header = parse_ebd_header_schema(target_payload)
+        if source_header.get("classification") != "observed_ebd_name_description_header" or target_header.get("classification") != "observed_ebd_name_description_header":
+            skipped_rows.append({"normalized_path": path, "side": "both", "reason": "confirmed_ebd_header_missing"})
+            continue
+        source_profile = profile_ebd_post_header_words(source_payload, int(source_header["header_end"]))
+        target_profile = profile_ebd_post_header_words(target_payload, int(target_header["header_end"]))
+        pair_deltas = compare_ebd_tag_atoms(source_profile["atoms"], target_profile["atoms"])
+        per_shape_index: Counter[str] = Counter()
+        for delta in pair_deltas:
+            shape_id = event_residual_delta_shape_id(delta)
+            if shape_id not in selected_ids:
+                continue
+            occurrence_index = per_shape_index[shape_id]
+            per_shape_index[shape_id] += 1
+            source_start, source_end = event_atom_word_span(
+                source_profile["atoms"], int(delta["source_atom_start"]), int(delta["source_atom_end"]), int(source_profile["word_count"])
+            )
+            target_start, target_end = event_atom_word_span(
+                target_profile["atoms"], int(delta["target_atom_start"]), int(delta["target_atom_end"]), int(target_profile["word_count"])
+            )
+            source_meta, source_word_rows = event_delta_context_window(
+                words=source_profile["words"], header_end=int(source_header["header_end"]),
+                span_start=source_start, span_end=source_end, context_words=context_words,
+            )
+            target_meta, target_word_rows = event_delta_context_window(
+                words=target_profile["words"], header_end=int(target_header["header_end"]),
+                span_start=target_start, span_end=target_end, context_words=context_words,
+            )
+            pair_context_id = sha256_text(source_meta["context_signature_sha256"] + "|" + target_meta["context_signature_sha256"])
+            cue_row = cue_shape_by_pair.get((path, shape_id), {})
+            cue_positive = bool(cue_row)
+            occurrence = {
+                "normalized_path": path,
+                "shape_id": shape_id,
+                "occurrence_index": occurrence_index,
+                "sequence_tag": delta.get("sequence_tag", ""),
+                "event_message_classification": cue_row.get("event_message_classification", ""),
+                "cue_positive_occurrence": cue_positive,
+                "cue_rule_ids": cue_row.get("cue_rule_ids", ""),
+                "cue_domains": cue_row.get("cue_domains", ""),
+                "selection_reasons": ";".join(sorted(selected[shape_id]["reasons"])),
+                "source_header_end": source_header["header_end"],
+                "target_header_end": target_header["header_end"],
+                **{f"source_{key}": value for key, value in source_meta.items()},
+                **{f"target_{key}": value for key, value in target_meta.items()},
+                "pair_context_archetype_id": pair_context_id,
+                "review_status": "bounded_numeric_context_is_structural_evidence_not_field_semantics",
+            }
+            occurrence_rows.append(occurrence)
+            occurrences_by_shape[shape_id].append(occurrence)
+            for side, rows in (("source", source_word_rows), ("target", target_word_rows)):
+                for row in rows:
+                    word_rows.append({
+                        "normalized_path": path, "shape_id": shape_id,
+                        "occurrence_index": occurrence_index, "side": side,
+                        "cue_positive_occurrence": cue_positive,
+                        "cue_domains": cue_row.get("cue_domains", ""), **row,
+                    })
+            key = (shape_id, pair_context_id)
+            group = archetype_groups.setdefault(key, {
+                "shape_id": shape_id, "pair_context_archetype_id": pair_context_id,
+                "source_context_signature_sha256": source_meta["context_signature_sha256"],
+                "target_context_signature_sha256": target_meta["context_signature_sha256"],
+                "source_before_structural_tokens": source_meta["before_structural_tokens"],
+                "source_delta_structural_tokens": source_meta["delta_structural_tokens"],
+                "source_after_structural_tokens": source_meta["after_structural_tokens"],
+                "target_before_structural_tokens": target_meta["before_structural_tokens"],
+                "target_delta_structural_tokens": target_meta["delta_structural_tokens"],
+                "target_after_structural_tokens": target_meta["after_structural_tokens"],
+                "occurrence_count": 0, "paths": set(), "cue_paths": set(), "noncue_paths": set(),
+                "route_families": set(), "cue_domains": set(),
+            })
+            group["occurrence_count"] += 1
+            group["paths"].add(path)
+            group["route_families"].add(event_route_family(path))
+            if cue_positive:
+                group["cue_paths"].add(path)
+                group["cue_domains"].update(_split_semicolon_cell(cue_row.get("cue_domains", "")))
+            else:
+                group["noncue_paths"].add(path)
+
+            shape_selection_row = next(row for row in selected_shape_rows if row["shape_id"] == shape_id)
+            if bool(shape_selection_row["simple_inverse_splice_eligible"]):
+                splice = simulate_inverse_event_delta_splice(
+                    source_payload=source_payload, target_payload=target_payload,
+                    source_header=source_header, target_header=target_header,
+                    source_profile=source_profile, target_profile=target_profile,
+                    delta=delta, shape_id=shape_id,
+                )
+                splice_rows.append({
+                    "normalized_path": path, "shape_id": shape_id,
+                    "occurrence_index": occurrence_index,
+                    "cue_positive_occurrence": cue_positive,
+                    "cue_domains": cue_row.get("cue_domains", ""),
+                    "selection_reasons": ";".join(sorted(selected[shape_id]["reasons"])),
+                    **splice,
+                })
+
+    archetype_rows: list[dict[str, Any]] = []
+    archetypes_by_shape: defaultdict[str, list[dict[str, Any]]] = defaultdict(list)
+    for group in archetype_groups.values():
+        cue_count = len(group["cue_paths"])
+        noncue_count = len(group["noncue_paths"])
+        if cue_count and noncue_count:
+            classification = "exact_context_shared_by_cue_and_noncue_occurrences"
+        elif cue_count >= 2:
+            classification = "repeated_exact_context_in_cue_occurrences"
+        elif cue_count == 1:
+            classification = "single_cue_exact_context"
+        else:
+            classification = "noncue_exact_context"
+        row = {
+            **{key: value for key, value in group.items() if key not in {"paths", "cue_paths", "noncue_paths", "route_families", "cue_domains"}},
+            "file_count": len(group["paths"]),
+            "cue_file_count": cue_count,
+            "noncue_file_count": noncue_count,
+            "route_family_count": len({value for value in group["route_families"] if value}),
+            "cue_domains": ";".join(sorted(group["cue_domains"])),
+            "first_paths": ";".join(sorted(group["paths"])[:24]),
+            "classification": classification,
+            "review_status": "exact_context_repetition_is_not_binary_field_semantics_or_censorship_proof",
+        }
+        archetype_rows.append(row)
+        archetypes_by_shape[str(group["shape_id"])].append(row)
+
+    control_rows: list[dict[str, Any]] = []
+    focused_context_rows: list[dict[str, Any]] = []
+    splice_by_shape: defaultdict[str, list[dict[str, Any]]] = defaultdict(list)
+    for row in splice_rows:
+        splice_by_shape[str(row["shape_id"])].append(row)
+    for selected_row in selected_shape_rows:
+        shape_id = str(selected_row["shape_id"])
+        occurrences = occurrences_by_shape.get(shape_id, [])
+        cue = [row for row in occurrences if bool(row["cue_positive_occurrence"])]
+        noncue = [row for row in occurrences if not bool(row["cue_positive_occurrence"])]
+        cue_archetypes = {str(row["pair_context_archetype_id"]) for row in cue}
+        noncue_archetypes = {str(row["pair_context_archetype_id"]) for row in noncue}
+        shared = cue_archetypes & noncue_archetypes
+        if cue and len(cue_archetypes) == 1 and not shared:
+            context_class = "cue_occurrences_share_exact_context_not_seen_in_noncues"
+        elif cue and len(cue_archetypes) == 1 and shared:
+            context_class = "cue_occurrences_share_context_also_seen_in_noncues"
+        elif cue:
+            context_class = "cue_occurrences_have_multiple_context_archetypes"
+        else:
+            context_class = "selected_shape_has_no_stage22_cue_occurrence"
+        splices = splice_by_shape.get(shape_id, [])
+        isolated = sum(row["in_memory_splice_status"] == "selected_shape_removed_without_other_coarse_delta_changes" for row in splices)
+        control_rows.append({
+            "shape_id": shape_id,
+            "selection_reasons": selected_row["selection_reasons"],
+            "total_occurrence_count": len(occurrences),
+            "cue_occurrence_count": len(cue),
+            "noncue_occurrence_count": len(noncue),
+            "cue_context_archetype_count": len(cue_archetypes),
+            "noncue_context_archetype_count": len(noncue_archetypes),
+            "shared_cue_noncue_context_archetype_count": len(shared),
+            "in_memory_splice_attempt_count": len(splices),
+            "isolated_splice_success_count": isolated,
+            "classification": context_class,
+            "review_status": "noncue_occurrences_are_comparison_metadata_not_clean_scene_controls",
+        })
+        priority = str(selected_row["selection_priority"])
+        if isolated == len(splices) and len(splices) >= 3 and len(cue_archetypes) == 1:
+            readiness = "repeated_context_and_in_memory_inverse_splice_consistent"
+            review_priority = "critical" if priority == "critical" else "high"
+        elif isolated and len(cue_archetypes) <= 2:
+            readiness = "partial_in_memory_inverse_splice_support"
+            review_priority = priority
+        else:
+            readiness = "context_decoding_only_not_ready_for_prototype"
+            review_priority = priority
+        focused_context_rows.append({
+            "shape_id": shape_id,
+            "selection_reasons": selected_row["selection_reasons"],
+            "selection_priority": priority,
+            "sequence_tag": selected_row["sequence_tag"],
+            "source_tag_values": selected_row["source_tag_values"],
+            "target_tag_values": selected_row["target_tag_values"],
+            "cue_domains": selected_row["cue_domains"],
+            "total_occurrence_count": len(occurrences),
+            "cue_occurrence_count": len(cue),
+            "noncue_occurrence_count": len(noncue),
+            "exact_context_archetype_count": len(archetypes_by_shape.get(shape_id, [])),
+            "cue_context_archetype_count": len(cue_archetypes),
+            "in_memory_splice_attempt_count": len(splices),
+            "isolated_splice_success_count": isolated,
+            "classification": readiness,
+            "review_priority": review_priority,
+            "review_status": "readiness_is_for_local_metadata_review_not_installable_event_patch_approval",
+        })
+
+    occurrence_rows.sort(key=lambda row: (_event_path_sort_key(str(row["normalized_path"])), str(row["shape_id"]), int(row["occurrence_index"])))
+    word_rows.sort(key=lambda row: (_event_path_sort_key(str(row["normalized_path"])), str(row["shape_id"]), int(row["occurrence_index"]), str(row["side"]), int(row["word_index"])))
+    archetype_rows.sort(key=lambda row: (-int(row["cue_file_count"]), -int(row["file_count"]), str(row["shape_id"]), str(row["pair_context_archetype_id"])))
+    control_rows.sort(key=lambda row: (priority_rank.get(str(next((r["selection_priority"] for r in selected_shape_rows if r["shape_id"] == row["shape_id"]), "medium")), 9), str(row["shape_id"])))
+    splice_rows.sort(key=lambda row: (_event_path_sort_key(str(row["normalized_path"])), str(row["shape_id"]), int(row["occurrence_index"])))
+    focused_context_rows.sort(key=lambda row: (priority_rank.get(str(row["review_priority"]), 9), -int(row["isolated_splice_success_count"]), str(row["shape_id"])))
+
+    evidence_root = report_root / EVENT_DELTA_CONTEXT_EVIDENCE_DIR
+    if evidence_root.exists():
+        shutil.rmtree(evidence_root)
+    evidence_root.mkdir(parents=True, exist_ok=True)
+    write_tsv(evidence_root / "SELECTED_EVENT_DELTA_SHAPES.tsv", [
+        "shape_id","selection_reasons","selection_priority","cohort_or_sequence_ids","sequence_tag",
+        "source_atom_count","target_atom_count","source_tag_values","target_tag_values",
+        "all_residual_file_count","cue_positive_file_count","identical_message_cue_file_count",
+        "cue_domains","cue_enrichment_ratio","stage22_classification","simple_inverse_splice_eligible","review_status",
+    ], selected_shape_rows)
+    occurrence_fields = [
+        "normalized_path","shape_id","occurrence_index","sequence_tag","event_message_classification",
+        "cue_positive_occurrence","cue_rule_ids","cue_domains","selection_reasons","source_header_end","target_header_end",
+    ]
+    context_meta_fields = [
+        "span_start_word_index","span_end_word_index","span_word_count","span_sha256",
+        "window_start_word_index","window_end_word_index","before_structural_tokens","delta_structural_tokens",
+        "after_structural_tokens","context_signature_sha256","small_scalar_word_count","tag_word_count",
+        "opaque_word_count","float32_candidate_count",
+    ]
+    occurrence_fields += [f"source_{field}" for field in context_meta_fields]
+    occurrence_fields += [f"target_{field}" for field in context_meta_fields]
+    occurrence_fields += ["pair_context_archetype_id","review_status"]
+    write_tsv(evidence_root / "EVENT_DELTA_CONTEXT_OCCURRENCES.tsv", occurrence_fields, occurrence_rows)
+    write_tsv(evidence_root / "EVENT_DELTA_CONTEXT_WORDS.tsv", [
+        "normalized_path","shape_id","occurrence_index","side","cue_positive_occurrence","cue_domains",
+        "word_index","byte_offset","relative_word_offset","relationship","word_kind","structural_token",
+        "safe_value_hex","opaque_word_sha256","float32_candidate","review_status",
+    ], word_rows)
+    write_tsv(evidence_root / "EVENT_DELTA_CONTEXT_ARCHETYPES.tsv", [
+        "shape_id","pair_context_archetype_id","source_context_signature_sha256","target_context_signature_sha256",
+        "source_before_structural_tokens","source_delta_structural_tokens","source_after_structural_tokens",
+        "target_before_structural_tokens","target_delta_structural_tokens","target_after_structural_tokens",
+        "occurrence_count","file_count","cue_file_count","noncue_file_count","route_family_count","cue_domains",
+        "first_paths","classification","review_status",
+    ], archetype_rows)
+    write_tsv(evidence_root / "EVENT_DELTA_CUE_NONCUE_COMPARISON.tsv", [
+        "shape_id","selection_reasons","total_occurrence_count","cue_occurrence_count","noncue_occurrence_count",
+        "cue_context_archetype_count","noncue_context_archetype_count","shared_cue_noncue_context_archetype_count",
+        "in_memory_splice_attempt_count","isolated_splice_success_count","classification","review_status",
+    ], control_rows)
+    write_tsv(evidence_root / "IN_MEMORY_EVENT_DELTA_SPLICE_READINESS.tsv", [
+        "normalized_path","shape_id","occurrence_index","cue_positive_occurrence","cue_domains","selection_reasons",
+        "source_span_start_word_index","source_span_end_word_index","target_span_start_word_index","target_span_end_word_index",
+        "source_span_word_count","target_span_word_count","candidate_size","target_size","candidate_size_delta",
+        "candidate_sha256","target_header_preserved","candidate_header_classification","candidate_post_header_family",
+        "candidate_trailing_bytes","selected_shape_count_before","selected_shape_count_after",
+        "introduced_coarse_shape_count","removed_other_coarse_shape_count","in_memory_splice_status","review_status",
+    ], splice_rows)
+    write_tsv(evidence_root / "FOCUSED_EVENT_DELTA_CONTEXT_REVIEW.tsv", [
+        "shape_id","selection_reasons","selection_priority","sequence_tag","source_tag_values","target_tag_values",
+        "cue_domains","total_occurrence_count","cue_occurrence_count","noncue_occurrence_count",
+        "exact_context_archetype_count","cue_context_archetype_count","in_memory_splice_attempt_count",
+        "isolated_splice_success_count","classification","review_priority","review_status",
+    ], focused_context_rows)
+    write_tsv(evidence_root / "EVENT_DELTA_CONTEXT_SCAN_SKIPPED.tsv", ["normalized_path","side","reason"], skipped_rows)
+
+    summary = {
+        "type": "br_quartet_restoration_event_delta_context_evidence_summary",
+        "format_version": FORMAT_VERSION,
+        "tool_version": TOOL_VERSION,
+        "source_event_presentation_cohort_tool_version": cohort_summary.get("tool_version"),
+        "source_event_tag_migration_tool_version": migration_summary.get("tool_version"),
+        "status": "selected_cohort_and_domain_delta_contexts_profiled_inverse_splices_tested_in_memory_no_event_payload_written",
+        "selected_delta_shape_rows": len(selected_shape_rows),
+        "selected_event_paths": len(selected_paths),
+        "context_occurrence_rows": len(occurrence_rows),
+        "context_word_rows": len(word_rows),
+        "context_archetype_rows": len(archetype_rows),
+        "cue_noncue_comparison_rows": len(control_rows),
+        "in_memory_splice_rows": len(splice_rows),
+        "isolated_in_memory_splice_rows": sum(row["in_memory_splice_status"] == "selected_shape_removed_without_other_coarse_delta_changes" for row in splice_rows),
+        "focused_context_review_rows": len(focused_context_rows),
+        "critical_focused_context_rows": sum(row["review_priority"] == "critical" for row in focused_context_rows),
+        "high_focused_context_rows": sum(row["review_priority"] == "high" for row in focused_context_rows),
+        "skipped_rows": len(skipped_rows),
+        "parameters": {
+            "context_words": context_words,
+            "maximum_single_scene_shapes_per_event": maximum_single_scene_shapes_per_event,
+            "maximum_event_bytes": maximum_event_bytes,
+        },
+        "policy": {
+            "installed_games_modified": False,
+            "raw_ebd_or_ebm_payloads_exported": False,
+            "dialogue_or_localized_text_exported": False,
+            "safe_tag_and_small_scalar_values_exported": True,
+            "opaque_context_words_exported": False,
+            "opaque_context_word_hashes_exported": True,
+            "float32_candidates_treated_as_decoded_parameters": False,
+            "cue_or_cohort_association_treated_as_field_semantics": False,
+            "in_memory_candidate_payload_written": False,
+            "event_prototype_generated": False,
+            "automatic_censorship_claims": False,
+            "legacy_dlc_in_scope": False,
+            "translation_edits_in_scope": False,
+        },
+        "next_action": "Upload this report. Promote only repeated shapes whose exact contexts are stable and whose inverse splice removes the selected coarse delta without introducing others. Any later local EBD prototype must remain separate per shape and require an isolated repack/test harness.",
+    }
+    atomic_json(evidence_root / "SUMMARY.json", summary)
+    output = report_root / EVENT_DELTA_CONTEXT_REPORT_NAME
+    make_report_archive(evidence_root, output)
+    return output, summary
+
+
+def cmd_collect_event_delta_context(args: argparse.Namespace) -> int:
+    project_root = Path(args.project_root).expanduser().resolve()
+    if not project_root.is_dir():
+        raise RestorationError(f"Project root does not exist: {project_root}")
+    default_workspace = project_root / ".local/build/quartet_restoration"
+    default_reports = project_root / ".local/reports/quartet_restoration"
+    workspace_root = Path(args.workspace_root).expanduser().resolve() if args.workspace_root else default_workspace
+    report_root = Path(args.report_root).expanduser().resolve() if args.report_root else default_reports
+    require_within(workspace_root, default_workspace, "Workspace")
+    require_within(report_root, default_reports, "Report root")
+    output, summary = collect_event_delta_context_evidence(
+        project_root=project_root, workspace_root=workspace_root, report_root=report_root,
+        maximum_event_bytes=args.maximum_event_bytes, context_words=args.context_words,
+        maximum_single_scene_shapes_per_event=args.maximum_single_scene_shapes_per_event,
+    )
+    print(f"Selected delta shapes: {summary['selected_delta_shape_rows']}")
+    print(f"Context occurrences: {summary['context_occurrence_rows']}")
+    print(f"In-memory splice rows: {summary['in_memory_splice_rows']}")
+    print(f"Isolated splice rows: {summary['isolated_in_memory_splice_rows']}")
+    print(f"Report: {output}")
+    return 0
+
+
+
+
+# Stage 24: promote only repeated event-delta shapes whose bounded contexts and
+# inverse splices were validated by stage 23.  Candidate EBD payloads are built
+# under the local quartet_restoration workspace, never installed, and never
+# included in the metadata report archive.  Repeated exact-context cohorts and
+# route-sequence experiments remain separate profiles so one can be tested or
+# discarded without affecting the other.
+
+
+def construct_inverse_event_delta_candidate(
+    *, source_payload: bytes, target_payload: bytes,
+    source_header: dict[str, Any], target_header: dict[str, Any],
+    source_profile: dict[str, Any], target_profile: dict[str, Any],
+    delta: dict[str, Any], shape_id: str,
+) -> tuple[bytes, dict[str, Any]]:
+    source_atoms = source_profile["atoms"]
+    target_atoms = target_profile["atoms"]
+    source_start, source_end = event_atom_word_span(
+        source_atoms, int(delta["source_atom_start"]), int(delta["source_atom_end"]),
+        int(source_profile["word_count"]),
+    )
+    target_start, target_end = event_atom_word_span(
+        target_atoms, int(delta["target_atom_start"]), int(delta["target_atom_end"]),
+        int(target_profile["word_count"]),
+    )
+    source_words = list(source_profile["words"])
+    target_words = list(target_profile["words"])
+    source_span = source_words[source_start:source_end]
+    target_span = target_words[target_start:target_end]
+    candidate_words = target_words[:target_start] + source_span + target_words[target_end:]
+    target_header_end = int(target_header["header_end"])
+    target_word_bytes_end = target_header_end + int(target_profile["word_count"]) * 4
+    target_trailing = target_payload[target_word_bytes_end:]
+    candidate_payload = (
+        target_payload[:target_header_end]
+        + (struct.pack(f"<{len(candidate_words)}I", *candidate_words) if candidate_words else b"")
+        + target_trailing
+    )
+    metadata = simulate_inverse_event_delta_splice(
+        source_payload=source_payload,
+        target_payload=target_payload,
+        source_header=source_header,
+        target_header=target_header,
+        source_profile=source_profile,
+        target_profile=target_profile,
+        delta=delta,
+        shape_id=shape_id,
+    )
+    candidate_insert_end = target_start + len(source_span)
+    rebuilt_words = (
+        candidate_words[:target_start]
+        + target_span
+        + candidate_words[candidate_insert_end:]
+    )
+    rebuilt_target = (
+        target_payload[:target_header_end]
+        + (struct.pack(f"<{len(rebuilt_words)}I", *rebuilt_words) if rebuilt_words else b"")
+        + target_trailing
+    )
+    source_span_bytes = struct.pack(f"<{len(source_span)}I", *source_span) if source_span else b""
+    target_span_bytes = struct.pack(f"<{len(target_span)}I", *target_span) if target_span else b""
+    candidate_word_bytes_end = target_header_end + len(candidate_words) * 4
+    metadata.update({
+        "source_span_sha256": hashlib.sha256(source_span_bytes).hexdigest(),
+        "target_span_sha256": hashlib.sha256(target_span_bytes).hexdigest(),
+        "target_prefix_preserved": candidate_payload[:target_header_end + target_start * 4]
+            == target_payload[:target_header_end + target_start * 4],
+        "target_suffix_preserved": candidate_payload[target_header_end + candidate_insert_end * 4:candidate_word_bytes_end]
+            == target_payload[target_header_end + target_end * 4:target_word_bytes_end],
+        "target_trailing_bytes_preserved": candidate_payload[candidate_word_bytes_end:] == target_trailing,
+        "target_roundtrip_exact": rebuilt_target == target_payload,
+        "source_header_sha256": hashlib.sha256(source_payload[:int(source_header["header_end"])]).hexdigest(),
+        "target_header_sha256": hashlib.sha256(target_payload[:target_header_end]).hexdigest(),
+    })
+    return candidate_payload, metadata
+
+
+def _event_prototype_profile_id(kind: str, shape_id: str, discriminator: str) -> str:
+    cleaned = re.sub(r"[^a-z0-9]+", "_", discriminator.casefold()).strip("_") or "group"
+    return f"{kind}_{cleaned}_{shape_id[:10]}"
+
+
+def _event_occurrence_key(row: dict[str, Any]) -> tuple[str, str, int]:
+    return (
+        str(row.get("normalized_path", "")),
+        str(row.get("shape_id", "")),
+        _parse_int_cell(row.get("occurrence_index")),
+    )
+
+
+def build_event_prototypes(
+    *, project_root: Path, workspace_root: Path, report_root: Path,
+    maximum_event_bytes: int,
+    minimum_repeated_files: int = 3,
+    minimum_route_files: int = 4,
+) -> tuple[Path, dict[str, Any]]:
+    context_dir = report_root / EVENT_DELTA_CONTEXT_EVIDENCE_DIR
+    context_summary = load_json(context_dir / "SUMMARY.json")
+    if context_summary.get("type") != "br_quartet_restoration_event_delta_context_evidence_summary":
+        raise RestorationError(f"Not an event-delta-context report: {context_dir / 'SUMMARY.json'}")
+    if minimum_repeated_files < 2 or minimum_route_files < 2:
+        raise RestorationError("event prototype promotion thresholds must be at least 2")
+
+    selected_rows = read_tsv(context_dir / "SELECTED_EVENT_DELTA_SHAPES.tsv")
+    occurrence_rows = read_tsv(context_dir / "EVENT_DELTA_CONTEXT_OCCURRENCES.tsv")
+    focused_rows = read_tsv(context_dir / "FOCUSED_EVENT_DELTA_CONTEXT_REVIEW.tsv")
+    splice_rows = read_tsv(context_dir / "IN_MEMORY_EVENT_DELTA_SPLICE_READINESS.tsv")
+    selected_by_shape = {str(row.get("shape_id", "")): row for row in selected_rows}
+    focused_by_shape = {str(row.get("shape_id", "")): row for row in focused_rows}
+    splice_by_key = {_event_occurrence_key(row): row for row in splice_rows}
+    occurrences_by_shape: defaultdict[str, list[dict[str, Any]]] = defaultdict(list)
+    for row in occurrence_rows:
+        occurrences_by_shape[str(row.get("shape_id", ""))].append(row)
+
+    profile_specs: list[dict[str, Any]] = []
+    used_profile_ids: set[str] = set()
+
+    # High-confidence promotion: a repeated exact context, full isolated splice
+    # success, and at least one cue-linked occurrence.  Separate archetypes are
+    # never mixed in one prototype profile.
+    for shape_id, focused in focused_by_shape.items():
+        if str(focused.get("classification", "")) != "repeated_context_and_in_memory_inverse_splice_consistent":
+            continue
+        total = _parse_int_cell(focused.get("total_occurrence_count"))
+        isolated = _parse_int_cell(focused.get("isolated_splice_success_count"))
+        if total < minimum_repeated_files or isolated != total:
+            continue
+        groups: defaultdict[str, list[dict[str, Any]]] = defaultdict(list)
+        for row in occurrences_by_shape.get(shape_id, []):
+            groups[str(row.get("pair_context_archetype_id", ""))].append(row)
+        for archetype_id, rows in groups.items():
+            cue_count = sum(str(row.get("cue_positive_occurrence", "")).casefold() == "true" for row in rows)
+            if len(rows) < minimum_repeated_files or cue_count == 0:
+                continue
+            if not all(
+                str(splice_by_key.get(_event_occurrence_key(row), {}).get("in_memory_splice_status", ""))
+                == "selected_shape_removed_without_other_coarse_delta_changes"
+                for row in rows
+            ):
+                continue
+            route_families = sorted({event_route_family(str(row.get("normalized_path", ""))) for row in rows if event_route_family(str(row.get("normalized_path", "")))})
+            discriminator = route_families[0] if len(route_families) == 1 else archetype_id[:10]
+            profile_id = _event_prototype_profile_id("repeated_context", shape_id, discriminator)
+            if profile_id in used_profile_ids:
+                continue
+            used_profile_ids.add(profile_id)
+            profile_specs.append({
+                "profile_id": profile_id,
+                "profile_classification": "high_confidence_repeated_exact_context_local_prototype",
+                "prototype_confidence": "high",
+                "shape_id": shape_id,
+                "group_id": archetype_id,
+                "group_kind": "exact_context_archetype",
+                "occurrences": sorted(rows, key=lambda row: _event_path_sort_key(str(row.get("normalized_path", "")))),
+                "review_status": "local_test_candidate_not_installable_restoration_approval",
+            })
+
+    # Experimental promotion: a route-sequence shape can be built only when
+    # every occurrence passed the isolated inverse-splice test.  Contexts may
+    # differ, therefore each route is a separate lower-confidence profile.
+    for shape_id, focused in focused_by_shape.items():
+        reasons = set(_split_ids(focused.get("selection_reasons", "")))
+        if "route_sequence_enriched_common_shape" not in reasons:
+            continue
+        total = _parse_int_cell(focused.get("total_occurrence_count"))
+        isolated = _parse_int_cell(focused.get("isolated_splice_success_count"))
+        if total < minimum_route_files or isolated != total:
+            continue
+        groups: defaultdict[str, list[dict[str, Any]]] = defaultdict(list)
+        for row in occurrences_by_shape.get(shape_id, []):
+            route = event_route_family(str(row.get("normalized_path", "")))
+            if route:
+                groups[route].append(row)
+        for route, rows in groups.items():
+            if len(rows) < minimum_route_files:
+                continue
+            if not all(
+                str(splice_by_key.get(_event_occurrence_key(row), {}).get("in_memory_splice_status", ""))
+                == "selected_shape_removed_without_other_coarse_delta_changes"
+                for row in rows
+            ):
+                continue
+            profile_id = _event_prototype_profile_id("route_sequence", shape_id, route)
+            if profile_id in used_profile_ids:
+                continue
+            used_profile_ids.add(profile_id)
+            profile_specs.append({
+                "profile_id": profile_id,
+                "profile_classification": "experimental_route_sequence_local_prototype",
+                "prototype_confidence": "experimental",
+                "shape_id": shape_id,
+                "group_id": route,
+                "group_kind": "route_family",
+                "occurrences": sorted(rows, key=lambda row: _event_path_sort_key(str(row.get("normalized_path", "")))),
+                "review_status": "local_experimental_test_candidate_contexts_not_semantically_decoded",
+            })
+
+    reports = load_report_jsons(report_root, "differences")
+    event_report = next((row for row in reports if str(row.get("source_archive_group", "")) == "br1_events"), None)
+    if event_report is None:
+        raise RestorationError("Missing br1_events difference report")
+    entry_by_path = {
+        str(row.get("normalized_path", "")): row
+        for row in event_report.get("entries", [])
+        if row.get("scope_status") == "in_scope" and row.get("source") and row.get("target")
+    }
+
+    prototype_root = workspace_root / EVENT_PROTOTYPE_BUILD_DIR
+    require_within(prototype_root, workspace_root, "Event prototype root")
+    if prototype_root.exists():
+        shutil.rmtree(prototype_root)
+    prototype_root.mkdir(parents=True, exist_ok=True)
+
+    profile_rows: list[dict[str, Any]] = []
+    file_rows: list[dict[str, Any]] = []
+    validation_rows: list[dict[str, Any]] = []
+    skipped_rows: list[dict[str, Any]] = []
+    successful_profiles = 0
+
+    for spec in profile_specs:
+        profile_id = str(spec["profile_id"])
+        shape_id = str(spec["shape_id"])
+        selected = selected_by_shape.get(shape_id, {})
+        profile_dir = prototype_root / profile_id
+        payload_root = profile_dir / "payload"
+        manifest_files: list[dict[str, Any]] = []
+        profile_file_rows: list[dict[str, Any]] = []
+        profile_validation_rows: list[dict[str, Any]] = []
+        profile_failed = False
+
+        for occurrence in spec["occurrences"]:
+            normalized_path = str(occurrence.get("normalized_path", ""))
+            occurrence_index = _parse_int_cell(occurrence.get("occurrence_index"))
+            entry = entry_by_path.get(normalized_path)
+            if entry is None:
+                skipped_rows.append({"profile_id": profile_id, "normalized_path": normalized_path, "shape_id": shape_id, "reason": "difference_entry_missing"})
+                profile_failed = True
+                continue
+            source_ref = entry.get("source") or {}
+            target_ref = entry.get("target") or {}
+            source_path = inventory_workspace_file(workspace_root, "source", "br1_events", str(source_ref.get("archive", "")), str(source_ref.get("path", "")))
+            target_path = inventory_workspace_file(workspace_root, "target", "br1_events", str(target_ref.get("archive", "")), str(target_ref.get("path", "")))
+            if not source_path.is_file() or not target_path.is_file():
+                skipped_rows.append({"profile_id": profile_id, "normalized_path": normalized_path, "shape_id": shape_id, "reason": "workspace_event_payload_missing"})
+                profile_failed = True
+                continue
+            if source_path.stat().st_size > maximum_event_bytes or target_path.stat().st_size > maximum_event_bytes:
+                skipped_rows.append({"profile_id": profile_id, "normalized_path": normalized_path, "shape_id": shape_id, "reason": "maximum_event_bytes_exceeded"})
+                profile_failed = True
+                continue
+            source_payload = source_path.read_bytes()
+            target_payload = target_path.read_bytes()
+            if source_ref.get("sha256") and hashlib.sha256(source_payload).hexdigest() != str(source_ref.get("sha256")):
+                skipped_rows.append({"profile_id": profile_id, "normalized_path": normalized_path, "shape_id": shape_id, "reason": "source_payload_sha256_mismatch"})
+                profile_failed = True
+                continue
+            if target_ref.get("sha256") and hashlib.sha256(target_payload).hexdigest() != str(target_ref.get("sha256")):
+                skipped_rows.append({"profile_id": profile_id, "normalized_path": normalized_path, "shape_id": shape_id, "reason": "target_payload_sha256_mismatch"})
+                profile_failed = True
+                continue
+            source_header = parse_ebd_header_schema(source_payload)
+            target_header = parse_ebd_header_schema(target_payload)
+            source_profile = profile_ebd_post_header_words(source_payload, int(source_header.get("header_end", 0)), maximum_words=max(1, len(source_payload) // 4 + 8))
+            target_profile = profile_ebd_post_header_words(target_payload, int(target_header.get("header_end", 0)), maximum_words=max(1, len(target_payload) // 4 + 8))
+            matches = [delta for delta in compare_ebd_tag_atoms(source_profile["atoms"], target_profile["atoms"]) if event_residual_delta_shape_id(delta) == shape_id]
+            if occurrence_index >= len(matches):
+                skipped_rows.append({"profile_id": profile_id, "normalized_path": normalized_path, "shape_id": shape_id, "reason": "reported_delta_occurrence_not_reproduced"})
+                profile_failed = True
+                continue
+            candidate_payload, metadata = construct_inverse_event_delta_candidate(
+                source_payload=source_payload, target_payload=target_payload,
+                source_header=source_header, target_header=target_header,
+                source_profile=source_profile, target_profile=target_profile,
+                delta=matches[occurrence_index], shape_id=shape_id,
+            )
+            stage23_row = splice_by_key.get((normalized_path, shape_id, occurrence_index), {})
+            stage23_hash = str(stage23_row.get("candidate_sha256", ""))
+            checks = {
+                "stage23_candidate_sha256_matches": bool(stage23_hash) and metadata["candidate_sha256"] == stage23_hash,
+                "target_header_preserved": bool(metadata["target_header_preserved"]),
+                "target_prefix_preserved": bool(metadata["target_prefix_preserved"]),
+                "target_suffix_preserved": bool(metadata["target_suffix_preserved"]),
+                "target_trailing_bytes_preserved": bool(metadata["target_trailing_bytes_preserved"]),
+                "target_roundtrip_exact": bool(metadata["target_roundtrip_exact"]),
+                "candidate_header_valid": metadata["candidate_header_classification"] == "observed_ebd_name_description_header",
+                "selected_shape_removed": _parse_int_cell(metadata["selected_shape_count_before"]) > _parse_int_cell(metadata["selected_shape_count_after"]),
+                "no_new_coarse_shapes": _parse_int_cell(metadata["introduced_coarse_shape_count"]) == 0,
+                "no_other_coarse_shapes_removed": _parse_int_cell(metadata["removed_other_coarse_shape_count"]) == 0,
+            }
+            validation_status = "passed" if all(checks.values()) else "failed"
+            if validation_status != "passed":
+                profile_failed = True
+            local_rel = PurePosixPath("payload") / PurePosixPath(normalized_path)
+            output_path = profile_dir / Path(local_rel.as_posix())
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            output_path.write_bytes(candidate_payload)
+            file_row = {
+                "profile_id": profile_id,
+                "profile_classification": spec["profile_classification"],
+                "prototype_confidence": spec["prototype_confidence"],
+                "normalized_path": normalized_path,
+                "shape_id": shape_id,
+                "occurrence_index": occurrence_index,
+                "cue_positive_occurrence": occurrence.get("cue_positive_occurrence", ""),
+                "cue_domains": occurrence.get("cue_domains", ""),
+                "pair_context_archetype_id": occurrence.get("pair_context_archetype_id", ""),
+                "source_archive": source_ref.get("archive", ""),
+                "source_member_path": source_ref.get("path", ""),
+                "target_archive": target_ref.get("archive", ""),
+                "target_member_path": target_ref.get("path", ""),
+                "source_sha256": hashlib.sha256(source_payload).hexdigest(),
+                "target_sha256": hashlib.sha256(target_payload).hexdigest(),
+                "candidate_sha256": metadata["candidate_sha256"],
+                "source_size": len(source_payload),
+                "target_size": len(target_payload),
+                "candidate_size": len(candidate_payload),
+                "candidate_size_delta": metadata["candidate_size_delta"],
+                "source_span_start_word_index": metadata["source_span_start_word_index"],
+                "source_span_end_word_index": metadata["source_span_end_word_index"],
+                "target_span_start_word_index": metadata["target_span_start_word_index"],
+                "target_span_end_word_index": metadata["target_span_end_word_index"],
+                "source_span_word_count": metadata["source_span_word_count"],
+                "target_span_word_count": metadata["target_span_word_count"],
+                "source_span_sha256": metadata["source_span_sha256"],
+                "target_span_sha256": metadata["target_span_sha256"],
+                "local_relative_path": local_rel.as_posix(),
+                "validation_status": validation_status,
+                "review_status": spec["review_status"],
+            }
+            profile_file_rows.append(file_row)
+            for check_name, passed in checks.items():
+                profile_validation_rows.append({
+                    "profile_id": profile_id,
+                    "normalized_path": normalized_path,
+                    "shape_id": shape_id,
+                    "check_name": check_name,
+                    "passed": passed,
+                    "review_status": "prototype_validation_metadata_only",
+                })
+            manifest_files.append({
+                "normalized_path": normalized_path,
+                "target_archive": target_ref.get("archive", ""),
+                "target_member_path": target_ref.get("path", ""),
+                "target_sha256": hashlib.sha256(target_payload).hexdigest(),
+                "candidate_sha256": metadata["candidate_sha256"],
+                "candidate_relative_path": local_rel.as_posix(),
+                "shape_id": shape_id,
+                "occurrence_index": occurrence_index,
+                "validation_status": validation_status,
+            })
+
+        if profile_failed or not manifest_files or any(row["validation_status"] != "passed" for row in profile_file_rows):
+            if profile_dir.exists():
+                shutil.rmtree(profile_dir)
+            skipped_rows.append({"profile_id": profile_id, "normalized_path": "", "shape_id": shape_id, "reason": "profile_removed_after_validation_failure"})
+            continue
+        profile_manifest = {
+            "type": "br_quartet_restoration_local_event_prototype",
+            "format_version": FORMAT_VERSION,
+            "tool_version": TOOL_VERSION,
+            "profile_id": profile_id,
+            "profile_classification": spec["profile_classification"],
+            "prototype_confidence": spec["prototype_confidence"],
+            "shape_id": shape_id,
+            "group_kind": spec["group_kind"],
+            "group_id": spec["group_id"],
+            "selection_reasons": selected.get("selection_reasons", ""),
+            "sequence_tag": selected.get("sequence_tag", ""),
+            "source_tag_values": selected.get("source_tag_values", ""),
+            "target_tag_values": selected.get("target_tag_values", ""),
+            "cue_domains": selected.get("cue_domains", ""),
+            "installed_game_files_modified": False,
+            "installable_package_generated": False,
+            "files": manifest_files,
+        }
+        atomic_json(profile_dir / "PROTOTYPE.json", profile_manifest)
+        file_rows.extend(profile_file_rows)
+        validation_rows.extend(profile_validation_rows)
+        cue_count = sum(str(row.get("cue_positive_occurrence", "")).casefold() == "true" for row in spec["occurrences"])
+        routes = sorted({event_route_family(str(row.get("normalized_path", ""))) for row in spec["occurrences"] if event_route_family(str(row.get("normalized_path", "")))})
+        contexts = sorted({str(row.get("pair_context_archetype_id", "")) for row in spec["occurrences"] if row.get("pair_context_archetype_id")})
+        profile_rows.append({
+            "profile_id": profile_id,
+            "profile_classification": spec["profile_classification"],
+            "prototype_confidence": spec["prototype_confidence"],
+            "shape_id": shape_id,
+            "group_kind": spec["group_kind"],
+            "group_id": spec["group_id"],
+            "selection_reasons": selected.get("selection_reasons", ""),
+            "sequence_tag": selected.get("sequence_tag", ""),
+            "source_tag_values": selected.get("source_tag_values", ""),
+            "target_tag_values": selected.get("target_tag_values", ""),
+            "cue_domains": selected.get("cue_domains", ""),
+            "file_count": len(manifest_files),
+            "cue_file_count": cue_count,
+            "noncue_file_count": len(manifest_files) - cue_count,
+            "exact_context_archetype_count": len(contexts),
+            "route_family_count": len(routes),
+            "route_families": ";".join(routes),
+            "local_profile_root": str(profile_dir.relative_to(project_root)) if profile_dir.is_relative_to(project_root) else str(profile_dir),
+            "validation_status": "passed",
+            "review_status": spec["review_status"],
+        })
+        successful_profiles += 1
+
+    profile_rows.sort(key=lambda row: (0 if row["prototype_confidence"] == "high" else 1, str(row["profile_id"])))
+    file_rows.sort(key=lambda row: (str(row["profile_id"]), _event_path_sort_key(str(row["normalized_path"]))))
+    validation_rows.sort(key=lambda row: (str(row["profile_id"]), _event_path_sort_key(str(row["normalized_path"])), str(row["check_name"])))
+    skipped_rows.sort(key=lambda row: (str(row.get("profile_id", "")), _event_path_sort_key(str(row.get("normalized_path", ""))), str(row.get("reason", ""))))
+
+    evidence_root = report_root / EVENT_PROTOTYPE_EVIDENCE_DIR
+    if evidence_root.exists():
+        shutil.rmtree(evidence_root)
+    evidence_root.mkdir(parents=True, exist_ok=True)
+    write_tsv(evidence_root / "EVENT_PROTOTYPE_PROFILES.tsv", [
+        "profile_id","profile_classification","prototype_confidence","shape_id","group_kind","group_id",
+        "selection_reasons","sequence_tag","source_tag_values","target_tag_values","cue_domains",
+        "file_count","cue_file_count","noncue_file_count","exact_context_archetype_count",
+        "route_family_count","route_families","local_profile_root","validation_status","review_status",
+    ], profile_rows)
+    write_tsv(evidence_root / "EVENT_PROTOTYPE_FILES.tsv", [
+        "profile_id","profile_classification","prototype_confidence","normalized_path","shape_id","occurrence_index",
+        "cue_positive_occurrence","cue_domains","pair_context_archetype_id","source_archive","source_member_path",
+        "target_archive","target_member_path","source_sha256","target_sha256","candidate_sha256",
+        "source_size","target_size","candidate_size","candidate_size_delta",
+        "source_span_start_word_index","source_span_end_word_index","target_span_start_word_index","target_span_end_word_index",
+        "source_span_word_count","target_span_word_count","source_span_sha256","target_span_sha256",
+        "local_relative_path","validation_status","review_status",
+    ], file_rows)
+    write_tsv(evidence_root / "EVENT_PROTOTYPE_VALIDATION.tsv", [
+        "profile_id","normalized_path","shape_id","check_name","passed","review_status",
+    ], validation_rows)
+    write_tsv(evidence_root / "EVENT_PROTOTYPE_BUILD_SKIPPED.tsv", [
+        "profile_id","normalized_path","shape_id","reason",
+    ], skipped_rows)
+
+    validation_failures = sum(str(row.get("passed", "")).casefold() != "true" for row in validation_rows)
+    summary = {
+        "type": "br_quartet_restoration_event_prototype_evidence_summary",
+        "format_version": FORMAT_VERSION,
+        "tool_version": TOOL_VERSION,
+        "source_event_delta_context_tool_version": context_summary.get("tool_version"),
+        "status": "separate_local_event_prototype_profiles_built_and_roundtrip_validated_not_installed",
+        "promoted_profile_rows": len(profile_rows),
+        "high_confidence_profile_rows": sum(row["prototype_confidence"] == "high" for row in profile_rows),
+        "experimental_profile_rows": sum(row["prototype_confidence"] == "experimental" for row in profile_rows),
+        "prototype_file_rows": len(file_rows),
+        "prototype_validation_rows": len(validation_rows),
+        "validation_failures": validation_failures,
+        "skipped_rows": len(skipped_rows),
+        "local_prototype_root": str(prototype_root.relative_to(project_root)) if prototype_root.is_relative_to(project_root) else str(prototype_root),
+        "parameters": {
+            "maximum_event_bytes": maximum_event_bytes,
+            "minimum_repeated_files": minimum_repeated_files,
+            "minimum_route_files": minimum_route_files,
+        },
+        "policy": {
+            "installed_games_modified": False,
+            "installable_event_package_generated": False,
+            "candidate_ebd_payloads_written_only_under_local_workspace": True,
+            "candidate_ebd_payloads_exported_in_report": False,
+            "dialogue_or_localized_text_exported": False,
+            "repeated_exact_context_and_route_sequence_profiles_merged": False,
+            "prototype_profile_treated_as_censorship_proof": False,
+            "single_scene_steam_godray_costume_or_water_candidates_promoted": False,
+            "legacy_dlc_in_scope": False,
+            "translation_edits_in_scope": False,
+        },
+        "next_action": "Upload the metadata report. If all validations pass, build a separate checksum-gated repack/test harness for each prototype profile; do not copy EBD files manually into game archives.",
+    }
+    atomic_json(evidence_root / "SUMMARY.json", summary)
+    output = report_root / EVENT_PROTOTYPE_REPORT_NAME
+    make_report_archive(evidence_root, output)
+    return output, summary
+
+
+def cmd_build_event_prototypes(args: argparse.Namespace) -> int:
+    project_root = Path(args.project_root).expanduser().resolve()
+    if not project_root.is_dir():
+        raise RestorationError(f"Project root does not exist: {project_root}")
+    default_workspace = project_root / ".local/build/quartet_restoration"
+    default_reports = project_root / ".local/reports/quartet_restoration"
+    workspace_root = Path(args.workspace_root).expanduser().resolve() if args.workspace_root else default_workspace
+    report_root = Path(args.report_root).expanduser().resolve() if args.report_root else default_reports
+    require_within(workspace_root, default_workspace, "Workspace")
+    require_within(report_root, default_reports, "Report root")
+    output, summary = build_event_prototypes(
+        project_root=project_root,
+        workspace_root=workspace_root,
+        report_root=report_root,
+        maximum_event_bytes=args.maximum_event_bytes,
+        minimum_repeated_files=args.minimum_repeated_files,
+        minimum_route_files=args.minimum_route_files,
+    )
+    print(f"Local event prototype profiles built: {summary['promoted_profile_rows']}")
+    print(f"Local candidate EBD files: {summary['prototype_file_rows']}")
+    print(f"Validation failures: {summary['validation_failures']}")
+    print(f"Metadata-only report: {output}")
+    print(f"Local prototypes: {summary['local_prototype_root']}")
+    print("Installed game files were not modified.")
+    return 0
+
+
+
+# Stage 25: build profile-specific local PACK11 test archives from the currently
+# installed Quartet archive while preserving every non-selected member.  This
+# stage remains read-only with respect to the installed game.  It creates a
+# checksum-gated local baseline copy, one separately repacked archive per event
+# prototype profile, and metadata-only evidence.  It deliberately does not
+# generate an activation command because installed-game writes belong to the
+# unified patcher/core transaction layer.
+
+
+def _run_gust_pak(
+    *, gust_pak: Path, argument_name: str, cwd: Path, log_path: Path,
+    timeout_seconds: int,
+) -> None:
+    if not gust_pak.is_file() or not os.access(gust_pak, os.X_OK):
+        raise RestorationError(f"gust_pak is missing or not executable: {gust_pak}")
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    with log_path.open("wb") as log_handle:
+        try:
+            result = subprocess.run(
+                [str(gust_pak), argument_name], cwd=cwd,
+                stdin=subprocess.DEVNULL, stdout=log_handle,
+                stderr=subprocess.STDOUT, timeout=timeout_seconds, check=False,
+            )
+        except subprocess.TimeoutExpired as exc:
+            raise RestorationError(
+                f"gust_pak timed out after {timeout_seconds}s for {argument_name}"
+            ) from exc
+    if result.returncode != 0:
+        excerpt = log_path.read_text(encoding="utf-8", errors="replace")[:4000]
+        raise RestorationError(
+            f"gust_pak failed for {argument_name} (exit {result.returncode})\n{excerpt}"
+        )
+
+
+def _normalize_gust_manifest_text(text: str) -> tuple[str, list[str]]:
+    """Convert the limited JSON extensions emitted/accepted by gust_pak.
+
+    Some gust_pak builds write numeric header fields as C-style hexadecimal
+    literals (for example ``0x00020000``).  The upstream parser also accepts
+    comments.  Python's strict json module accepts neither, so normalize only
+    these well-bounded constructs outside strings.  The source manifest itself
+    is never rewritten; gust_pak receives the original file for repacking.
+    """
+    modes: set[str] = set()
+    output: list[str] = []
+    index = 0
+    in_string = False
+    escaped = False
+    length = len(text)
+    while index < length:
+        char = text[index]
+        if in_string:
+            output.append(char)
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == '"':
+                in_string = False
+            index += 1
+            continue
+        if char == '"':
+            in_string = True
+            output.append(char)
+            index += 1
+            continue
+        if char == "/" and index + 1 < length and text[index + 1] == "/":
+            modes.add("comments")
+            output.extend((" ", " "))
+            index += 2
+            while index < length and text[index] not in "\r\n":
+                output.append(" ")
+                index += 1
+            continue
+        if char == "/" and index + 1 < length and text[index + 1] == "*":
+            modes.add("comments")
+            output.extend((" ", " "))
+            index += 2
+            terminated = False
+            while index < length:
+                if index + 1 < length and text[index] == "*" and text[index + 1] == "/":
+                    output.extend((" ", " "))
+                    index += 2
+                    terminated = True
+                    break
+                output.append(text[index] if text[index] in "\r\n" else " ")
+                index += 1
+            if not terminated:
+                raise RestorationError("Unterminated block comment in gust_pak manifest")
+            continue
+        if char == "0" and index + 2 < length and text[index + 1] in "xX" and text[index + 2] in "0123456789abcdefABCDEF":
+            previous = text[index - 1] if index else ""
+            if not (previous.isalnum() or previous in "_.$"):
+                end = index + 2
+                while end < length and text[end] in "0123456789abcdefABCDEF":
+                    end += 1
+                following = text[end] if end < length else ""
+                if not (following.isalnum() or following in "_.$"):
+                    modes.add("hex_numbers")
+                    output.append(str(int(text[index:end], 16)))
+                    index = end
+                    continue
+        output.append(char)
+        index += 1
+
+    normalized = "".join(output)
+    # A few older/forked builds also leave a trailing comma.  Remove it only
+    # when it occurs outside strings directly before an object/array terminator.
+    output = []
+    index = 0
+    in_string = False
+    escaped = False
+    while index < len(normalized):
+        char = normalized[index]
+        if in_string:
+            output.append(char)
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == '"':
+                in_string = False
+            index += 1
+            continue
+        if char == '"':
+            in_string = True
+            output.append(char)
+            index += 1
+            continue
+        if char == ",":
+            lookahead = index + 1
+            while lookahead < len(normalized) and normalized[lookahead].isspace():
+                lookahead += 1
+            if lookahead < len(normalized) and normalized[lookahead] in "]}":
+                modes.add("trailing_commas")
+                index += 1
+                continue
+        output.append(char)
+        index += 1
+    return "".join(output), sorted(modes)
+
+
+def _load_gust_pak_manifest(path: Path) -> dict[str, Any]:
+    try:
+        text = path.read_text(encoding="utf-8-sig")
+    except FileNotFoundError as exc:
+        raise RestorationError(f"Missing gust_pak manifest: {path}") from exc
+    parse_mode = "strict_json"
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError as strict_exc:
+        try:
+            normalized, extensions = _normalize_gust_manifest_text(text)
+            data = json.loads(normalized)
+            parse_mode = "gust_json_compatible:" + ("+".join(extensions) if extensions else "normalized")
+        except (json.JSONDecodeError, RestorationError, ValueError) as compatible_exc:
+            raise RestorationError(
+                f"Invalid gust_pak manifest {path}: strict JSON failed ({strict_exc}); "
+                f"compatible parser failed ({compatible_exc})"
+            ) from compatible_exc
+    if not isinstance(data, dict):
+        raise RestorationError(f"Invalid gust_pak manifest object: {path}")
+    output_name = str(data.get("name", ""))
+    if not output_name or Path(output_name).name != output_name or "/" in output_name or "\\" in output_name:
+        raise RestorationError(f"Unsafe gust_pak output name in {path}: {output_name!r}")
+    files = data.get("files")
+    if not isinstance(files, list):
+        raise RestorationError(f"Missing gust_pak files array: {path}")
+    if _parse_int_cell(data.get("nb_files")) != len(files):
+        raise RestorationError(f"gust_pak manifest file count mismatch: {path}")
+    names: set[str] = set()
+    normalized_files: list[dict[str, Any]] = []
+    for index, row in enumerate(files):
+        if not isinstance(row, dict):
+            raise RestorationError(f"Invalid gust_pak file row {index}: {path}")
+        name = safe_posix_path(str(row.get("name", "")))
+        key = name.casefold()
+        if key in names:
+            raise RestorationError(f"Duplicate gust_pak member name: {name}")
+        names.add(key)
+        normalized_files.append({**row, "safe_name": name})
+    return {**data, "safe_files": normalized_files, "safe_output_name": output_name, "safe_parse_mode": parse_mode}
+
+
+def _gust_manifest_semantic_signature(data: dict[str, Any]) -> dict[str, Any]:
+    """Return only stable archive semantics used as a repack gate.
+
+    ``gust_pak`` manifests also contain derived serialization metadata such as
+    per-member ``key`` values, ``master_key``, ``header_size`` and sometimes an
+    ``extra`` field.  Those values may legitimately be regenerated when even a
+    single member payload changes, so comparing them byte-for-byte makes every
+    real repack fail despite a valid re-extraction.  They are reported
+    separately by :func:`_gust_manifest_metadata_differences` but are not part
+    of this compatibility gate.
+    """
+    top: dict[str, Any] = {}
+    if "name" in data:
+        top["name"] = str(data.get("name", ""))
+    for key in ("version", "flags", "nb_files"):
+        if key in data:
+            top[key] = _parse_int_cell(data.get(key))
+    for key in ("64-bit", "a22-extensions"):
+        if key in data:
+            top[key] = bool(data.get(key))
+    files: list[dict[str, Any]] = []
+    for row in data.get("safe_files", []):
+        files.append({
+            "name": row.get("safe_name", ""),
+            "flags": _parse_int_cell(row.get("flags")),
+        })
+    return {"top": top, "files": files}
+
+
+def _manifest_safe_display(value: Any, *, opaque: bool = False) -> tuple[str, str]:
+    if value is None:
+        return "", ""
+    serialized = json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    if opaque:
+        return "", sha256_text(serialized)
+    return serialized, sha256_text(serialized)
+
+
+def _gust_manifest_metadata_differences(
+    baseline: dict[str, Any],
+    verification: dict[str, Any],
+    *,
+    profile_id: str,
+    modified_member_keys: set[str],
+) -> list[dict[str, Any]]:
+    """Describe stable and derived manifest changes without exposing keys.
+
+    Stable fields affect the validation gate.  Derived fields are diagnostic
+    only because ``gust_pak`` may regenerate them from payload bytes or archive
+    layout.  Opaque key material is represented only by SHA-256 digests.
+    """
+    rows: list[dict[str, Any]] = []
+
+    def add(
+        *, scope: str, field: str, member_path: str, classification: str,
+        baseline_value: Any, verification_value: Any, opaque: bool,
+        gate_effect: str,
+    ) -> None:
+        if baseline_value == verification_value:
+            return
+        baseline_display, baseline_sha = _manifest_safe_display(baseline_value, opaque=opaque)
+        verification_display, verification_sha = _manifest_safe_display(verification_value, opaque=opaque)
+        rows.append({
+            "profile_id": profile_id,
+            "scope": scope,
+            "field": field,
+            "member_path": member_path,
+            "classification": classification,
+            "baseline_value": baseline_display,
+            "verification_value": verification_display,
+            "baseline_value_sha256": baseline_sha,
+            "verification_value_sha256": verification_sha,
+            "gate_effect": gate_effect,
+        })
+
+    stable_top_fields = ("name", "version", "flags", "nb_files", "64-bit", "a22-extensions")
+    derived_top_fields = ("header_size", "master_key")
+    for field in stable_top_fields:
+        baseline_value = baseline.get(field)
+        verification_value = verification.get(field)
+        if field in ("version", "flags", "nb_files"):
+            baseline_value = _parse_int_cell(baseline_value)
+            verification_value = _parse_int_cell(verification_value)
+        elif field in ("64-bit", "a22-extensions"):
+            baseline_value = bool(baseline_value)
+            verification_value = bool(verification_value)
+        add(
+            scope="archive", field=field, member_path="",
+            classification="stable_archive_semantic",
+            baseline_value=baseline_value, verification_value=verification_value,
+            opaque=False, gate_effect="validation_gate",
+        )
+    for field in derived_top_fields:
+        add(
+            scope="archive", field=field, member_path="",
+            classification="derived_archive_metadata",
+            baseline_value=baseline.get(field), verification_value=verification.get(field),
+            opaque=field == "master_key", gate_effect="diagnostic_only",
+        )
+
+    baseline_files = list(baseline.get("safe_files", []))
+    verification_files = list(verification.get("safe_files", []))
+    for index in range(max(len(baseline_files), len(verification_files))):
+        base = baseline_files[index] if index < len(baseline_files) else {}
+        verify = verification_files[index] if index < len(verification_files) else {}
+        base_name = str(base.get("safe_name", ""))
+        verify_name = str(verify.get("safe_name", ""))
+        member_path = base_name or verify_name
+        member_key = member_path.casefold()
+        add(
+            scope="member", field="name", member_path=member_path,
+            classification="stable_member_semantic",
+            baseline_value=base_name, verification_value=verify_name,
+            opaque=False, gate_effect="validation_gate",
+        )
+        add(
+            scope="member", field="flags", member_path=member_path,
+            classification="stable_member_semantic",
+            baseline_value=_parse_int_cell(base.get("flags")),
+            verification_value=_parse_int_cell(verify.get("flags")),
+            opaque=False, gate_effect="validation_gate",
+        )
+        role = "modified_member" if member_key in modified_member_keys else "unchanged_member"
+        add(
+            scope="member", field="key", member_path=member_path,
+            classification=f"derived_{role}_metadata",
+            baseline_value=base.get("key"), verification_value=verify.get("key"),
+            opaque=True, gate_effect="diagnostic_only",
+        )
+        add(
+            scope="member", field="extra", member_path=member_path,
+            classification=f"derived_{role}_metadata",
+            baseline_value=base.get("extra"), verification_value=verify.get("extra"),
+            opaque=False, gate_effect="diagnostic_only",
+        )
+    return rows
+
+
+def _extract_pak_for_repack_test(
+    *, archive: Path, destination: Path, gust_pak: Path,
+    timeout_seconds: int, log_name: str,
+) -> tuple[Path, dict[str, Any]]:
+    if destination.exists():
+        shutil.rmtree(destination)
+    destination.mkdir(parents=True, exist_ok=True)
+    linked = destination / archive.name
+    linked.symlink_to(archive)
+    try:
+        _run_gust_pak(
+            gust_pak=gust_pak, argument_name=archive.name, cwd=destination,
+            log_path=destination / log_name, timeout_seconds=timeout_seconds,
+        )
+    finally:
+        linked.unlink(missing_ok=True)
+    manifest_path = destination / f"{archive.stem}.json"
+    if not manifest_path.is_file():
+        raise RestorationError(f"gust_pak did not create expected manifest: {manifest_path}")
+    manifest = _load_gust_pak_manifest(manifest_path)
+    return manifest_path, manifest
+
+
+def _manifest_member_hashes(root: Path, manifest: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    result: dict[str, dict[str, Any]] = {}
+    for row in manifest.get("safe_files", []):
+        name = str(row["safe_name"])
+        path = root / Path(name)
+        require_within(path.resolve(), root.resolve(), "PAK member")
+        if not path.is_file():
+            raise RestorationError(f"Extracted PAK member is missing: {name}")
+        result[name.casefold()] = {
+            "name": name,
+            "size": path.stat().st_size,
+            "sha256": sha256_file(path),
+        }
+    return result
+
+
+def _remove_generated_repack_test_root(path: Path) -> None:
+    if not path.exists():
+        return
+    marker = path / "HARNESS.json"
+    if not marker.is_file():
+        raise RestorationError(f"Refusing to replace unmarked repack-test directory: {path}")
+    data = load_json(marker)
+    allowed = {
+        "br_quartet_restoration_local_event_repack_test_harness",
+        "br_quartet_restoration_local_g1s_repack_test_harness",
+        "br_quartet_restoration_local_single_scene_event_repack_test_harness",
+    }
+    if data.get("type") not in allowed:
+        raise RestorationError(f"Unknown repack-test marker: {marker}")
+    shutil.rmtree(path)
+
+
+def _copy_repack_input_tree(source: Path, destination: Path) -> None:
+    ignored = {EXTRACTION_MARKER, EXTRACTION_LOG, "baseline_extract.log", "verify_extract.log"}
+    def ignore(_directory: str, names: list[str]) -> set[str]:
+        return {name for name in names if name in ignored}
+    shutil.copytree(source, destination, ignore=ignore)
+
+
+def _profile_manifest_paths(prototype_root: Path) -> list[Path]:
+    if not prototype_root.is_dir():
+        raise RestorationError(f"Missing local event prototype root: {prototype_root}")
+    return sorted(prototype_root.glob("*/PROTOTYPE.json"), key=lambda path: path.parent.name.casefold())
+
+
+def prepare_event_repack_tests(
+    *, project_root: Path, quartet_root: Path, gust_pak: Path,
+    workspace_root: Path, report_root: Path, timeout_seconds: int,
+) -> tuple[Path, dict[str, Any]]:
+    prototype_summary = load_json(report_root / EVENT_PROTOTYPE_EVIDENCE_DIR / "SUMMARY.json")
+    if prototype_summary.get("type") != "br_quartet_restoration_event_prototype_evidence_summary":
+        raise RestorationError("Missing or invalid stage-24 event prototype evidence")
+    if _parse_int_cell(prototype_summary.get("validation_failures")) != 0:
+        raise RestorationError("Stage-24 event prototype evidence contains validation failures")
+
+    prototype_root = workspace_root / EVENT_PROTOTYPE_BUILD_DIR
+    profile_manifest_paths = _profile_manifest_paths(prototype_root)
+    if not profile_manifest_paths:
+        raise RestorationError("No local event prototype profiles are available")
+
+    archive_rows = read_tsv(report_root / "ARCHIVE_INVENTORY.tsv")
+    target_rows = [
+        row for row in archive_rows
+        if str(row.get("pair_id", "")) == "br1_events"
+        and str(row.get("side", "")) == "target"
+    ]
+    if len(target_rows) != 1:
+        raise RestorationError(f"Expected one target br1_events archive row, found {len(target_rows)}")
+    inventory_archive = target_rows[0]
+    archive_rel = safe_posix_path(str(inventory_archive.get("archive", "")))
+    installed_archive = (quartet_root / Path(archive_rel)).resolve()
+    require_within(installed_archive, quartet_root.resolve(), "Quartet archive")
+    if not installed_archive.is_file():
+        raise RestorationError(f"Quartet event archive not found: {installed_archive}")
+    current_archive_sha = sha256_file(installed_archive)
+    current_archive_size = installed_archive.stat().st_size
+    pristine_archive_sha = str(inventory_archive.get("sha256", ""))
+    pristine_archive_match = bool(pristine_archive_sha) and current_archive_sha == pristine_archive_sha
+    gust_pak_sha = sha256_file(gust_pak)
+
+    final_root = workspace_root / EVENT_REPACK_TEST_BUILD_DIR
+    require_within(final_root, workspace_root, "Event repack-test root")
+    final_root.parent.mkdir(parents=True, exist_ok=True)
+    temporary_root: Path | None = Path(tempfile.mkdtemp(prefix=".event_repack_tests.", dir=final_root.parent))
+    profile_rows: list[dict[str, Any]] = []
+    file_rows: list[dict[str, Any]] = []
+    validation_rows: list[dict[str, Any]] = []
+    manifest_difference_rows: list[dict[str, Any]] = []
+    skipped_rows: list[dict[str, Any]] = []
+    try:
+        assert temporary_root is not None
+        baseline_root = temporary_root / "baseline"
+        baseline_archive_copy = baseline_root / "Data" / installed_archive.name
+        baseline_archive_copy.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(installed_archive, baseline_archive_copy)
+        baseline_copy_sha = sha256_file(baseline_archive_copy)
+        if baseline_copy_sha != current_archive_sha:
+            raise RestorationError("Local rollback baseline copy checksum mismatch")
+        baseline_extract = baseline_root / "extracted"
+        baseline_manifest_path, baseline_manifest = _extract_pak_for_repack_test(
+            archive=installed_archive, destination=baseline_extract, gust_pak=gust_pak,
+            timeout_seconds=timeout_seconds, log_name="baseline_extract.log",
+        )
+        baseline_signature = _gust_manifest_semantic_signature(baseline_manifest)
+        baseline_members = _manifest_member_hashes(baseline_extract, baseline_manifest)
+        baseline_manifest_sha = sha256_file(baseline_manifest_path)
+
+        atomic_json(baseline_root / "BASELINE.json", {
+            "type": "br_quartet_restoration_local_event_repack_test_baseline",
+            "format_version": FORMAT_VERSION,
+            "tool_version": TOOL_VERSION,
+            "archive_relative_path": archive_rel,
+            "installed_archive_sha256": current_archive_sha,
+            "installed_archive_size": current_archive_size,
+            "inventory_pristine_archive_sha256": pristine_archive_sha,
+            "inventory_pristine_archive_match": pristine_archive_match,
+            "gust_pak_sha256": gust_pak_sha,
+            "manifest_sha256": baseline_manifest_sha,
+            "manifest_parse_mode": baseline_manifest.get("safe_parse_mode", "unknown"),
+            "member_count": len(baseline_members),
+            "local_rollback_archive": f"baseline/Data/{installed_archive.name}",
+            "installed_game_modified": False,
+        })
+
+        successful_profile_ids: list[str] = []
+        for prototype_manifest_path in profile_manifest_paths:
+            prototype = load_json(prototype_manifest_path)
+            profile_id = str(prototype.get("profile_id", prototype_manifest_path.parent.name))
+            profile_dir = temporary_root / "profiles" / profile_id
+            stage_dir = profile_dir / "staging"
+            verify_dir = profile_dir / "verify"
+            output_dir = profile_dir / "output" / "Data"
+            output_dir.mkdir(parents=True, exist_ok=True)
+            profile_checks: dict[str, bool] = {
+                "prototype_manifest_type_valid": prototype.get("type") == "br_quartet_restoration_local_event_prototype",
+                "prototype_installable_flag_false": prototype.get("installable_package_generated") is False,
+                "prototype_file_list_nonempty": isinstance(prototype.get("files"), list) and bool(prototype.get("files")),
+                "baseline_copy_sha256_matches": baseline_copy_sha == current_archive_sha,
+                "baseline_manifest_valid": bool(baseline_members),
+            }
+            profile_file_rows: list[dict[str, Any]] = []
+            profile_failed = not all(profile_checks.values())
+            target_member_keys: set[str] = set()
+            candidate_by_key: dict[str, dict[str, Any]] = {}
+            for item in prototype.get("files", []) if isinstance(prototype.get("files"), list) else []:
+                target_archive = safe_posix_path(str(item.get("target_archive", "")))
+                target_member = safe_posix_path(str(item.get("target_member_path", "")))
+                candidate_rel = safe_posix_path(str(item.get("candidate_relative_path", "")))
+                candidate_path = prototype_manifest_path.parent / Path(candidate_rel)
+                key = target_member.casefold()
+                row = {
+                    "profile_id": profile_id,
+                    "profile_classification": prototype.get("profile_classification", ""),
+                    "prototype_confidence": prototype.get("prototype_confidence", ""),
+                    "normalized_path": item.get("normalized_path", ""),
+                    "target_archive": target_archive,
+                    "target_member_path": target_member,
+                    "expected_target_sha256": item.get("target_sha256", ""),
+                    "current_member_sha256": "",
+                    "candidate_sha256": item.get("candidate_sha256", ""),
+                    "repacked_member_sha256": "",
+                    "validation_status": "failed",
+                    "review_status": "checksum_gated_local_repack_test_only",
+                }
+                if target_archive.casefold() != archive_rel.casefold():
+                    skipped_rows.append({"profile_id": profile_id, "target_member_path": target_member, "reason": "prototype_targets_unexpected_archive"})
+                    profile_failed = True
+                    profile_file_rows.append(row)
+                    continue
+                if key in target_member_keys:
+                    skipped_rows.append({"profile_id": profile_id, "target_member_path": target_member, "reason": "duplicate_target_member"})
+                    profile_failed = True
+                    profile_file_rows.append(row)
+                    continue
+                target_member_keys.add(key)
+                baseline_member = baseline_members.get(key)
+                if baseline_member is None:
+                    skipped_rows.append({"profile_id": profile_id, "target_member_path": target_member, "reason": "target_member_missing_from_current_archive"})
+                    profile_failed = True
+                    profile_file_rows.append(row)
+                    continue
+                row["current_member_sha256"] = baseline_member["sha256"]
+                if baseline_member["sha256"] != str(item.get("target_sha256", "")):
+                    skipped_rows.append({"profile_id": profile_id, "target_member_path": target_member, "reason": "current_target_member_sha256_mismatch"})
+                    profile_failed = True
+                    profile_file_rows.append(row)
+                    continue
+                if not candidate_path.is_file() or sha256_file(candidate_path) != str(item.get("candidate_sha256", "")):
+                    skipped_rows.append({"profile_id": profile_id, "target_member_path": target_member, "reason": "candidate_payload_missing_or_sha256_mismatch"})
+                    profile_failed = True
+                    profile_file_rows.append(row)
+                    continue
+                candidate_by_key[key] = {"path": candidate_path, "member": baseline_member, "row": row}
+                profile_file_rows.append(row)
+
+            if profile_failed:
+                skipped_rows.append({"profile_id": profile_id, "target_member_path": "", "reason": "profile_precondition_failure"})
+                file_rows.extend(profile_file_rows)
+                for check_name, passed in profile_checks.items():
+                    validation_rows.append({"profile_id": profile_id, "check_name": check_name, "passed": passed, "details": "precondition"})
+                continue
+
+            _copy_repack_input_tree(baseline_extract, stage_dir)
+            stage_manifest_path = stage_dir / baseline_manifest_path.name
+            stage_manifest = _load_gust_pak_manifest(stage_manifest_path)
+            for key, candidate in candidate_by_key.items():
+                target_path = stage_dir / Path(candidate["member"]["name"])
+                require_within(target_path.resolve(), stage_dir.resolve(), "Repack target member")
+                target_path.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(candidate["path"], target_path)
+
+            output_name = str(stage_manifest["safe_output_name"])
+            stage_output = stage_dir / output_name
+            stage_output.unlink(missing_ok=True)
+            _run_gust_pak(
+                gust_pak=gust_pak, argument_name=stage_manifest_path.name, cwd=stage_dir,
+                log_path=profile_dir / "repack.log", timeout_seconds=timeout_seconds,
+            )
+            if not stage_output.is_file():
+                raise RestorationError(f"gust_pak did not produce repacked archive for {profile_id}: {stage_output}")
+            local_output = output_dir / installed_archive.name
+            shutil.move(stage_output, local_output)
+            output_sha = sha256_file(local_output)
+            output_size = local_output.stat().st_size
+
+            verify_manifest_path, verify_manifest = _extract_pak_for_repack_test(
+                archive=local_output, destination=verify_dir, gust_pak=gust_pak,
+                timeout_seconds=timeout_seconds, log_name="verify_extract.log",
+            )
+            verify_signature = _gust_manifest_semantic_signature(verify_manifest)
+            profile_manifest_differences = _gust_manifest_metadata_differences(
+                baseline_manifest,
+                verify_manifest,
+                profile_id=profile_id,
+                modified_member_keys=target_member_keys,
+            )
+            manifest_difference_rows.extend(profile_manifest_differences)
+            stable_manifest_difference_count = sum(
+                row.get("gate_effect") == "validation_gate"
+                for row in profile_manifest_differences
+            )
+            derived_manifest_difference_count = sum(
+                row.get("gate_effect") == "diagnostic_only"
+                for row in profile_manifest_differences
+            )
+            verify_members = _manifest_member_hashes(verify_dir, verify_manifest)
+            unchanged_keys = set(baseline_members) - target_member_keys
+            unchanged_mismatches = [key for key in sorted(unchanged_keys) if verify_members.get(key, {}).get("sha256") != baseline_members[key]["sha256"]]
+            missing_or_extra = set(verify_members) ^ set(baseline_members)
+            modified_member_failures = 0
+            for row in profile_file_rows:
+                key = str(row["target_member_path"]).casefold()
+                actual = verify_members.get(key, {}).get("sha256", "")
+                row["repacked_member_sha256"] = actual
+                passed = actual == str(row["candidate_sha256"])
+                row["validation_status"] = "passed" if passed else "failed"
+                modified_member_failures += 0 if passed else 1
+
+            profile_checks.update({
+                "baseline_manifest_semantics_preserved": verify_signature == baseline_signature,
+                "member_name_set_preserved": not missing_or_extra,
+                "modified_members_match_candidates": modified_member_failures == 0,
+                "all_unchanged_members_preserved": not unchanged_mismatches,
+                "output_archive_differs_from_input": output_sha != current_archive_sha,
+                "verification_manifest_created": verify_manifest_path.is_file(),
+                "installed_archive_still_matches_initial_sha256": sha256_file(installed_archive) == current_archive_sha,
+            })
+            validation_status = "passed" if all(profile_checks.values()) else "failed"
+            for check_name, passed in profile_checks.items():
+                details = ""
+                if check_name == "baseline_manifest_semantics_preserved":
+                    details = (
+                        f"stable_differences={stable_manifest_difference_count};"
+                        f"derived_differences={derived_manifest_difference_count}"
+                    )
+                elif check_name == "all_unchanged_members_preserved":
+                    details = f"checked={len(unchanged_keys)};mismatches={len(unchanged_mismatches)}"
+                elif check_name == "member_name_set_preserved":
+                    details = f"set_delta={len(missing_or_extra)}"
+                validation_rows.append({"profile_id": profile_id, "check_name": check_name, "passed": passed, "details": details})
+            file_rows.extend(profile_file_rows)
+            if validation_status != "passed":
+                local_output.unlink(missing_ok=True)
+                skipped_rows.append({"profile_id": profile_id, "target_member_path": "", "reason": "profile_repack_validation_failure"})
+                continue
+
+            atomic_json(profile_dir / "PROFILE.json", {
+                "type": "br_quartet_restoration_local_event_repack_test_profile",
+                "format_version": FORMAT_VERSION,
+                "tool_version": TOOL_VERSION,
+                "profile_id": profile_id,
+                "profile_classification": prototype.get("profile_classification", ""),
+                "prototype_confidence": prototype.get("prototype_confidence", ""),
+                "input_archive_relative_path": archive_rel,
+                "input_archive_sha256": current_archive_sha,
+                "input_archive_size": current_archive_size,
+                "output_archive_relative_path": f"profiles/{profile_id}/output/Data/{installed_archive.name}",
+                "output_archive_sha256": output_sha,
+                "output_archive_size": output_size,
+                "rollback_archive_relative_path": f"baseline/Data/{installed_archive.name}",
+                "rollback_archive_sha256": baseline_copy_sha,
+                "gust_pak_sha256": gust_pak_sha,
+                "baseline_manifest_parse_mode": baseline_manifest.get("safe_parse_mode", "unknown"),
+                "verification_manifest_parse_mode": verify_manifest.get("safe_parse_mode", "unknown"),
+                "replaced_member_count": len(target_member_keys),
+                "unchanged_member_count_verified": len(unchanged_keys),
+                "activation_supported": False,
+                "installed_game_modified": False,
+                "files": [
+                    {
+                        "target_member_path": row["target_member_path"],
+                        "target_sha256": row["current_member_sha256"],
+                        "candidate_sha256": row["candidate_sha256"],
+                    }
+                    for row in profile_file_rows
+                ],
+            })
+            profile_rows.append({
+                "profile_id": profile_id,
+                "profile_classification": prototype.get("profile_classification", ""),
+                "prototype_confidence": prototype.get("prototype_confidence", ""),
+                "input_archive_relative_path": archive_rel,
+                "input_archive_sha256": current_archive_sha,
+                "input_archive_size": current_archive_size,
+                "inventory_pristine_archive_match": pristine_archive_match,
+                "baseline_manifest_parse_mode": baseline_manifest.get("safe_parse_mode", "unknown"),
+                "verification_manifest_parse_mode": verify_manifest.get("safe_parse_mode", "unknown"),
+                "output_archive_sha256": output_sha,
+                "output_archive_size": output_size,
+                "replaced_member_count": len(target_member_keys),
+                "unchanged_member_count_verified": len(unchanged_keys),
+                "local_output_archive": str((final_root / "profiles" / profile_id / "output" / "Data" / installed_archive.name).relative_to(project_root)),
+                "local_rollback_archive": str((final_root / "baseline" / "Data" / installed_archive.name).relative_to(project_root)),
+                "validation_status": validation_status,
+                "activation_status": "not_generated_requires_unified_patcher_core_transaction",
+            })
+            successful_profile_ids.append(profile_id)
+            shutil.rmtree(stage_dir, ignore_errors=True)
+            shutil.rmtree(verify_dir, ignore_errors=True)
+
+        harness_marker = {
+            "type": "br_quartet_restoration_local_event_repack_test_harness",
+            "format_version": FORMAT_VERSION,
+            "tool_version": TOOL_VERSION,
+            "source_event_prototype_tool_version": prototype_summary.get("tool_version"),
+            "input_archive_relative_path": archive_rel,
+            "input_archive_sha256": current_archive_sha,
+            "input_archive_size": current_archive_size,
+            "inventory_pristine_archive_sha256": pristine_archive_sha,
+            "inventory_pristine_archive_match": pristine_archive_match,
+            "gust_pak_sha256": gust_pak_sha,
+            "baseline_member_count": len(baseline_members),
+            "baseline_manifest_parse_mode": baseline_manifest.get("safe_parse_mode", "unknown"),
+            "successful_profile_ids": successful_profile_ids,
+            "installed_game_modified": False,
+            "activation_supported": False,
+        }
+        atomic_json(temporary_root / EVENT_REPACK_TEST_MARKER, harness_marker)
+        shutil.rmtree(baseline_extract, ignore_errors=True)
+        _remove_generated_repack_test_root(final_root)
+        os.replace(temporary_root, final_root)
+        temporary_root = None
+    finally:
+        if temporary_root is not None and temporary_root.exists():
+            shutil.rmtree(temporary_root, ignore_errors=True)
+
+    profile_rows.sort(key=lambda row: (0 if row.get("prototype_confidence") == "high" else 1, str(row.get("profile_id", ""))))
+    file_rows.sort(key=lambda row: (str(row.get("profile_id", "")), str(row.get("target_member_path", "")).casefold()))
+    validation_rows.sort(key=lambda row: (str(row.get("profile_id", "")), str(row.get("check_name", ""))))
+    manifest_difference_rows.sort(key=lambda row: (
+        str(row.get("profile_id", "")),
+        0 if row.get("gate_effect") == "validation_gate" else 1,
+        str(row.get("scope", "")),
+        str(row.get("member_path", "")).casefold(),
+        str(row.get("field", "")),
+    ))
+    skipped_rows.sort(key=lambda row: (str(row.get("profile_id", "")), str(row.get("target_member_path", "")).casefold(), str(row.get("reason", ""))))
+
+    evidence_root = report_root / EVENT_REPACK_TEST_EVIDENCE_DIR
+    if evidence_root.exists():
+        shutil.rmtree(evidence_root)
+    evidence_root.mkdir(parents=True, exist_ok=True)
+    write_tsv(evidence_root / "EVENT_REPACK_TEST_PROFILES.tsv", [
+        "profile_id","profile_classification","prototype_confidence",
+        "input_archive_relative_path","input_archive_sha256","input_archive_size",
+        "inventory_pristine_archive_match","baseline_manifest_parse_mode","verification_manifest_parse_mode",
+        "output_archive_sha256","output_archive_size","replaced_member_count","unchanged_member_count_verified","local_output_archive",
+        "local_rollback_archive","validation_status","activation_status",
+    ], profile_rows)
+    write_tsv(evidence_root / "EVENT_REPACK_TEST_FILES.tsv", [
+        "profile_id","profile_classification","prototype_confidence","normalized_path",
+        "target_archive","target_member_path","expected_target_sha256","current_member_sha256",
+        "candidate_sha256","repacked_member_sha256","validation_status","review_status",
+    ], file_rows)
+    write_tsv(evidence_root / "EVENT_REPACK_TEST_VALIDATION.tsv", [
+        "profile_id","check_name","passed","details",
+    ], validation_rows)
+    write_tsv(evidence_root / "EVENT_REPACK_TEST_MANIFEST_DIFFERENCES.tsv", [
+        "profile_id","scope","field","member_path","classification",
+        "baseline_value","verification_value","baseline_value_sha256",
+        "verification_value_sha256","gate_effect",
+    ], manifest_difference_rows)
+    write_tsv(evidence_root / "EVENT_REPACK_TEST_BUILD_SKIPPED.tsv", [
+        "profile_id","target_member_path","reason",
+    ], skipped_rows)
+
+    validation_failures = sum(str(row.get("passed", "")).casefold() != "true" for row in validation_rows)
+    summary = {
+        "type": "br_quartet_restoration_event_repack_test_evidence_summary",
+        "format_version": FORMAT_VERSION,
+        "tool_version": TOOL_VERSION,
+        "source_event_prototype_tool_version": prototype_summary.get("tool_version"),
+        "status": "local_checksum_gated_event_repack_test_archives_built_not_installed" if profile_rows else "no_event_repack_test_profile_built",
+        "profile_rows": len(profile_rows),
+        "high_confidence_profile_rows": sum(row.get("prototype_confidence") == "high" for row in profile_rows),
+        "experimental_profile_rows": sum(row.get("prototype_confidence") == "experimental" for row in profile_rows),
+        "file_rows": len(file_rows),
+        "validation_rows": len(validation_rows),
+        "validation_failures": validation_failures,
+        "manifest_difference_rows": len(manifest_difference_rows),
+        "stable_manifest_difference_rows": sum(row.get("gate_effect") == "validation_gate" for row in manifest_difference_rows),
+        "derived_manifest_difference_rows": sum(row.get("gate_effect") == "diagnostic_only" for row in manifest_difference_rows),
+        "skipped_rows": len(skipped_rows),
+        "input_archive_relative_path": archive_rel,
+        "input_archive_sha256": current_archive_sha,
+        "input_archive_size": current_archive_size,
+        "inventory_pristine_archive_sha256": pristine_archive_sha,
+        "inventory_pristine_archive_match": pristine_archive_match,
+        "gust_pak_sha256": gust_pak_sha,
+        "baseline_manifest_parse_mode": baseline_manifest.get("safe_parse_mode", "unknown"),
+        "local_harness_root": str(final_root.relative_to(project_root)) if final_root.is_relative_to(project_root) else str(final_root),
+        "policy": {
+            "installed_game_read_only": True,
+            "installed_game_modified": False,
+            "current_archive_used_as_repack_base": True,
+            "unrelated_translation_or_other_member_changes_preserved": True,
+            "all_unchanged_members_verified_by_reextraction_hash": True,
+            "derived_gust_manifest_keys_used_as_validation_gate": False,
+            "stable_manifest_format_member_order_and_flags_verified": True,
+            "profile_archives_kept_separate": True,
+            "local_rollback_baseline_copied": True,
+            "activation_or_installer_generated": False,
+            "unified_patcher_core_transaction_required_for_runtime_test": True,
+            "proprietary_archives_exported_in_report": False,
+            "legacy_dlc_in_scope": False,
+            "translation_edits_in_scope": False,
+        },
+        "next_action": "Upload the metadata report. If both profiles pass, request a core-owned unified-patcher activation/rollback transaction that accepts these checksum-gated local profiles; do not replace PACK11.PAK manually.",
+    }
+    atomic_json(evidence_root / "SUMMARY.json", summary)
+    output = report_root / EVENT_REPACK_TEST_REPORT_NAME
+    make_report_archive(evidence_root, output)
+    return output, summary
+
+
+def cmd_prepare_event_repack_tests(args: argparse.Namespace) -> int:
+    project_root = Path(args.project_root).expanduser().resolve()
+    quartet_root = Path(args.quartet_root).expanduser().resolve()
+    gust_pak = Path(args.gust_pak).expanduser().resolve()
+    if not project_root.is_dir():
+        raise RestorationError(f"Project root does not exist: {project_root}")
+    if not quartet_root.is_dir():
+        raise RestorationError(f"Quartet game root does not exist: {quartet_root}")
+    default_workspace = project_root / ".local/build/quartet_restoration"
+    default_reports = project_root / ".local/reports/quartet_restoration"
+    workspace_root = Path(args.workspace_root).expanduser().resolve() if args.workspace_root else default_workspace
+    report_root = Path(args.report_root).expanduser().resolve() if args.report_root else default_reports
+    require_within(workspace_root, default_workspace, "Workspace")
+    require_within(report_root, default_reports, "Report root")
+    output, summary = prepare_event_repack_tests(
+        project_root=project_root, quartet_root=quartet_root, gust_pak=gust_pak,
+        workspace_root=workspace_root, report_root=report_root,
+        timeout_seconds=args.timeout_seconds,
+    )
+    print(f"Local repacked profiles: {summary['profile_rows']}")
+    print(f"Validation failures: {summary['validation_failures']}")
+    print(f"Installed game modified: {summary['policy']['installed_game_modified']}")
+    print(f"Report: {output}")
+    return 0
+
+
+# Stage 31: build one separate checksum-gated PACK11 archive for each
+# round-trip-validated stage-30 single-scene event prototype. Existing stage-25
+# profiles are left untouched and the installed game remains read-only.
+
+def prepare_single_scene_event_repack_tests(
+    *, project_root: Path, quartet_root: Path, gust_pak: Path,
+    workspace_root: Path, report_root: Path, timeout_seconds: int,
+) -> tuple[Path, dict[str, Any]]:
+    prototype_summary = load_json(report_root / SINGLE_SCENE_EVENT_PROTOTYPE_EVIDENCE_DIR / "SUMMARY.json")
+    if prototype_summary.get("type") != "br_quartet_restoration_single_scene_event_prototype_evidence_summary":
+        raise RestorationError("Missing or invalid stage-30 single-scene event prototype evidence")
+    if _parse_int_cell(prototype_summary.get("validation_failures")) != 0:
+        raise RestorationError("Stage-30 single-scene event prototype evidence contains validation failures")
+
+    prototype_file_rows = read_tsv(
+        report_root / SINGLE_SCENE_EVENT_PROTOTYPE_EVIDENCE_DIR
+        / "SINGLE_SCENE_EVENT_PROTOTYPE_FILES.tsv"
+    )
+    prototype_file_by_profile: dict[str, dict[str, str]] = {}
+    for row in prototype_file_rows:
+        profile_id = str(row.get("profile_id", ""))
+        if not profile_id:
+            continue
+        if profile_id in prototype_file_by_profile:
+            raise RestorationError(f"Duplicate stage-30 file row for profile: {profile_id}")
+        prototype_file_by_profile[profile_id] = row
+
+    prototype_root = workspace_root / SINGLE_SCENE_EVENT_PROTOTYPE_BUILD_DIR
+    profile_manifest_paths = _profile_manifest_paths(prototype_root)
+    if not profile_manifest_paths:
+        raise RestorationError("No local single-scene event prototype profiles are available")
+
+    archive_rows = read_tsv(report_root / "ARCHIVE_INVENTORY.tsv")
+    target_rows = [
+        row for row in archive_rows
+        if str(row.get("pair_id", "")) == "br1_events"
+        and str(row.get("side", "")) == "target"
+    ]
+    if len(target_rows) != 1:
+        raise RestorationError(f"Expected one target br1_events archive row, found {len(target_rows)}")
+    inventory_archive = target_rows[0]
+    archive_rel = safe_posix_path(str(inventory_archive.get("archive", "")))
+    installed_archive = (quartet_root / Path(archive_rel)).resolve()
+    require_within(installed_archive, quartet_root.resolve(), "Quartet archive")
+    if not installed_archive.is_file():
+        raise RestorationError(f"Quartet event archive not found: {installed_archive}")
+    current_archive_sha = sha256_file(installed_archive)
+    current_archive_size = installed_archive.stat().st_size
+    pristine_archive_sha = str(inventory_archive.get("sha256", ""))
+    pristine_archive_match = bool(pristine_archive_sha) and current_archive_sha == pristine_archive_sha
+    gust_pak_sha = sha256_file(gust_pak)
+
+    final_root = workspace_root / SINGLE_SCENE_EVENT_REPACK_TEST_BUILD_DIR
+    require_within(final_root, workspace_root, "Single-scene event repack-test root")
+    final_root.parent.mkdir(parents=True, exist_ok=True)
+    temporary_root: Path | None = Path(tempfile.mkdtemp(prefix=".single_scene_event_repack_tests.", dir=final_root.parent))
+    profile_rows: list[dict[str, Any]] = []
+    file_rows: list[dict[str, Any]] = []
+    validation_rows: list[dict[str, Any]] = []
+    manifest_difference_rows: list[dict[str, Any]] = []
+    skipped_rows: list[dict[str, Any]] = []
+    try:
+        assert temporary_root is not None
+        baseline_root = temporary_root / "baseline"
+        baseline_archive_copy = baseline_root / "Data" / installed_archive.name
+        baseline_archive_copy.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(installed_archive, baseline_archive_copy)
+        baseline_copy_sha = sha256_file(baseline_archive_copy)
+        if baseline_copy_sha != current_archive_sha:
+            raise RestorationError("Local rollback baseline copy checksum mismatch")
+        baseline_extract = baseline_root / "extracted"
+        baseline_manifest_path, baseline_manifest = _extract_pak_for_repack_test(
+            archive=installed_archive, destination=baseline_extract, gust_pak=gust_pak,
+            timeout_seconds=timeout_seconds, log_name="baseline_extract.log",
+        )
+        baseline_signature = _gust_manifest_semantic_signature(baseline_manifest)
+        baseline_members = _manifest_member_hashes(baseline_extract, baseline_manifest)
+        baseline_manifest_sha = sha256_file(baseline_manifest_path)
+
+        atomic_json(baseline_root / "BASELINE.json", {
+            "type": "br_quartet_restoration_local_single_scene_event_repack_test_baseline",
+            "format_version": FORMAT_VERSION,
+            "tool_version": TOOL_VERSION,
+            "archive_relative_path": archive_rel,
+            "installed_archive_sha256": current_archive_sha,
+            "installed_archive_size": current_archive_size,
+            "inventory_pristine_archive_sha256": pristine_archive_sha,
+            "inventory_pristine_archive_match": pristine_archive_match,
+            "gust_pak_sha256": gust_pak_sha,
+            "manifest_sha256": baseline_manifest_sha,
+            "manifest_parse_mode": baseline_manifest.get("safe_parse_mode", "unknown"),
+            "member_count": len(baseline_members),
+            "local_rollback_archive": f"baseline/Data/{installed_archive.name}",
+            "installed_game_modified": False,
+        })
+
+        successful_profile_ids: list[str] = []
+        for prototype_manifest_path in profile_manifest_paths:
+            prototype = load_json(prototype_manifest_path)
+            profile_id = str(prototype.get("profile_id", prototype_manifest_path.parent.name))
+            prototype_file_row = prototype_file_by_profile.get(profile_id)
+            if prototype_file_row is not None:
+                prototype = dict(prototype)
+                prototype["files"] = [{
+                    "normalized_path": prototype_file_row.get("normalized_path", prototype.get("normalized_path", "")),
+                    "target_archive": prototype_file_row.get("target_archive", ""),
+                    "target_member_path": prototype_file_row.get("target_member_path", ""),
+                    "target_sha256": prototype_file_row.get("target_sha256", prototype.get("target_sha256", "")),
+                    "candidate_sha256": prototype_file_row.get("candidate_sha256", prototype.get("candidate_sha256", "")),
+                    "candidate_relative_path": prototype.get("candidate_relative_path", prototype_file_row.get("local_relative_path", "")),
+                }]
+            profile_dir = temporary_root / "profiles" / profile_id
+            stage_dir = profile_dir / "staging"
+            verify_dir = profile_dir / "verify"
+            output_dir = profile_dir / "output" / "Data"
+            output_dir.mkdir(parents=True, exist_ok=True)
+            profile_checks: dict[str, bool] = {
+                "prototype_manifest_type_valid": prototype.get("type") == "br_quartet_restoration_local_single_scene_event_prototype",
+                "prototype_installable_flag_false": prototype.get("installable_package_generated") is False,
+                "prototype_file_list_nonempty": isinstance(prototype.get("files"), list) and bool(prototype.get("files")),
+                "baseline_copy_sha256_matches": baseline_copy_sha == current_archive_sha,
+                "baseline_manifest_valid": bool(baseline_members),
+            }
+            profile_file_rows: list[dict[str, Any]] = []
+            profile_failed = not all(profile_checks.values())
+            target_member_keys: set[str] = set()
+            candidate_by_key: dict[str, dict[str, Any]] = {}
+            for item in prototype.get("files", []) if isinstance(prototype.get("files"), list) else []:
+                target_archive = safe_posix_path(str(item.get("target_archive", "")))
+                target_member = safe_posix_path(str(item.get("target_member_path", "")))
+                candidate_rel = safe_posix_path(str(item.get("candidate_relative_path", "")))
+                candidate_path = prototype_manifest_path.parent / Path(candidate_rel)
+                key = target_member.casefold()
+                row = {
+                    "profile_id": profile_id,
+                    "profile_classification": prototype.get("profile_classification", ""),
+                    "prototype_confidence": prototype.get("prototype_confidence", ""),
+                    "normalized_path": item.get("normalized_path", ""),
+                    "target_archive": target_archive,
+                    "target_member_path": target_member,
+                    "expected_target_sha256": item.get("target_sha256", ""),
+                    "current_member_sha256": "",
+                    "candidate_sha256": item.get("candidate_sha256", ""),
+                    "repacked_member_sha256": "",
+                    "validation_status": "failed",
+                    "review_status": "checksum_gated_local_repack_test_only",
+                }
+                if target_archive.casefold() != archive_rel.casefold():
+                    skipped_rows.append({"profile_id": profile_id, "target_member_path": target_member, "reason": "prototype_targets_unexpected_archive"})
+                    profile_failed = True
+                    profile_file_rows.append(row)
+                    continue
+                if key in target_member_keys:
+                    skipped_rows.append({"profile_id": profile_id, "target_member_path": target_member, "reason": "duplicate_target_member"})
+                    profile_failed = True
+                    profile_file_rows.append(row)
+                    continue
+                target_member_keys.add(key)
+                baseline_member = baseline_members.get(key)
+                if baseline_member is None:
+                    skipped_rows.append({"profile_id": profile_id, "target_member_path": target_member, "reason": "target_member_missing_from_current_archive"})
+                    profile_failed = True
+                    profile_file_rows.append(row)
+                    continue
+                row["current_member_sha256"] = baseline_member["sha256"]
+                if baseline_member["sha256"] != str(item.get("target_sha256", "")):
+                    skipped_rows.append({"profile_id": profile_id, "target_member_path": target_member, "reason": "current_target_member_sha256_mismatch"})
+                    profile_failed = True
+                    profile_file_rows.append(row)
+                    continue
+                if not candidate_path.is_file() or sha256_file(candidate_path) != str(item.get("candidate_sha256", "")):
+                    skipped_rows.append({"profile_id": profile_id, "target_member_path": target_member, "reason": "candidate_payload_missing_or_sha256_mismatch"})
+                    profile_failed = True
+                    profile_file_rows.append(row)
+                    continue
+                candidate_by_key[key] = {"path": candidate_path, "member": baseline_member, "row": row}
+                profile_file_rows.append(row)
+
+            if profile_failed:
+                skipped_rows.append({"profile_id": profile_id, "target_member_path": "", "reason": "profile_precondition_failure"})
+                file_rows.extend(profile_file_rows)
+                for check_name, passed in profile_checks.items():
+                    validation_rows.append({"profile_id": profile_id, "check_name": check_name, "passed": passed, "details": "precondition"})
+                continue
+
+            _copy_repack_input_tree(baseline_extract, stage_dir)
+            stage_manifest_path = stage_dir / baseline_manifest_path.name
+            stage_manifest = _load_gust_pak_manifest(stage_manifest_path)
+            for key, candidate in candidate_by_key.items():
+                target_path = stage_dir / Path(candidate["member"]["name"])
+                require_within(target_path.resolve(), stage_dir.resolve(), "Repack target member")
+                target_path.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(candidate["path"], target_path)
+
+            output_name = str(stage_manifest["safe_output_name"])
+            stage_output = stage_dir / output_name
+            stage_output.unlink(missing_ok=True)
+            _run_gust_pak(
+                gust_pak=gust_pak, argument_name=stage_manifest_path.name, cwd=stage_dir,
+                log_path=profile_dir / "repack.log", timeout_seconds=timeout_seconds,
+            )
+            if not stage_output.is_file():
+                raise RestorationError(f"gust_pak did not produce repacked archive for {profile_id}: {stage_output}")
+            local_output = output_dir / installed_archive.name
+            shutil.move(stage_output, local_output)
+            output_sha = sha256_file(local_output)
+            output_size = local_output.stat().st_size
+
+            verify_manifest_path, verify_manifest = _extract_pak_for_repack_test(
+                archive=local_output, destination=verify_dir, gust_pak=gust_pak,
+                timeout_seconds=timeout_seconds, log_name="verify_extract.log",
+            )
+            verify_signature = _gust_manifest_semantic_signature(verify_manifest)
+            profile_manifest_differences = _gust_manifest_metadata_differences(
+                baseline_manifest,
+                verify_manifest,
+                profile_id=profile_id,
+                modified_member_keys=target_member_keys,
+            )
+            manifest_difference_rows.extend(profile_manifest_differences)
+            stable_manifest_difference_count = sum(
+                row.get("gate_effect") == "validation_gate"
+                for row in profile_manifest_differences
+            )
+            derived_manifest_difference_count = sum(
+                row.get("gate_effect") == "diagnostic_only"
+                for row in profile_manifest_differences
+            )
+            verify_members = _manifest_member_hashes(verify_dir, verify_manifest)
+            unchanged_keys = set(baseline_members) - target_member_keys
+            unchanged_mismatches = [key for key in sorted(unchanged_keys) if verify_members.get(key, {}).get("sha256") != baseline_members[key]["sha256"]]
+            missing_or_extra = set(verify_members) ^ set(baseline_members)
+            modified_member_failures = 0
+            for row in profile_file_rows:
+                key = str(row["target_member_path"]).casefold()
+                actual = verify_members.get(key, {}).get("sha256", "")
+                row["repacked_member_sha256"] = actual
+                passed = actual == str(row["candidate_sha256"])
+                row["validation_status"] = "passed" if passed else "failed"
+                modified_member_failures += 0 if passed else 1
+
+            profile_checks.update({
+                "baseline_manifest_semantics_preserved": verify_signature == baseline_signature,
+                "member_name_set_preserved": not missing_or_extra,
+                "modified_members_match_candidates": modified_member_failures == 0,
+                "all_unchanged_members_preserved": not unchanged_mismatches,
+                "output_archive_differs_from_input": output_sha != current_archive_sha,
+                "verification_manifest_created": verify_manifest_path.is_file(),
+                "installed_archive_still_matches_initial_sha256": sha256_file(installed_archive) == current_archive_sha,
+            })
+            validation_status = "passed" if all(profile_checks.values()) else "failed"
+            for check_name, passed in profile_checks.items():
+                details = ""
+                if check_name == "baseline_manifest_semantics_preserved":
+                    details = (
+                        f"stable_differences={stable_manifest_difference_count};"
+                        f"derived_differences={derived_manifest_difference_count}"
+                    )
+                elif check_name == "all_unchanged_members_preserved":
+                    details = f"checked={len(unchanged_keys)};mismatches={len(unchanged_mismatches)}"
+                elif check_name == "member_name_set_preserved":
+                    details = f"set_delta={len(missing_or_extra)}"
+                validation_rows.append({"profile_id": profile_id, "check_name": check_name, "passed": passed, "details": details})
+            file_rows.extend(profile_file_rows)
+            if validation_status != "passed":
+                local_output.unlink(missing_ok=True)
+                skipped_rows.append({"profile_id": profile_id, "target_member_path": "", "reason": "profile_repack_validation_failure"})
+                continue
+
+            atomic_json(profile_dir / "PROFILE.json", {
+                "type": "br_quartet_restoration_local_single_scene_event_repack_test_profile",
+                "format_version": FORMAT_VERSION,
+                "tool_version": TOOL_VERSION,
+                "profile_id": profile_id,
+                "profile_classification": prototype.get("profile_classification", ""),
+                "prototype_confidence": prototype.get("prototype_confidence", ""),
+                "input_archive_relative_path": archive_rel,
+                "input_archive_sha256": current_archive_sha,
+                "input_archive_size": current_archive_size,
+                "output_archive_relative_path": f"profiles/{profile_id}/output/Data/{installed_archive.name}",
+                "output_archive_sha256": output_sha,
+                "output_archive_size": output_size,
+                "rollback_archive_relative_path": f"baseline/Data/{installed_archive.name}",
+                "rollback_archive_sha256": baseline_copy_sha,
+                "gust_pak_sha256": gust_pak_sha,
+                "baseline_manifest_parse_mode": baseline_manifest.get("safe_parse_mode", "unknown"),
+                "verification_manifest_parse_mode": verify_manifest.get("safe_parse_mode", "unknown"),
+                "replaced_member_count": len(target_member_keys),
+                "unchanged_member_count_verified": len(unchanged_keys),
+                "activation_supported": False,
+                "installed_game_modified": False,
+                "files": [
+                    {
+                        "target_member_path": row["target_member_path"],
+                        "target_sha256": row["current_member_sha256"],
+                        "candidate_sha256": row["candidate_sha256"],
+                    }
+                    for row in profile_file_rows
+                ],
+            })
+            profile_rows.append({
+                "profile_id": profile_id,
+                "profile_classification": prototype.get("profile_classification", ""),
+                "prototype_confidence": prototype.get("prototype_confidence", ""),
+                "input_archive_relative_path": archive_rel,
+                "input_archive_sha256": current_archive_sha,
+                "input_archive_size": current_archive_size,
+                "inventory_pristine_archive_match": pristine_archive_match,
+                "baseline_manifest_parse_mode": baseline_manifest.get("safe_parse_mode", "unknown"),
+                "verification_manifest_parse_mode": verify_manifest.get("safe_parse_mode", "unknown"),
+                "output_archive_sha256": output_sha,
+                "output_archive_size": output_size,
+                "replaced_member_count": len(target_member_keys),
+                "unchanged_member_count_verified": len(unchanged_keys),
+                "local_output_archive": str((final_root / "profiles" / profile_id / "output" / "Data" / installed_archive.name).relative_to(project_root)),
+                "local_rollback_archive": str((final_root / "baseline" / "Data" / installed_archive.name).relative_to(project_root)),
+                "validation_status": validation_status,
+                "activation_status": "not_generated_requires_unified_patcher_core_transaction",
+            })
+            successful_profile_ids.append(profile_id)
+            shutil.rmtree(stage_dir, ignore_errors=True)
+            shutil.rmtree(verify_dir, ignore_errors=True)
+
+        harness_marker = {
+            "type": "br_quartet_restoration_local_single_scene_event_repack_test_harness",
+            "format_version": FORMAT_VERSION,
+            "tool_version": TOOL_VERSION,
+            "source_single_scene_event_prototype_tool_version": prototype_summary.get("tool_version"),
+            "input_archive_relative_path": archive_rel,
+            "input_archive_sha256": current_archive_sha,
+            "input_archive_size": current_archive_size,
+            "inventory_pristine_archive_sha256": pristine_archive_sha,
+            "inventory_pristine_archive_match": pristine_archive_match,
+            "gust_pak_sha256": gust_pak_sha,
+            "baseline_member_count": len(baseline_members),
+            "baseline_manifest_parse_mode": baseline_manifest.get("safe_parse_mode", "unknown"),
+            "successful_profile_ids": successful_profile_ids,
+            "installed_game_modified": False,
+            "activation_supported": False,
+        }
+        atomic_json(temporary_root / SINGLE_SCENE_EVENT_REPACK_TEST_MARKER, harness_marker)
+        shutil.rmtree(baseline_extract, ignore_errors=True)
+        _remove_generated_repack_test_root(final_root)
+        os.replace(temporary_root, final_root)
+        temporary_root = None
+    finally:
+        if temporary_root is not None and temporary_root.exists():
+            shutil.rmtree(temporary_root, ignore_errors=True)
+
+    profile_rows.sort(key=lambda row: (0 if row.get("prototype_confidence") == "high" else 1, str(row.get("profile_id", ""))))
+    file_rows.sort(key=lambda row: (str(row.get("profile_id", "")), str(row.get("target_member_path", "")).casefold()))
+    validation_rows.sort(key=lambda row: (str(row.get("profile_id", "")), str(row.get("check_name", ""))))
+    manifest_difference_rows.sort(key=lambda row: (
+        str(row.get("profile_id", "")),
+        0 if row.get("gate_effect") == "validation_gate" else 1,
+        str(row.get("scope", "")),
+        str(row.get("member_path", "")).casefold(),
+        str(row.get("field", "")),
+    ))
+    skipped_rows.sort(key=lambda row: (str(row.get("profile_id", "")), str(row.get("target_member_path", "")).casefold(), str(row.get("reason", ""))))
+
+    evidence_root = report_root / SINGLE_SCENE_EVENT_REPACK_TEST_EVIDENCE_DIR
+    if evidence_root.exists():
+        shutil.rmtree(evidence_root)
+    evidence_root.mkdir(parents=True, exist_ok=True)
+    write_tsv(evidence_root / "SINGLE_SCENE_EVENT_REPACK_TEST_PROFILES.tsv", [
+        "profile_id","profile_classification","prototype_confidence",
+        "input_archive_relative_path","input_archive_sha256","input_archive_size",
+        "inventory_pristine_archive_match","baseline_manifest_parse_mode","verification_manifest_parse_mode",
+        "output_archive_sha256","output_archive_size","replaced_member_count","unchanged_member_count_verified","local_output_archive",
+        "local_rollback_archive","validation_status","activation_status",
+    ], profile_rows)
+    write_tsv(evidence_root / "SINGLE_SCENE_EVENT_REPACK_TEST_FILES.tsv", [
+        "profile_id","profile_classification","prototype_confidence","normalized_path",
+        "target_archive","target_member_path","expected_target_sha256","current_member_sha256",
+        "candidate_sha256","repacked_member_sha256","validation_status","review_status",
+    ], file_rows)
+    write_tsv(evidence_root / "SINGLE_SCENE_EVENT_REPACK_TEST_VALIDATION.tsv", [
+        "profile_id","check_name","passed","details",
+    ], validation_rows)
+    write_tsv(evidence_root / "SINGLE_SCENE_EVENT_REPACK_TEST_MANIFEST_DIFFERENCES.tsv", [
+        "profile_id","scope","field","member_path","classification",
+        "baseline_value","verification_value","baseline_value_sha256",
+        "verification_value_sha256","gate_effect",
+    ], manifest_difference_rows)
+    write_tsv(evidence_root / "SINGLE_SCENE_EVENT_REPACK_TEST_BUILD_SKIPPED.tsv", [
+        "profile_id","target_member_path","reason",
+    ], skipped_rows)
+
+    validation_failures = sum(str(row.get("passed", "")).casefold() != "true" for row in validation_rows)
+    summary = {
+        "type": "br_quartet_restoration_single_scene_event_repack_test_evidence_summary",
+        "format_version": FORMAT_VERSION,
+        "tool_version": TOOL_VERSION,
+        "source_single_scene_event_prototype_tool_version": prototype_summary.get("tool_version"),
+        "status": "local_checksum_gated_single_scene_event_repack_test_archive_built_not_installed" if profile_rows else "no_single_scene_event_repack_test_profile_built",
+        "profile_rows": len(profile_rows),
+        "critical_profile_rows": sum(str(row.get("prototype_confidence", "")).startswith("critical_") for row in profile_rows),
+        "file_rows": len(file_rows),
+        "validation_rows": len(validation_rows),
+        "validation_failures": validation_failures,
+        "manifest_difference_rows": len(manifest_difference_rows),
+        "stable_manifest_difference_rows": sum(row.get("gate_effect") == "validation_gate" for row in manifest_difference_rows),
+        "derived_manifest_difference_rows": sum(row.get("gate_effect") == "diagnostic_only" for row in manifest_difference_rows),
+        "skipped_rows": len(skipped_rows),
+        "input_archive_relative_path": archive_rel,
+        "input_archive_sha256": current_archive_sha,
+        "input_archive_size": current_archive_size,
+        "inventory_pristine_archive_sha256": pristine_archive_sha,
+        "inventory_pristine_archive_match": pristine_archive_match,
+        "gust_pak_sha256": gust_pak_sha,
+        "baseline_manifest_parse_mode": baseline_manifest.get("safe_parse_mode", "unknown"),
+        "local_harness_root": str(final_root.relative_to(project_root)) if final_root.is_relative_to(project_root) else str(final_root),
+        "policy": {
+            "installed_game_read_only": True,
+            "installed_game_modified": False,
+            "current_archive_used_as_repack_base": True,
+            "unrelated_translation_or_other_member_changes_preserved": True,
+            "all_unchanged_members_verified_by_reextraction_hash": True,
+            "derived_gust_manifest_keys_used_as_validation_gate": False,
+            "stable_manifest_format_member_order_and_flags_verified": True,
+            "profile_archives_kept_separate": True,
+            "existing_event_profiles_left_untouched": True,
+            "single_scene_profile_runtime_validated": False,
+            "local_rollback_baseline_copied": True,
+            "activation_or_installer_generated": False,
+            "unified_patcher_core_transaction_required_for_runtime_test": True,
+            "proprietary_archives_exported_in_report": False,
+            "legacy_dlc_in_scope": False,
+            "translation_edits_in_scope": False,
+        },
+        "next_action": "Upload the metadata report. If the separate te02_230 profile passes, prepare a metadata-only core activation request for this one additional PACK11 profile; do not replace PACK11.PAK manually.",
+    }
+    atomic_json(evidence_root / "SUMMARY.json", summary)
+    output = report_root / SINGLE_SCENE_EVENT_REPACK_TEST_REPORT_NAME
+    make_report_archive(evidence_root, output)
+    return output, summary
+
+
+
+def cmd_prepare_single_scene_event_repack_tests(args: argparse.Namespace) -> int:
+    project_root = Path(args.project_root).expanduser().resolve()
+    quartet_root = Path(args.quartet_root).expanduser().resolve()
+    gust_pak = Path(args.gust_pak).expanduser().resolve()
+    if not project_root.is_dir():
+        raise RestorationError(f"Project root does not exist: {project_root}")
+    if not quartet_root.is_dir():
+        raise RestorationError(f"Quartet game root does not exist: {quartet_root}")
+    default_workspace = project_root / ".local/build/quartet_restoration"
+    default_reports = project_root / ".local/reports/quartet_restoration"
+    workspace_root = Path(args.workspace_root).expanduser().resolve() if args.workspace_root else default_workspace
+    report_root = Path(args.report_root).expanduser().resolve() if args.report_root else default_reports
+    require_within(workspace_root, default_workspace, "Workspace")
+    require_within(report_root, default_reports, "Report root")
+    output, summary = prepare_single_scene_event_repack_tests(
+        project_root=project_root, quartet_root=quartet_root, gust_pak=gust_pak,
+        workspace_root=workspace_root, report_root=report_root,
+        timeout_seconds=args.timeout_seconds,
+    )
+    print(f"Local single-scene repacked profiles: {summary['profile_rows']}")
+    print(f"Validation failures: {summary['validation_failures']}")
+    print(f"Installed game modified: {summary['policy']['installed_game_modified']}")
+    print(f"Report: {output}")
+    return 0
+
+
+
+
+# Stage 32: validate the separate stage-31 PACK11 profile and emit metadata
+# for registering it as one additional profile in the already-implemented
+# core-owned PACK11 transaction mechanism. No activation command or game write
+# is generated by this workstream.
+
+def prepare_single_scene_event_activation_request(
+    *, project_root: Path, quartet_root: Path, workspace_root: Path, report_root: Path,
+) -> tuple[Path, dict[str, Any]]:
+    repack_evidence = report_root / SINGLE_SCENE_EVENT_REPACK_TEST_EVIDENCE_DIR
+    repack_summary = load_json(repack_evidence / "SUMMARY.json")
+    if repack_summary.get("type") != "br_quartet_restoration_single_scene_event_repack_test_evidence_summary":
+        raise RestorationError("Missing or invalid stage-31 single-scene event repack-test evidence")
+    if _parse_int_cell(repack_summary.get("validation_failures")) != 0:
+        raise RestorationError("Stage-31 single-scene event repack-test evidence contains validation failures")
+    if _parse_int_cell(repack_summary.get("profile_rows")) < 1:
+        raise RestorationError("Stage-31 single-scene event repack-test evidence contains no successful profiles")
+
+    profile_rows = read_tsv(repack_evidence / "SINGLE_SCENE_EVENT_REPACK_TEST_PROFILES.tsv")
+    file_rows = read_tsv(repack_evidence / "SINGLE_SCENE_EVENT_REPACK_TEST_FILES.tsv")
+    validation_rows = read_tsv(repack_evidence / "SINGLE_SCENE_EVENT_REPACK_TEST_VALIDATION.tsv")
+    successful_profiles = [
+        row for row in profile_rows
+        if str(row.get("validation_status", "")).casefold() == "passed"
+    ]
+    if len(successful_profiles) != _parse_int_cell(repack_summary.get("profile_rows")):
+        raise RestorationError("Stage-31 profile table does not match its summary")
+
+    harness_root = workspace_root / SINGLE_SCENE_EVENT_REPACK_TEST_BUILD_DIR
+    marker_path = harness_root / SINGLE_SCENE_EVENT_REPACK_TEST_MARKER
+    if not marker_path.is_file():
+        raise RestorationError(f"Missing local stage-31 harness marker: {marker_path}")
+    marker = load_json(marker_path)
+    if marker.get("type") != "br_quartet_restoration_local_single_scene_event_repack_test_harness":
+        raise RestorationError("Invalid local stage-31 harness marker")
+
+    baseline_meta_path = harness_root / "baseline" / "BASELINE.json"
+    baseline_meta = load_json(baseline_meta_path)
+    if baseline_meta.get("type") != "br_quartet_restoration_local_single_scene_event_repack_test_baseline":
+        raise RestorationError("Invalid local stage-31 baseline metadata")
+    archive_rel = safe_posix_path(str(repack_summary.get("input_archive_relative_path", "")))
+    if not archive_rel:
+        raise RestorationError("Stage-31 summary has no input archive path")
+    installed_archive = (quartet_root / Path(archive_rel)).resolve()
+    require_within(installed_archive, quartet_root.resolve(), "Quartet activation target")
+    if not installed_archive.is_file():
+        raise RestorationError(f"Quartet activation target is missing: {installed_archive}")
+
+    baseline_rel = safe_posix_path(str(baseline_meta.get("local_rollback_archive", "")))
+    baseline_archive = (harness_root / Path(baseline_rel)).resolve()
+    require_within(baseline_archive, harness_root.resolve(), "Local rollback archive")
+    if not baseline_archive.is_file():
+        raise RestorationError(f"Local rollback archive is missing: {baseline_archive}")
+    expected_baseline_sha = str(repack_summary.get("input_archive_sha256", ""))
+    expected_baseline_size = _parse_int_cell(repack_summary.get("input_archive_size"))
+    baseline_sha = sha256_file(baseline_archive)
+    baseline_size = baseline_archive.stat().st_size
+    installed_sha = sha256_file(installed_archive)
+    installed_size = installed_archive.stat().st_size
+    if baseline_sha != expected_baseline_sha or baseline_size != expected_baseline_size:
+        raise RestorationError("Local rollback baseline no longer matches stage-31 evidence")
+    if installed_sha != baseline_sha or installed_size != baseline_size:
+        raise RestorationError(
+            "Installed PACK11.PAK changed after stage 31; rerun stage 31 before requesting activation"
+        )
+
+    existing_event_request_summary_path = (
+        report_root / EVENT_ACTIVATION_REQUEST_EVIDENCE_DIR / "SUMMARY.json"
+    )
+    existing_event_baseline_status = "previous_event_request_not_available"
+    if existing_event_request_summary_path.is_file():
+        existing = load_json(existing_event_request_summary_path)
+        existing_sha = str(existing.get("baseline_sha256", ""))
+        if existing_sha and existing_sha != baseline_sha:
+            raise RestorationError(
+                "Stage-31 baseline differs from the earlier PACK11 activation-request baseline; "
+                "rebuild all event profiles from the same current PACK11 before core registration"
+            )
+        if existing_sha == baseline_sha:
+            existing_event_baseline_status = "matches_existing_pack11_transaction_baseline"
+
+    evidence_root = report_root / SINGLE_SCENE_EVENT_ACTIVATION_REQUEST_EVIDENCE_DIR
+    if evidence_root.exists():
+        shutil.rmtree(evidence_root)
+    evidence_root.mkdir(parents=True, exist_ok=True)
+
+    request_profile_rows: list[dict[str, Any]] = []
+    runtime_rows: list[dict[str, Any]] = []
+    profile_payloads: list[dict[str, Any]] = []
+    rollback_relative_path = str(baseline_archive.relative_to(project_root))
+    for row in sorted(successful_profiles, key=lambda item: str(item.get("profile_id", "")).casefold()):
+        profile_id = str(row.get("profile_id", ""))
+        if not profile_id:
+            raise RestorationError("Stage-31 profile row has no profile_id")
+        local_output = safe_posix_path(str(row.get("local_output_archive", "")))
+        output_archive = (project_root / Path(local_output)).resolve()
+        require_within(output_archive, workspace_root.resolve(), "Local activation profile archive")
+        if not output_archive.is_file():
+            raise RestorationError(f"Local activation profile archive is missing: {output_archive}")
+        output_sha = sha256_file(output_archive)
+        output_size = output_archive.stat().st_size
+        if output_sha != str(row.get("output_archive_sha256", "")):
+            raise RestorationError(f"Local activation profile checksum mismatch: {profile_id}")
+        if output_size != _parse_int_cell(row.get("output_archive_size")):
+            raise RestorationError(f"Local activation profile size mismatch: {profile_id}")
+        profile_validation = [
+            item for item in validation_rows if str(item.get("profile_id", "")) == profile_id
+        ]
+        if not profile_validation or any(
+            str(item.get("passed", "")).casefold() != "true" for item in profile_validation
+        ):
+            raise RestorationError(f"Profile validation table is incomplete or failed: {profile_id}")
+        selected_files = [
+            item for item in file_rows if str(item.get("profile_id", "")) == profile_id
+        ]
+        if len(selected_files) != _parse_int_cell(row.get("replaced_member_count")):
+            raise RestorationError(f"Profile selected-member count mismatch: {profile_id}")
+        if len(selected_files) != 1:
+            raise RestorationError(
+                f"Single-scene activation request expects exactly one selected member: {profile_id}"
+            )
+        selected_member = safe_posix_path(str(selected_files[0].get("target_member_path", "")))
+        classification = str(row.get("profile_classification", ""))
+        confidence = str(row.get("prototype_confidence", ""))
+        request_profile_rows.append({
+            "profile_id": profile_id,
+            "classification": classification,
+            "confidence": confidence,
+            "scene_id": "te02_230",
+            "scene_domain": "shower_single_scene_presentation_candidate",
+            "selected_member": selected_member,
+            "activation_source_relative_path": local_output,
+            "activation_source_sha256": output_sha,
+            "activation_source_size": output_size,
+            "target_relative_path": archive_rel,
+            "activation_precondition_sha256": baseline_sha,
+            "rollback_source_relative_path": rollback_relative_path,
+            "rollback_source_sha256": baseline_sha,
+            "rollback_precondition_sha256": output_sha,
+            "replaced_member_count": len(selected_files),
+            "unchanged_member_count_verified": _parse_int_cell(row.get("unchanged_member_count_verified")),
+            "transaction_owner": "core_unified_patcher",
+            "registration_mode": "add_to_existing_pack11_event_profile_registry",
+            "request_status": "ready_for_core_profile_registration_runtime_unvalidated",
+        })
+        runtime_rows.append({
+            "profile_id": profile_id,
+            "test_order": 3,
+            "scene_id": "te02_230",
+            "scene_group": "single_shower_scene_te02_230",
+            "activation_mode": "exclusive_one_event_profile_at_a_time",
+            "runtime_check": "launch_game_and_visit_the_exact_te02_230_scene",
+            "record": (
+                "crash_or_load_failure; costume_or_coverage_change; steam_or_water_visibility_change; "
+                "camera_or_lighting_change; unrelated_regression"
+            ),
+            "required_precondition": "no_shader_profile_active_and_no_other_event_profile_active",
+            "required_after_test": "rollback_to_exact_shared_pack11_baseline",
+            "result": "not_tested",
+        })
+        profile_payloads.append({
+            "profile_id": profile_id,
+            "classification": classification,
+            "confidence": confidence,
+            "scene_id": "te02_230",
+            "source_relative_path": local_output,
+            "source_sha256": output_sha,
+            "source_size": output_size,
+            "target_relative_path": archive_rel,
+            "expected_target_sha256_before_activation": baseline_sha,
+            "expected_target_sha256_after_activation": output_sha,
+            "rollback_relative_path": rollback_relative_path,
+            "rollback_sha256": baseline_sha,
+            "expected_target_sha256_before_rollback": output_sha,
+            "selected_members": [selected_member],
+            "runtime_validated": False,
+        })
+
+    requirements = [
+        ("STX001", "required", "Extend the existing core-owned PACK11 event-profile registry; do not create a second competing PACK11 transaction system.", "preserve one authoritative transaction state"),
+        ("STX002", "required", "Preserve the two already registered PACK11 event profiles and add only the stage-31 te02_230 profile.", "avoid regression of existing profiles"),
+        ("STX003", "required", "Verify installed PACK11 SHA-256 equals the shared baseline immediately before activation.", "avoid overwriting later translation or mod changes"),
+        ("STX004", "required", "Verify the local profile source SHA-256 and size immediately before copying.", "reject stale or corrupted local artifacts"),
+        ("STX005", "required", "Use the existing same-filesystem temporary-file, fsync and atomic-replacement transaction path.", "avoid a partially written archive"),
+        ("STX006", "required", "Allow rollback only while installed PACK11 still equals the active te02_230 profile SHA-256.", "do not overwrite later changes"),
+        ("STX007", "required", "After rollback, verify the exact shared PACK11 baseline SHA-256.", "close the transaction deterministically"),
+        ("STX008", "required", "Keep runtime_validated false until the exact te02_230 scene is inspected in game.", "structural validation is not visual validation"),
+        ("STX009", "required", "Refuse first runtime activation while any shader profile or another event profile is active.", "isolate the hypothesis"),
+        ("STX010", "required", "Do not embed the local PACK11 profile or rollback archive in the core update.", "proprietary artifacts stay local"),
+        ("STX011", "required", "If any source or target precondition differs, abort and require rerunning stages 31 and 32.", "keep metadata bound to current local artifacts"),
+    ]
+    requirement_rows = [
+        {"requirement_id": rid, "severity": severity, "requirement": text, "rationale": rationale}
+        for rid, severity, text, rationale in requirements
+    ]
+    rollback_rows = [
+        {"invariant_id": "SRB001", "invariant": "stage-31 baseline equals installed PACK11 immediately before activation", "expected_sha256": baseline_sha},
+        {"invariant_id": "SRB002", "invariant": "active te02_230 profile SHA-256 is the only accepted rollback precondition", "expected_sha256": "profile_specific"},
+        {"invariant_id": "SRB003", "invariant": "rollback result equals the exact shared PACK11 baseline", "expected_sha256": baseline_sha},
+        {"invariant_id": "SRB004", "invariant": "existing event profiles remain registered and unmodified", "expected_sha256": "not_applicable"},
+        {"invariant_id": "SRB005", "invariant": "this workstream emits no activation or rollback command", "expected_sha256": "not_applicable"},
+        {"invariant_id": "SRB006", "invariant": "runtime validation remains false until te02_230 is visually inspected", "expected_sha256": "not_applicable"},
+    ]
+
+    write_tsv(evidence_root / "CORE_ACTIVATION_PROFILES.tsv", [
+        "profile_id", "classification", "confidence", "scene_id", "scene_domain", "selected_member",
+        "activation_source_relative_path", "activation_source_sha256", "activation_source_size",
+        "target_relative_path", "activation_precondition_sha256", "rollback_source_relative_path",
+        "rollback_source_sha256", "rollback_precondition_sha256", "replaced_member_count",
+        "unchanged_member_count_verified", "transaction_owner", "registration_mode", "request_status",
+    ], request_profile_rows)
+    write_tsv(evidence_root / "CORE_TRANSACTION_REQUIREMENTS.tsv", [
+        "requirement_id", "severity", "requirement", "rationale",
+    ], requirement_rows)
+    write_tsv(evidence_root / "RUNTIME_TEST_MATRIX.tsv", [
+        "profile_id", "test_order", "scene_id", "scene_group", "activation_mode", "runtime_check",
+        "record", "required_precondition", "required_after_test", "result",
+    ], runtime_rows)
+    write_tsv(evidence_root / "ROLLBACK_INVARIANTS.tsv", [
+        "invariant_id", "invariant", "expected_sha256",
+    ], rollback_rows)
+
+    request = {
+        "type": "br_quartet_restoration_core_single_scene_event_activation_request",
+        "format_version": FORMAT_VERSION,
+        "tool_version": TOOL_VERSION,
+        "workstream_id": "quartet_restoration",
+        "transaction_owner": "core_unified_patcher",
+        "status": "ready_for_existing_pack11_event_profile_registry_extension_runtime_unvalidated",
+        "installed_target_relative_path": archive_rel,
+        "installed_target_sha256_at_request": installed_sha,
+        "installed_target_size_at_request": installed_size,
+        "baseline_relative_path": str(baseline_archive.relative_to(project_root)),
+        "baseline_sha256": baseline_sha,
+        "baseline_size": baseline_size,
+        "existing_event_transaction_baseline_status": existing_event_baseline_status,
+        "profiles": profile_payloads,
+        "policy": {
+            "installed_game_modified": False,
+            "activation_script_generated": False,
+            "rollback_script_generated": False,
+            "proprietary_archive_in_report": False,
+            "extend_existing_pack11_transaction_only": True,
+            "preserve_existing_event_profiles": True,
+            "one_event_profile_at_a_time": True,
+            "precondition_gated": True,
+            "atomic_replace_required": True,
+            "rollback_checksum_gated": True,
+            "first_runtime_test_requires_no_shader_profile": True,
+            "runtime_validation_deferred_until_exact_scene_save_available": True,
+            "legacy_dlc_in_scope": False,
+        },
+    }
+    atomic_json(evidence_root / "CORE_ACTIVATION_REQUEST.json", request)
+
+    profile_ids = ", ".join(item["profile_id"] for item in profile_payloads)
+    handoff = (
+        "# Quartet restoration single-scene PACK11 profile registration request\n\n"
+        "Extend the **existing core-owned PACK11 event-profile transaction mechanism** with the "
+        "additional local profile defined by this report. Do not create a second transaction state, "
+        "do not remove the two existing event profiles, do not modify files owned by "
+        "`quartet_restoration`, and do not embed local PAK files in the core update.\n\n"
+        f"Profile: `{profile_ids}`  \nTarget: `{archive_rel}`  \n"
+        f"Required shared baseline SHA-256: `{baseline_sha}`\n\n"
+        "The profile changes only `event/b1/event_jp/te02/event_te02_230.ebd`. Register it as an "
+        "additional mutually exclusive event profile, reuse the existing checksum-gated atomic "
+        "activation/status/rollback implementation, and keep `runtime_validated` false until the exact "
+        "scene is inspected in game. The first runtime test must run with no shader profile and no other "
+        "event profile active, followed by rollback and exact baseline verification.\n\n"
+        "The workstream has not modified the installed game and has generated no activation or rollback script.\n"
+    )
+    (evidence_root / "CORE_CHAT_HANDOFF.md").write_text(handoff, encoding="utf-8")
+
+    summary = {
+        "type": "br_quartet_restoration_single_scene_event_activation_request_summary",
+        "format_version": FORMAT_VERSION,
+        "tool_version": TOOL_VERSION,
+        "source_repack_test_tool_version": repack_summary.get("tool_version"),
+        "status": "core_existing_pack11_profile_registration_request_ready_game_not_modified_runtime_unvalidated",
+        "profile_rows": len(request_profile_rows),
+        "transaction_requirement_rows": len(requirement_rows),
+        "runtime_test_rows": len(runtime_rows),
+        "rollback_invariant_rows": len(rollback_rows),
+        "target_relative_path": archive_rel,
+        "target_sha256_matches_baseline": installed_sha == baseline_sha,
+        "baseline_sha256": baseline_sha,
+        "existing_event_transaction_baseline_status": existing_event_baseline_status,
+        "installed_game_modified": False,
+        "activation_or_rollback_generated": False,
+        "runtime_validated_profile_rows": 0,
+        "proprietary_archives_exported_in_report": False,
+        "next_action": (
+            "Give this metadata report to the core orchestration chat and register the te02_230 archive "
+            "as one additional profile in the existing PACK11 event transaction mechanism. Runtime "
+            "validation remains deferred until the exact scene is reachable."
+        ),
+    }
+    atomic_json(evidence_root / "SUMMARY.json", summary)
+    output = report_root / SINGLE_SCENE_EVENT_ACTIVATION_REQUEST_REPORT_NAME
+    make_report_archive(evidence_root, output)
+    return output, summary
+
+
+def cmd_prepare_single_scene_event_activation_request(args: argparse.Namespace) -> int:
+    project_root = Path(args.project_root).expanduser().resolve()
+    quartet_root = Path(args.quartet_root).expanduser().resolve()
+    if not project_root.is_dir():
+        raise RestorationError(f"Project root does not exist: {project_root}")
+    if not quartet_root.is_dir():
+        raise RestorationError(f"Quartet game root does not exist: {quartet_root}")
+    default_workspace = project_root / ".local/build/quartet_restoration"
+    default_reports = project_root / ".local/reports/quartet_restoration"
+    workspace_root = Path(args.workspace_root).expanduser().resolve() if args.workspace_root else default_workspace
+    report_root = Path(args.report_root).expanduser().resolve() if args.report_root else default_reports
+    require_within(workspace_root, default_workspace, "Workspace")
+    require_within(report_root, default_reports, "Report root")
+    output, summary = prepare_single_scene_event_activation_request(
+        project_root=project_root,
+        quartet_root=quartet_root,
+        workspace_root=workspace_root,
+        report_root=report_root,
+    )
+    print(f"Single-scene activation request profiles: {summary['profile_rows']}")
+    print(f"Target matches baseline: {summary['target_sha256_matches_baseline']}")
+    print(f"Runtime-validated profiles: {summary['runtime_validated_profile_rows']}")
+    print(f"Installed game modified: {summary['installed_game_modified']}")
+    print(f"Report: {output}")
+    return 0
+
+
+# Stage 27: build separate local PACK10_01 shader test archives from the
+# round-trip-validated G1S prototypes.  The installed game remains read-only.
+# Runtime activation/rollback is still owned by the core unified patcher.
+
+
+def _g1s_target_reference_map(report_root: Path) -> dict[str, dict[str, Any]]:
+    data = load_json(report_root / "differences" / "br1_assets.json")
+    if not isinstance(data, dict) or not isinstance(data.get("entries"), list):
+        raise RestorationError("Missing or invalid br1_assets difference inventory")
+    result: dict[str, dict[str, Any]] = {}
+    for entry in data["entries"]:
+        if not isinstance(entry, dict):
+            continue
+        normalized = str(entry.get("normalized_path", ""))
+        target = entry.get("target")
+        if not normalized or not isinstance(target, dict):
+            continue
+        archive = safe_posix_path(str(target.get("archive", "")))
+        member = safe_posix_path(str(target.get("path", "")))
+        if not archive or not member:
+            continue
+        result[normalized.casefold()] = {
+            "normalized_path": normalized,
+            "archive": archive,
+            "path": member,
+            "sha256": str(target.get("sha256", "")),
+            "size": _parse_int_cell(target.get("size")),
+        }
+    return result
+
+
+def prepare_g1s_repack_tests(
+    *, project_root: Path, quartet_root: Path, gust_pak: Path,
+    workspace_root: Path, report_root: Path, timeout_seconds: int,
+) -> tuple[Path, dict[str, Any]]:
+    prototype_evidence = report_root / G1S_PROTOTYPE_EVIDENCE_DIR
+    prototype_summary = load_json(prototype_evidence / "SUMMARY.json")
+    if prototype_summary.get("type") != "br_quartet_restoration_g1s_prototype_evidence_summary":
+        raise RestorationError("Missing or invalid stage-11 G1S prototype evidence")
+    if _parse_int_cell(prototype_summary.get("validation_failures")) != 0:
+        raise RestorationError("Stage-11 G1S prototype evidence contains validation failures")
+    if _parse_int_cell(prototype_summary.get("prototype_rows")) < 1:
+        raise RestorationError("Stage-11 G1S prototype evidence contains no prototypes")
+
+    prototype_rows_by_id = {
+        str(row.get("prototype_id", "")): row
+        for row in read_tsv(prototype_evidence / "G1S_PROTOTYPES.tsv")
+        if str(row.get("prototype_id", ""))
+    }
+    prototype_root = workspace_root / G1S_PROTOTYPE_BUILD_DIR
+    prototype_manifests = sorted(prototype_root.glob("*/PROTOTYPE.json"), key=lambda path: path.parent.name.casefold())
+    if not prototype_manifests:
+        raise RestorationError(f"No local G1S prototypes are available: {prototype_root}")
+
+    target_refs = _g1s_target_reference_map(report_root)
+    resolved: list[dict[str, Any]] = []
+    archives: set[str] = set()
+    for manifest_path in prototype_manifests:
+        manifest = load_json(manifest_path)
+        prototype_id = str(manifest.get("prototype_id", manifest_path.parent.name))
+        normalized = safe_posix_path(str(manifest.get("normalized_target_path", "")))
+        target = target_refs.get(normalized.casefold())
+        if target is None:
+            raise RestorationError(f"No target inventory reference for G1S prototype: {normalized}")
+        archives.add(str(target["archive"]).casefold())
+        report_row = prototype_rows_by_id.get(prototype_id, {})
+        candidate = manifest_path.parent / "override" / Path(normalized)
+        resolved.append({
+            "prototype_id": prototype_id,
+            "manifest_path": manifest_path,
+            "manifest": manifest,
+            "report_row": report_row,
+            "normalized_path": normalized,
+            "target": target,
+            "candidate": candidate,
+        })
+    if len(archives) != 1:
+        raise RestorationError(f"G1S prototypes span multiple archives; separate harnesses are required: {sorted(archives)}")
+    archive_rel = safe_posix_path(str(resolved[0]["target"]["archive"]))
+
+    archive_rows = read_tsv(report_root / "ARCHIVE_INVENTORY.tsv")
+    inventory_matches = [
+        row for row in archive_rows
+        if str(row.get("side", "")) == "target"
+        and str(row.get("archive", "")).casefold() == archive_rel.casefold()
+    ]
+    if len(inventory_matches) != 1:
+        raise RestorationError(f"Expected one inventory row for {archive_rel}, found {len(inventory_matches)}")
+    inventory_archive = inventory_matches[0]
+    installed_archive = (quartet_root / Path(archive_rel)).resolve()
+    require_within(installed_archive, quartet_root.resolve(), "Quartet shader archive")
+    if not installed_archive.is_file():
+        raise RestorationError(f"Quartet shader archive not found: {installed_archive}")
+    current_archive_sha = sha256_file(installed_archive)
+    current_archive_size = installed_archive.stat().st_size
+    pristine_archive_sha = str(inventory_archive.get("sha256", ""))
+    pristine_archive_match = bool(pristine_archive_sha) and current_archive_sha == pristine_archive_sha
+    gust_pak_sha = sha256_file(gust_pak)
+
+    final_root = workspace_root / G1S_REPACK_TEST_BUILD_DIR
+    require_within(final_root, workspace_root, "G1S repack-test root")
+    final_root.parent.mkdir(parents=True, exist_ok=True)
+    temporary_root: Path | None = Path(tempfile.mkdtemp(prefix=".g1s_repack_tests.", dir=final_root.parent))
+    profile_rows: list[dict[str, Any]] = []
+    file_rows: list[dict[str, Any]] = []
+    validation_rows: list[dict[str, Any]] = []
+    manifest_difference_rows: list[dict[str, Any]] = []
+    skipped_rows: list[dict[str, Any]] = []
+    try:
+        assert temporary_root is not None
+        baseline_root = temporary_root / "baseline"
+        baseline_archive_copy = baseline_root / "Data" / installed_archive.name
+        baseline_archive_copy.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(installed_archive, baseline_archive_copy)
+        baseline_copy_sha = sha256_file(baseline_archive_copy)
+        if baseline_copy_sha != current_archive_sha:
+            raise RestorationError("Local G1S rollback baseline copy checksum mismatch")
+        baseline_extract = baseline_root / "extracted"
+        baseline_manifest_path, baseline_manifest = _extract_pak_for_repack_test(
+            archive=installed_archive, destination=baseline_extract, gust_pak=gust_pak,
+            timeout_seconds=timeout_seconds, log_name="baseline_extract.log",
+        )
+        baseline_signature = _gust_manifest_semantic_signature(baseline_manifest)
+        baseline_members = _manifest_member_hashes(baseline_extract, baseline_manifest)
+        baseline_manifest_sha = sha256_file(baseline_manifest_path)
+        atomic_json(baseline_root / "BASELINE.json", {
+            "type": "br_quartet_restoration_local_g1s_repack_test_baseline",
+            "format_version": FORMAT_VERSION,
+            "tool_version": TOOL_VERSION,
+            "archive_relative_path": archive_rel,
+            "installed_archive_sha256": current_archive_sha,
+            "installed_archive_size": current_archive_size,
+            "inventory_pristine_archive_sha256": pristine_archive_sha,
+            "inventory_pristine_archive_match": pristine_archive_match,
+            "gust_pak_sha256": gust_pak_sha,
+            "manifest_sha256": baseline_manifest_sha,
+            "manifest_parse_mode": baseline_manifest.get("safe_parse_mode", "unknown"),
+            "member_count": len(baseline_members),
+            "local_rollback_archive": f"baseline/Data/{installed_archive.name}",
+            "installed_game_modified": False,
+        })
+
+        successful_profile_ids: list[str] = []
+        for item in resolved:
+            prototype_id = str(item["prototype_id"])
+            manifest = item["manifest"]
+            target = item["target"]
+            candidate_path = item["candidate"]
+            report_row = item["report_row"]
+            target_member = safe_posix_path(str(target["path"]))
+            target_key = target_member.casefold()
+            profile_dir = temporary_root / "profiles" / prototype_id
+            stage_dir = profile_dir / "staging"
+            verify_dir = profile_dir / "verify"
+            output_dir = profile_dir / "output" / "Data"
+            output_dir.mkdir(parents=True, exist_ok=True)
+            expected_target_sha = str(manifest.get("target_sha256", ""))
+            expected_candidate_sha = str(manifest.get("prototype_sha256", ""))
+            baseline_member = baseline_members.get(target_key)
+            checks: dict[str, bool] = {
+                "prototype_manifest_type_valid": manifest.get("type") == "br_quartet_restoration_local_g1s_prototype",
+                "prototype_status_not_installed": manifest.get("status") == "local_reversible_prototype_not_installed",
+                "prototype_target_archive_matches": str(target["archive"]).casefold() == archive_rel.casefold(),
+                "baseline_copy_sha256_matches": baseline_copy_sha == current_archive_sha,
+                "baseline_manifest_valid": bool(baseline_members),
+                "target_member_present": baseline_member is not None,
+                "candidate_payload_present": candidate_path.is_file(),
+            }
+            current_member_sha = baseline_member["sha256"] if baseline_member else ""
+            checks["current_target_member_sha256_matches"] = bool(baseline_member) and current_member_sha == expected_target_sha
+            checks["inventory_target_sha256_matches_prototype"] = not str(target.get("sha256", "")) or str(target.get("sha256")) == expected_target_sha
+            checks["candidate_payload_sha256_matches"] = candidate_path.is_file() and sha256_file(candidate_path) == expected_candidate_sha
+            file_row = {
+                "prototype_id": prototype_id,
+                "rule_id": manifest.get("rule_id", report_row.get("rule_id", "")),
+                "domain": manifest.get("domain", report_row.get("domain", "")),
+                "priority": report_row.get("priority", ""),
+                "normalized_path": item["normalized_path"],
+                "target_archive": archive_rel,
+                "target_member_path": target_member,
+                "expected_target_sha256": expected_target_sha,
+                "current_member_sha256": current_member_sha,
+                "candidate_sha256": expected_candidate_sha,
+                "repacked_member_sha256": "",
+                "validation_status": "failed",
+                "review_status": "checksum_gated_local_shader_repack_test_only",
+            }
+            if not all(checks.values()):
+                for check_name, passed in checks.items():
+                    validation_rows.append({"prototype_id": prototype_id, "check_name": check_name, "passed": passed, "details": "precondition"})
+                skipped_rows.append({"prototype_id": prototype_id, "target_member_path": target_member, "reason": "profile_precondition_failure"})
+                file_rows.append(file_row)
+                continue
+
+            _copy_repack_input_tree(baseline_extract, stage_dir)
+            stage_manifest_path = stage_dir / baseline_manifest_path.name
+            stage_manifest = _load_gust_pak_manifest(stage_manifest_path)
+            target_path = stage_dir / Path(str(baseline_member["name"]))
+            require_within(target_path.resolve(), stage_dir.resolve(), "G1S repack target member")
+            target_path.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(candidate_path, target_path)
+
+            stage_output = stage_dir / str(stage_manifest["safe_output_name"])
+            stage_output.unlink(missing_ok=True)
+            _run_gust_pak(
+                gust_pak=gust_pak, argument_name=stage_manifest_path.name, cwd=stage_dir,
+                log_path=profile_dir / "repack.log", timeout_seconds=timeout_seconds,
+            )
+            if not stage_output.is_file():
+                raise RestorationError(f"gust_pak did not produce repacked G1S archive for {prototype_id}: {stage_output}")
+            local_output = output_dir / installed_archive.name
+            shutil.move(stage_output, local_output)
+            output_sha = sha256_file(local_output)
+            output_size = local_output.stat().st_size
+
+            verify_manifest_path, verify_manifest = _extract_pak_for_repack_test(
+                archive=local_output, destination=verify_dir, gust_pak=gust_pak,
+                timeout_seconds=timeout_seconds, log_name="verify_extract.log",
+            )
+            verify_signature = _gust_manifest_semantic_signature(verify_manifest)
+            differences = _gust_manifest_metadata_differences(
+                baseline_manifest, verify_manifest, profile_id=prototype_id,
+                modified_member_keys={target_key},
+            )
+            manifest_difference_rows.extend(differences)
+            stable_diff_count = sum(row.get("gate_effect") == "validation_gate" for row in differences)
+            derived_diff_count = sum(row.get("gate_effect") == "diagnostic_only" for row in differences)
+            verify_members = _manifest_member_hashes(verify_dir, verify_manifest)
+            unchanged_keys = set(baseline_members) - {target_key}
+            unchanged_mismatches = [
+                key for key in sorted(unchanged_keys)
+                if verify_members.get(key, {}).get("sha256") != baseline_members[key]["sha256"]
+            ]
+            missing_or_extra = set(verify_members) ^ set(baseline_members)
+            repacked_sha = verify_members.get(target_key, {}).get("sha256", "")
+            file_row["repacked_member_sha256"] = repacked_sha
+            file_row["validation_status"] = "passed" if repacked_sha == expected_candidate_sha else "failed"
+            checks.update({
+                "baseline_manifest_semantics_preserved": verify_signature == baseline_signature,
+                "member_name_set_preserved": not missing_or_extra,
+                "modified_member_matches_candidate": repacked_sha == expected_candidate_sha,
+                "all_unchanged_members_preserved": not unchanged_mismatches,
+                "output_archive_differs_from_input": output_sha != current_archive_sha,
+                "verification_manifest_created": verify_manifest_path.is_file(),
+                "installed_archive_still_matches_initial_sha256": sha256_file(installed_archive) == current_archive_sha,
+            })
+            for check_name, passed in checks.items():
+                details = ""
+                if check_name == "baseline_manifest_semantics_preserved":
+                    details = f"stable_differences={stable_diff_count};derived_differences={derived_diff_count}"
+                elif check_name == "all_unchanged_members_preserved":
+                    details = f"checked={len(unchanged_keys)};mismatches={len(unchanged_mismatches)}"
+                elif check_name == "member_name_set_preserved":
+                    details = f"set_delta={len(missing_or_extra)}"
+                validation_rows.append({"prototype_id": prototype_id, "check_name": check_name, "passed": passed, "details": details})
+            file_rows.append(file_row)
+            validation_status = "passed" if all(checks.values()) else "failed"
+            if validation_status != "passed":
+                local_output.unlink(missing_ok=True)
+                skipped_rows.append({"prototype_id": prototype_id, "target_member_path": target_member, "reason": "profile_repack_validation_failure"})
+                continue
+
+            atomic_json(profile_dir / "PROFILE.json", {
+                "type": "br_quartet_restoration_local_g1s_repack_test_profile",
+                "format_version": FORMAT_VERSION,
+                "tool_version": TOOL_VERSION,
+                "prototype_id": prototype_id,
+                "rule_id": manifest.get("rule_id", report_row.get("rule_id", "")),
+                "domain": manifest.get("domain", report_row.get("domain", "")),
+                "priority": report_row.get("priority", ""),
+                "input_archive_relative_path": archive_rel,
+                "input_archive_sha256": current_archive_sha,
+                "input_archive_size": current_archive_size,
+                "output_archive_relative_path": f"profiles/{prototype_id}/output/Data/{installed_archive.name}",
+                "output_archive_sha256": output_sha,
+                "output_archive_size": output_size,
+                "rollback_archive_relative_path": f"baseline/Data/{installed_archive.name}",
+                "rollback_archive_sha256": baseline_copy_sha,
+                "gust_pak_sha256": gust_pak_sha,
+                "baseline_manifest_parse_mode": baseline_manifest.get("safe_parse_mode", "unknown"),
+                "verification_manifest_parse_mode": verify_manifest.get("safe_parse_mode", "unknown"),
+                "replaced_member_count": 1,
+                "unchanged_member_count_verified": len(unchanged_keys),
+                "activation_supported": False,
+                "runtime_validated": False,
+                "installed_game_modified": False,
+                "files": [{
+                    "target_member_path": target_member,
+                    "target_sha256": current_member_sha,
+                    "candidate_sha256": expected_candidate_sha,
+                }],
+            })
+            profile_rows.append({
+                "prototype_id": prototype_id,
+                "rule_id": manifest.get("rule_id", report_row.get("rule_id", "")),
+                "domain": manifest.get("domain", report_row.get("domain", "")),
+                "priority": report_row.get("priority", ""),
+                "input_archive_relative_path": archive_rel,
+                "input_archive_sha256": current_archive_sha,
+                "input_archive_size": current_archive_size,
+                "inventory_pristine_archive_match": pristine_archive_match,
+                "baseline_manifest_parse_mode": baseline_manifest.get("safe_parse_mode", "unknown"),
+                "verification_manifest_parse_mode": verify_manifest.get("safe_parse_mode", "unknown"),
+                "output_archive_sha256": output_sha,
+                "output_archive_size": output_size,
+                "replaced_member_count": 1,
+                "unchanged_member_count_verified": len(unchanged_keys),
+                "local_output_archive": str((final_root / "profiles" / prototype_id / "output" / "Data" / installed_archive.name).relative_to(project_root)),
+                "local_rollback_archive": str((final_root / "baseline" / "Data" / installed_archive.name).relative_to(project_root)),
+                "validation_status": validation_status,
+                "runtime_validation_status": "deferred_until_relevant_scene_save_available",
+                "activation_status": "not_generated_requires_unified_patcher_core_transaction",
+            })
+            successful_profile_ids.append(prototype_id)
+            shutil.rmtree(stage_dir, ignore_errors=True)
+            shutil.rmtree(verify_dir, ignore_errors=True)
+
+        atomic_json(temporary_root / G1S_REPACK_TEST_MARKER, {
+            "type": "br_quartet_restoration_local_g1s_repack_test_harness",
+            "format_version": FORMAT_VERSION,
+            "tool_version": TOOL_VERSION,
+            "source_g1s_prototype_tool_version": prototype_summary.get("tool_version"),
+            "input_archive_relative_path": archive_rel,
+            "input_archive_sha256": current_archive_sha,
+            "input_archive_size": current_archive_size,
+            "inventory_pristine_archive_sha256": pristine_archive_sha,
+            "inventory_pristine_archive_match": pristine_archive_match,
+            "gust_pak_sha256": gust_pak_sha,
+            "baseline_member_count": len(baseline_members),
+            "baseline_manifest_parse_mode": baseline_manifest.get("safe_parse_mode", "unknown"),
+            "successful_profile_ids": successful_profile_ids,
+            "installed_game_modified": False,
+            "activation_supported": False,
+            "runtime_validated": False,
+        })
+        shutil.rmtree(baseline_extract, ignore_errors=True)
+        _remove_generated_repack_test_root(final_root)
+        os.replace(temporary_root, final_root)
+        temporary_root = None
+    finally:
+        if temporary_root is not None and temporary_root.exists():
+            shutil.rmtree(temporary_root, ignore_errors=True)
+
+    profile_rows.sort(key=lambda row: (0 if row.get("priority") == "critical" else 1, str(row.get("prototype_id", ""))))
+    file_rows.sort(key=lambda row: str(row.get("prototype_id", "")))
+    validation_rows.sort(key=lambda row: (str(row.get("prototype_id", "")), str(row.get("check_name", ""))))
+    manifest_difference_rows.sort(key=lambda row: (
+        str(row.get("profile_id", "")), 0 if row.get("gate_effect") == "validation_gate" else 1,
+        str(row.get("scope", "")), str(row.get("member_path", "")).casefold(), str(row.get("field", "")),
+    ))
+    skipped_rows.sort(key=lambda row: (str(row.get("prototype_id", "")), str(row.get("reason", ""))))
+
+    evidence_root = report_root / G1S_REPACK_TEST_EVIDENCE_DIR
+    if evidence_root.exists():
+        shutil.rmtree(evidence_root)
+    evidence_root.mkdir(parents=True, exist_ok=True)
+    write_tsv(evidence_root / "G1S_REPACK_TEST_PROFILES.tsv", [
+        "prototype_id","rule_id","domain","priority","input_archive_relative_path","input_archive_sha256","input_archive_size",
+        "inventory_pristine_archive_match","baseline_manifest_parse_mode","verification_manifest_parse_mode","output_archive_sha256",
+        "output_archive_size","replaced_member_count","unchanged_member_count_verified","local_output_archive","local_rollback_archive",
+        "validation_status","runtime_validation_status","activation_status",
+    ], profile_rows)
+    write_tsv(evidence_root / "G1S_REPACK_TEST_FILES.tsv", [
+        "prototype_id","rule_id","domain","priority","normalized_path","target_archive","target_member_path","expected_target_sha256",
+        "current_member_sha256","candidate_sha256","repacked_member_sha256","validation_status","review_status",
+    ], file_rows)
+    write_tsv(evidence_root / "G1S_REPACK_TEST_VALIDATION.tsv", ["prototype_id","check_name","passed","details"], validation_rows)
+    write_tsv(evidence_root / "G1S_REPACK_TEST_MANIFEST_DIFFERENCES.tsv", [
+        "profile_id","scope","field","member_path","classification","baseline_value","verification_value",
+        "baseline_value_sha256","verification_value_sha256","gate_effect",
+    ], manifest_difference_rows)
+    write_tsv(evidence_root / "G1S_REPACK_TEST_BUILD_SKIPPED.tsv", ["prototype_id","target_member_path","reason"], skipped_rows)
+
+    validation_failures = sum(str(row.get("passed", "")).casefold() != "true" for row in validation_rows)
+    summary = {
+        "type": "br_quartet_restoration_g1s_repack_test_evidence_summary",
+        "format_version": FORMAT_VERSION,
+        "tool_version": TOOL_VERSION,
+        "source_g1s_prototype_tool_version": prototype_summary.get("tool_version"),
+        "status": "local_checksum_gated_g1s_repack_test_archives_built_not_installed" if profile_rows else "no_g1s_repack_test_profile_built",
+        "profile_rows": len(profile_rows),
+        "file_rows": len(file_rows),
+        "validation_rows": len(validation_rows),
+        "validation_failures": validation_failures,
+        "manifest_difference_rows": len(manifest_difference_rows),
+        "stable_manifest_difference_rows": sum(row.get("gate_effect") == "validation_gate" for row in manifest_difference_rows),
+        "derived_manifest_difference_rows": sum(row.get("gate_effect") == "diagnostic_only" for row in manifest_difference_rows),
+        "skipped_rows": len(skipped_rows),
+        "input_archive_relative_path": archive_rel,
+        "input_archive_sha256": current_archive_sha,
+        "input_archive_size": current_archive_size,
+        "inventory_pristine_archive_sha256": pristine_archive_sha,
+        "inventory_pristine_archive_match": pristine_archive_match,
+        "gust_pak_sha256": gust_pak_sha,
+        "baseline_manifest_parse_mode": baseline_manifest.get("safe_parse_mode", "unknown"),
+        "local_harness_root": str(final_root.relative_to(project_root)) if final_root.is_relative_to(project_root) else str(final_root),
+        "event_core_activation_implementation_status": "implemented_synthetic_transaction_tests_complete_runtime_scene_validation_deferred",
+        "policy": {
+            "installed_game_read_only": True,
+            "installed_game_modified": False,
+            "current_archive_used_as_repack_base": True,
+            "all_unchanged_members_verified_by_reextraction_hash": True,
+            "derived_gust_manifest_keys_used_as_validation_gate": False,
+            "stable_manifest_format_member_order_and_flags_verified": True,
+            "shader_profiles_kept_separate": True,
+            "local_rollback_baseline_copied": True,
+            "activation_or_installer_generated": False,
+            "unified_patcher_core_transaction_required_for_runtime_test": True,
+            "event_profiles_marked_runtime_validated": False,
+            "g1s_profiles_marked_runtime_validated": False,
+            "proprietary_archives_exported_in_report": False,
+            "legacy_dlc_in_scope": False,
+            "translation_edits_in_scope": False,
+        },
+        "next_action": "Upload the metadata report. If both profiles pass, prepare a separate metadata-only core activation request for PACK10_01. Runtime validation remains deferred until a save reaches the relevant fog/water scenes.",
+    }
+    atomic_json(evidence_root / "SUMMARY.json", summary)
+    output = report_root / G1S_REPACK_TEST_REPORT_NAME
+    make_report_archive(evidence_root, output)
+    return output, summary
+
+
+def cmd_prepare_g1s_repack_tests(args: argparse.Namespace) -> int:
+    project_root = Path(args.project_root).expanduser().resolve()
+    quartet_root = Path(args.quartet_root).expanduser().resolve()
+    gust_pak = Path(args.gust_pak).expanduser().resolve()
+    if not project_root.is_dir():
+        raise RestorationError(f"Project root does not exist: {project_root}")
+    if not quartet_root.is_dir():
+        raise RestorationError(f"Quartet game root does not exist: {quartet_root}")
+    default_workspace = project_root / ".local/build/quartet_restoration"
+    default_reports = project_root / ".local/reports/quartet_restoration"
+    workspace_root = Path(args.workspace_root).expanduser().resolve() if args.workspace_root else default_workspace
+    report_root = Path(args.report_root).expanduser().resolve() if args.report_root else default_reports
+    require_within(workspace_root, default_workspace, "Workspace")
+    require_within(report_root, default_reports, "Report root")
+    output, summary = prepare_g1s_repack_tests(
+        project_root=project_root, quartet_root=quartet_root, gust_pak=gust_pak,
+        workspace_root=workspace_root, report_root=report_root,
+        timeout_seconds=args.timeout_seconds,
+    )
+    print(f"Local shader repack profiles: {summary['profile_rows']}")
+    print(f"Validation failures: {summary['validation_failures']}")
+    print(f"Installed game modified: {summary['policy']['installed_game_modified']}")
+    print(f"Report: {output}")
+    return 0
+
+def prepare_event_activation_request(
+    *, project_root: Path, quartet_root: Path, workspace_root: Path, report_root: Path,
+) -> tuple[Path, dict[str, Any]]:
+    repack_evidence = report_root / EVENT_REPACK_TEST_EVIDENCE_DIR
+    repack_summary = load_json(repack_evidence / "SUMMARY.json")
+    if repack_summary.get("type") != "br_quartet_restoration_event_repack_test_evidence_summary":
+        raise RestorationError("Missing or invalid stage-25 event repack-test evidence")
+    if _parse_int_cell(repack_summary.get("validation_failures")) != 0:
+        raise RestorationError("Stage-25 event repack-test evidence contains validation failures")
+    if _parse_int_cell(repack_summary.get("profile_rows")) < 1:
+        raise RestorationError("Stage-25 event repack-test evidence contains no successful profiles")
+
+    profile_rows = read_tsv(repack_evidence / "EVENT_REPACK_TEST_PROFILES.tsv")
+    file_rows = read_tsv(repack_evidence / "EVENT_REPACK_TEST_FILES.tsv")
+    validation_rows = read_tsv(repack_evidence / "EVENT_REPACK_TEST_VALIDATION.tsv")
+    successful_profiles = [
+        row for row in profile_rows
+        if str(row.get("validation_status", "")).casefold() == "passed"
+    ]
+    if len(successful_profiles) != _parse_int_cell(repack_summary.get("profile_rows")):
+        raise RestorationError("Stage-25 profile table does not match its summary")
+
+    harness_root = workspace_root / EVENT_REPACK_TEST_BUILD_DIR
+    marker_path = harness_root / EVENT_REPACK_TEST_MARKER
+    if not marker_path.is_file():
+        raise RestorationError(f"Missing local stage-25 harness marker: {marker_path}")
+    marker = load_json(marker_path)
+    if marker.get("type") != "br_quartet_restoration_local_event_repack_test_harness":
+        raise RestorationError("Invalid local stage-25 harness marker")
+
+    baseline_meta_path = harness_root / "baseline" / "BASELINE.json"
+    baseline_meta = load_json(baseline_meta_path)
+    if baseline_meta.get("type") != "br_quartet_restoration_local_event_repack_test_baseline":
+        raise RestorationError("Invalid local stage-25 baseline metadata")
+    archive_rel = safe_posix_path(str(repack_summary.get("input_archive_relative_path", "")))
+    if not archive_rel:
+        raise RestorationError("Stage-25 summary has no input archive path")
+    installed_archive = (quartet_root / Path(archive_rel)).resolve()
+    require_within(installed_archive, quartet_root.resolve(), "Quartet activation target")
+    if not installed_archive.is_file():
+        raise RestorationError(f"Quartet activation target is missing: {installed_archive}")
+
+    baseline_rel = safe_posix_path(str(baseline_meta.get("local_rollback_archive", "")))
+    baseline_archive = (harness_root / Path(baseline_rel)).resolve()
+    require_within(baseline_archive, harness_root.resolve(), "Local rollback archive")
+    if not baseline_archive.is_file():
+        raise RestorationError(f"Local rollback archive is missing: {baseline_archive}")
+    expected_baseline_sha = str(repack_summary.get("input_archive_sha256", ""))
+    expected_baseline_size = _parse_int_cell(repack_summary.get("input_archive_size"))
+    baseline_sha = sha256_file(baseline_archive)
+    baseline_size = baseline_archive.stat().st_size
+    installed_sha = sha256_file(installed_archive)
+    installed_size = installed_archive.stat().st_size
+    if baseline_sha != expected_baseline_sha or baseline_size != expected_baseline_size:
+        raise RestorationError("Local rollback baseline no longer matches stage-25 evidence")
+    if installed_sha != baseline_sha or installed_size != baseline_size:
+        raise RestorationError(
+            "Installed PACK11.PAK changed after stage 25; rerun stage 25 before requesting activation"
+        )
+
+    evidence_root = report_root / EVENT_ACTIVATION_REQUEST_EVIDENCE_DIR
+    if evidence_root.exists():
+        shutil.rmtree(evidence_root)
+    evidence_root.mkdir(parents=True, exist_ok=True)
+
+    request_profile_rows: list[dict[str, Any]] = []
+    runtime_rows: list[dict[str, Any]] = []
+    profile_payloads: list[dict[str, Any]] = []
+    for row in sorted(
+        successful_profiles, key=lambda item: str(item.get("profile_id", "")).casefold()
+    ):
+        profile_id = str(row.get("profile_id", ""))
+        if not profile_id:
+            raise RestorationError("Stage-25 profile row has no profile_id")
+        local_output = safe_posix_path(str(row.get("local_output_archive", "")))
+        output_archive = (project_root / Path(local_output)).resolve()
+        require_within(output_archive, workspace_root.resolve(), "Local activation profile archive")
+        if not output_archive.is_file():
+            raise RestorationError(f"Local activation profile archive is missing: {output_archive}")
+        output_sha = sha256_file(output_archive)
+        output_size = output_archive.stat().st_size
+        if output_sha != str(row.get("output_archive_sha256", "")):
+            raise RestorationError(f"Local activation profile checksum mismatch: {profile_id}")
+        if output_size != _parse_int_cell(row.get("output_archive_size")):
+            raise RestorationError(f"Local activation profile size mismatch: {profile_id}")
+        profile_validation = [
+            item for item in validation_rows if str(item.get("profile_id", "")) == profile_id
+        ]
+        if not profile_validation or any(
+            str(item.get("passed", "")).casefold() != "true" for item in profile_validation
+        ):
+            raise RestorationError(f"Profile validation table is incomplete or failed: {profile_id}")
+        selected_files = [
+            item for item in file_rows if str(item.get("profile_id", "")) == profile_id
+        ]
+        if len(selected_files) != _parse_int_cell(row.get("replaced_member_count")):
+            raise RestorationError(f"Profile selected-member count mismatch: {profile_id}")
+        confidence = str(row.get("prototype_confidence", ""))
+        classification = str(row.get("profile_classification", ""))
+        test_group = (
+            "repeated_bath_foXX_090"
+            if confidence == "high"
+            else "shower_pool_te02_route_sequence"
+        )
+        rollback_relative_path = str(baseline_archive.relative_to(project_root))
+        request_profile_rows.append({
+            "profile_id": profile_id,
+            "classification": classification,
+            "confidence": confidence,
+            "activation_source_relative_path": local_output,
+            "activation_source_sha256": output_sha,
+            "activation_source_size": output_size,
+            "target_relative_path": archive_rel,
+            "activation_precondition_sha256": baseline_sha,
+            "rollback_source_relative_path": rollback_relative_path,
+            "rollback_source_sha256": baseline_sha,
+            "rollback_precondition_sha256": output_sha,
+            "replaced_member_count": len(selected_files),
+            "unchanged_member_count_verified": _parse_int_cell(
+                row.get("unchanged_member_count_verified")
+            ),
+            "transaction_owner": "core_unified_patcher",
+            "request_status": "ready_for_core_transaction_implementation",
+        })
+        runtime_rows.append({
+            "profile_id": profile_id,
+            "test_order": 1 if confidence == "high" else 2,
+            "confidence": confidence,
+            "event_group": test_group,
+            "activation_mode": "exclusive_one_profile_at_a_time",
+            "runtime_check": "launch_game_and_visit_matching_scene_family",
+            "record": (
+                "crash_or_load_failure; visible_costume_or_coverage_change; "
+                "steam_fog_light_water_or_wet_material_change; unrelated_regression"
+            ),
+            "required_after_test": "rollback_to_stage25_baseline_before_next_profile",
+            "result": "not_tested",
+        })
+        profile_payloads.append({
+            "profile_id": profile_id,
+            "classification": classification,
+            "confidence": confidence,
+            "source_relative_path": local_output,
+            "source_sha256": output_sha,
+            "source_size": output_size,
+            "target_relative_path": archive_rel,
+            "expected_target_sha256_before_activation": baseline_sha,
+            "expected_target_sha256_after_activation": output_sha,
+            "rollback_relative_path": rollback_relative_path,
+            "rollback_sha256": baseline_sha,
+            "expected_target_sha256_before_rollback": output_sha,
+            "selected_members": len(selected_files),
+        })
+
+    requirements = [
+        ("TX001", "required", "Core owns activation and rollback; quartet_restoration must not write the installed game.", "parallel workstream ownership"),
+        ("TX002", "required", "Verify installed target SHA-256 equals the baseline before activation.", "avoid overwriting later translation or mod changes"),
+        ("TX003", "required", "Verify local profile source SHA-256 immediately before copying.", "reject stale or corrupted local artifacts"),
+        ("TX004", "required", "Copy to a same-filesystem temporary file, fsync it, then atomically replace PACK11.PAK.", "avoid a partially written game archive"),
+        ("TX005", "required", "Record the observed pre-activation SHA-256 and a core-managed rollback backup.", "deterministic rollback"),
+        ("TX006", "required", "Rollback only if installed PACK11.PAK still matches the active profile SHA-256.", "do not overwrite changes made after activation"),
+        ("TX007", "required", "Allow only one event test profile to be active at a time.", "keep hypotheses isolated"),
+        ("TX008", "required", "After rollback, verify PACK11.PAK equals the stage-25 baseline SHA-256.", "close the transaction"),
+        ("TX009", "required", "Do not embed proprietary PAK payloads in the core update package.", "local artifacts only"),
+        ("TX010", "required", "If any precondition differs, abort and require rerunning stages 25 and 26.", "preserve compatibility with current translation output"),
+    ]
+    requirement_rows = [
+        {"requirement_id": rid, "severity": severity, "requirement": text, "rationale": rationale}
+        for rid, severity, text, rationale in requirements
+    ]
+    rollback_rows = [
+        {"invariant_id": "RB001", "invariant": "baseline archive equals installed PACK11.PAK immediately before first activation", "expected_sha256": baseline_sha},
+        {"invariant_id": "RB002", "invariant": "active profile SHA-256 is the only accepted rollback precondition", "expected_sha256": "profile_specific"},
+        {"invariant_id": "RB003", "invariant": "rollback result equals the exact stage-25 baseline", "expected_sha256": baseline_sha},
+        {"invariant_id": "RB004", "invariant": "this workstream emits no activation or rollback command", "expected_sha256": "not_applicable"},
+    ]
+
+    write_tsv(evidence_root / "CORE_ACTIVATION_PROFILES.tsv", [
+        "profile_id", "classification", "confidence", "activation_source_relative_path",
+        "activation_source_sha256", "activation_source_size", "target_relative_path",
+        "activation_precondition_sha256", "rollback_source_relative_path",
+        "rollback_source_sha256", "rollback_precondition_sha256", "replaced_member_count",
+        "unchanged_member_count_verified", "transaction_owner", "request_status",
+    ], request_profile_rows)
+    write_tsv(evidence_root / "CORE_TRANSACTION_REQUIREMENTS.tsv", [
+        "requirement_id", "severity", "requirement", "rationale",
+    ], requirement_rows)
+    write_tsv(evidence_root / "RUNTIME_TEST_MATRIX.tsv", [
+        "profile_id", "test_order", "confidence", "event_group", "activation_mode",
+        "runtime_check", "record", "required_after_test", "result",
+    ], runtime_rows)
+    write_tsv(evidence_root / "ROLLBACK_INVARIANTS.tsv", [
+        "invariant_id", "invariant", "expected_sha256",
+    ], rollback_rows)
+
+    request = {
+        "type": "br_quartet_restoration_core_activation_request",
+        "format_version": FORMAT_VERSION,
+        "tool_version": TOOL_VERSION,
+        "workstream_id": "quartet_restoration",
+        "transaction_owner": "core_unified_patcher",
+        "status": "ready_for_core_owned_activation_rollback_implementation",
+        "installed_target_relative_path": archive_rel,
+        "installed_target_sha256_at_request": installed_sha,
+        "installed_target_size_at_request": installed_size,
+        "baseline_relative_path": str(baseline_archive.relative_to(project_root)),
+        "baseline_sha256": baseline_sha,
+        "baseline_size": baseline_size,
+        "profiles": profile_payloads,
+        "policy": {
+            "installed_game_modified": False,
+            "activation_script_generated": False,
+            "rollback_script_generated": False,
+            "proprietary_archive_in_report": False,
+            "one_profile_at_a_time": True,
+            "precondition_gated": True,
+            "atomic_replace_required": True,
+            "rollback_checksum_gated": True,
+            "translation_changes_must_be_preserved": True,
+            "legacy_dlc_in_scope": False,
+        },
+    }
+    atomic_json(evidence_root / "CORE_ACTIVATION_REQUEST.json", request)
+
+    handoff = (
+        "# Quartet restoration event-profile activation request\n\n"
+        "Implement this as a **core-owned unified-patcher transaction**. Do not modify files "
+        "owned by `quartet_restoration`, and do not embed the local PAK files in the core update.\n\n"
+        f"Target: `{archive_rel}`  \nRequired current SHA-256: `{baseline_sha}`\n\n"
+        f"The metadata files in this report define {len(profile_payloads)} mutually exclusive local "
+        "profiles. The core transaction must validate source and target SHA-256 values, use a "
+        "same-filesystem temporary file plus atomic replacement, record a rollback backup, and "
+        "refuse rollback if the installed archive no longer matches the active profile. After every "
+        "test, restore and verify the baseline before activating another profile.\n\n"
+        "The workstream has not modified the installed game and has not generated activation or "
+        "rollback scripts.\n"
+    )
+    (evidence_root / "CORE_CHAT_HANDOFF.md").write_text(handoff, encoding="utf-8")
+
+    summary = {
+        "type": "br_quartet_restoration_event_activation_request_summary",
+        "format_version": FORMAT_VERSION,
+        "tool_version": TOOL_VERSION,
+        "source_repack_test_tool_version": repack_summary.get("tool_version"),
+        "status": "core_activation_request_ready_game_not_modified",
+        "profile_rows": len(request_profile_rows),
+        "high_confidence_profile_rows": sum(
+            row.get("confidence") == "high" for row in request_profile_rows
+        ),
+        "experimental_profile_rows": sum(
+            row.get("confidence") == "experimental" for row in request_profile_rows
+        ),
+        "transaction_requirement_rows": len(requirement_rows),
+        "runtime_test_rows": len(runtime_rows),
+        "rollback_invariant_rows": len(rollback_rows),
+        "target_relative_path": archive_rel,
+        "target_sha256_matches_baseline": installed_sha == baseline_sha,
+        "baseline_sha256": baseline_sha,
+        "installed_game_modified": False,
+        "activation_or_rollback_generated": False,
+        "proprietary_archives_exported_in_report": False,
+        "next_action": (
+            "Give this metadata report to the core orchestration chat and request a unified-patcher "
+            "activation/rollback transaction; after applying that core update, test the high-confidence "
+            "profile first and rollback before the experimental profile."
+        ),
+    }
+    atomic_json(evidence_root / "SUMMARY.json", summary)
+    output = report_root / EVENT_ACTIVATION_REQUEST_REPORT_NAME
+    make_report_archive(evidence_root, output)
+    return output, summary
+
+
+def cmd_prepare_event_activation_request(args: argparse.Namespace) -> int:
+    project_root = Path(args.project_root).expanduser().resolve()
+    quartet_root = Path(args.quartet_root).expanduser().resolve()
+    if not project_root.is_dir():
+        raise RestorationError(f"Project root does not exist: {project_root}")
+    if not quartet_root.is_dir():
+        raise RestorationError(f"Quartet game root does not exist: {quartet_root}")
+    default_workspace = project_root / ".local/build/quartet_restoration"
+    default_reports = project_root / ".local/reports/quartet_restoration"
+    workspace_root = (
+        Path(args.workspace_root).expanduser().resolve()
+        if args.workspace_root else default_workspace
+    )
+    report_root = (
+        Path(args.report_root).expanduser().resolve()
+        if args.report_root else default_reports
+    )
+    require_within(workspace_root, default_workspace, "Workspace")
+    require_within(report_root, default_reports, "Report root")
+    output, summary = prepare_event_activation_request(
+        project_root=project_root,
+        quartet_root=quartet_root,
+        workspace_root=workspace_root,
+        report_root=report_root,
+    )
+    print(f"Activation request profiles: {summary['profile_rows']}")
+    print(f"Target matches baseline: {summary['target_sha256_matches_baseline']}")
+    print(f"Installed game modified: {summary['installed_game_modified']}")
+    print(f"Report: {output}")
+    return 0
+
+
+def _g1s_runtime_test_definition(profile_id: str, rule_id: str, domain: str) -> tuple[int, str, str, str]:
+    if profile_id == "height_fog_shader_original_code" or rule_id == "height_fog_shader":
+        return (
+            1,
+            "bath_shower_pool_or_other_height_fog_affected_scene",
+            "launch_game_and_visit_a_scene_where_height_fog_or_steam_occlusion_is_visible",
+            "crash_or_load_failure; steam_vapor_or_height_fog_occlusion_change; unrelated_fog_or_lighting_regression",
+        )
+    if profile_id == "water_shader_swater_original_code" or rule_id == "water_shader_swater":
+        return (
+            2,
+            "pool_or_other_swater_surface_scene",
+            "launch_game_and_visit_a_scene_where_the_swater_shader_is_visibly_active",
+            "crash_or_load_failure; water_visibility_transparency_surface_or_geometry_change; unrelated_water_rendering_regression",
+        )
+    return (
+        99,
+        domain or "unknown_shader_domain",
+        "launch_game_and_visit_a_scene_using_the_selected_shader",
+        "crash_or_load_failure; intended_rendering_change; unrelated_rendering_regression",
+    )
+
+
+def prepare_g1s_activation_request(
+    *, project_root: Path, quartet_root: Path, workspace_root: Path, report_root: Path,
+) -> tuple[Path, dict[str, Any]]:
+    repack_evidence = report_root / G1S_REPACK_TEST_EVIDENCE_DIR
+    repack_summary = load_json(repack_evidence / "SUMMARY.json")
+    if repack_summary.get("type") != "br_quartet_restoration_g1s_repack_test_evidence_summary":
+        raise RestorationError("Missing or invalid stage-27 G1S repack-test evidence")
+    if _parse_int_cell(repack_summary.get("validation_failures")) != 0:
+        raise RestorationError("Stage-27 G1S repack-test evidence contains validation failures")
+    if _parse_int_cell(repack_summary.get("profile_rows")) < 1:
+        raise RestorationError("Stage-27 G1S repack-test evidence contains no successful profiles")
+
+    profile_rows = read_tsv(repack_evidence / "G1S_REPACK_TEST_PROFILES.tsv")
+    file_rows = read_tsv(repack_evidence / "G1S_REPACK_TEST_FILES.tsv")
+    validation_rows = read_tsv(repack_evidence / "G1S_REPACK_TEST_VALIDATION.tsv")
+    successful_profiles = [
+        row for row in profile_rows
+        if str(row.get("validation_status", "")).casefold() == "passed"
+    ]
+    if len(successful_profiles) != _parse_int_cell(repack_summary.get("profile_rows")):
+        raise RestorationError("Stage-27 G1S profile table does not match its summary")
+
+    harness_root = workspace_root / G1S_REPACK_TEST_BUILD_DIR
+    marker_path = harness_root / G1S_REPACK_TEST_MARKER
+    if not marker_path.is_file():
+        raise RestorationError(f"Missing local stage-27 G1S harness marker: {marker_path}")
+    marker = load_json(marker_path)
+    if marker.get("type") != "br_quartet_restoration_local_g1s_repack_test_harness":
+        raise RestorationError("Invalid local stage-27 G1S harness marker")
+
+    baseline_meta_path = harness_root / "baseline" / "BASELINE.json"
+    baseline_meta = load_json(baseline_meta_path)
+    if baseline_meta.get("type") != "br_quartet_restoration_local_g1s_repack_test_baseline":
+        raise RestorationError("Invalid local stage-27 G1S baseline metadata")
+    archive_rel = safe_posix_path(str(repack_summary.get("input_archive_relative_path", "")))
+    if not archive_rel:
+        raise RestorationError("Stage-27 summary has no input archive path")
+    installed_archive = (quartet_root / Path(archive_rel)).resolve()
+    require_within(installed_archive, quartet_root.resolve(), "Quartet shader activation target")
+    if not installed_archive.is_file():
+        raise RestorationError(f"Quartet shader activation target is missing: {installed_archive}")
+
+    baseline_rel = safe_posix_path(str(baseline_meta.get("local_rollback_archive", "")))
+    baseline_archive = (harness_root / Path(baseline_rel)).resolve()
+    require_within(baseline_archive, harness_root.resolve(), "Local G1S rollback archive")
+    if not baseline_archive.is_file():
+        raise RestorationError(f"Local G1S rollback archive is missing: {baseline_archive}")
+    expected_baseline_sha = str(repack_summary.get("input_archive_sha256", ""))
+    expected_baseline_size = _parse_int_cell(repack_summary.get("input_archive_size"))
+    baseline_sha = sha256_file(baseline_archive)
+    baseline_size = baseline_archive.stat().st_size
+    installed_sha = sha256_file(installed_archive)
+    installed_size = installed_archive.stat().st_size
+    if baseline_sha != expected_baseline_sha or baseline_size != expected_baseline_size:
+        raise RestorationError("Local G1S rollback baseline no longer matches stage-27 evidence")
+    if installed_sha != baseline_sha or installed_size != baseline_size:
+        raise RestorationError(
+            "Installed PACK10_01.PAK changed after stage 27; rerun stage 27 before requesting activation"
+        )
+
+    evidence_root = report_root / G1S_ACTIVATION_REQUEST_EVIDENCE_DIR
+    if evidence_root.exists():
+        shutil.rmtree(evidence_root)
+    evidence_root.mkdir(parents=True, exist_ok=True)
+
+    request_profile_rows: list[dict[str, Any]] = []
+    runtime_rows: list[dict[str, Any]] = []
+    profile_payloads: list[dict[str, Any]] = []
+    ordered_profiles: list[tuple[int, dict[str, Any], tuple[int, str, str, str]]] = []
+    for row in successful_profiles:
+        profile_id = str(row.get("prototype_id", ""))
+        rule_id = str(row.get("rule_id", ""))
+        domain = str(row.get("domain", ""))
+        if not profile_id:
+            raise RestorationError("Stage-27 G1S profile row has no prototype_id")
+        definition = _g1s_runtime_test_definition(profile_id, rule_id, domain)
+        ordered_profiles.append((definition[0], row, definition))
+
+    for _, row, definition in sorted(ordered_profiles, key=lambda item: (item[0], str(item[1].get("prototype_id", "")).casefold())):
+        profile_id = str(row.get("prototype_id", ""))
+        rule_id = str(row.get("rule_id", ""))
+        domain = str(row.get("domain", ""))
+        priority = str(row.get("priority", ""))
+        test_order, scene_group, runtime_check, runtime_record = definition
+        local_output = safe_posix_path(str(row.get("local_output_archive", "")))
+        output_archive = (project_root / Path(local_output)).resolve()
+        require_within(output_archive, workspace_root.resolve(), "Local G1S activation profile archive")
+        if not output_archive.is_file():
+            raise RestorationError(f"Local G1S activation profile archive is missing: {output_archive}")
+        output_sha = sha256_file(output_archive)
+        output_size = output_archive.stat().st_size
+        if output_sha != str(row.get("output_archive_sha256", "")):
+            raise RestorationError(f"Local G1S activation profile checksum mismatch: {profile_id}")
+        if output_size != _parse_int_cell(row.get("output_archive_size")):
+            raise RestorationError(f"Local G1S activation profile size mismatch: {profile_id}")
+        profile_validation = [
+            item for item in validation_rows if str(item.get("prototype_id", "")) == profile_id
+        ]
+        if not profile_validation or any(
+            str(item.get("passed", "")).casefold() != "true" for item in profile_validation
+        ):
+            raise RestorationError(f"G1S profile validation table is incomplete or failed: {profile_id}")
+        selected_files = [
+            item for item in file_rows if str(item.get("prototype_id", "")) == profile_id
+        ]
+        if len(selected_files) != _parse_int_cell(row.get("replaced_member_count")):
+            raise RestorationError(f"G1S profile selected-member count mismatch: {profile_id}")
+        rollback_relative_path = str(baseline_archive.relative_to(project_root))
+        request_profile_rows.append({
+            "profile_id": profile_id,
+            "rule_id": rule_id,
+            "domain": domain,
+            "priority": priority,
+            "test_order": test_order,
+            "activation_source_relative_path": local_output,
+            "activation_source_sha256": output_sha,
+            "activation_source_size": output_size,
+            "target_relative_path": archive_rel,
+            "activation_precondition_sha256": baseline_sha,
+            "rollback_source_relative_path": rollback_relative_path,
+            "rollback_source_sha256": baseline_sha,
+            "rollback_precondition_sha256": output_sha,
+            "replaced_member_count": len(selected_files),
+            "unchanged_member_count_verified": _parse_int_cell(row.get("unchanged_member_count_verified")),
+            "transaction_owner": "core_unified_patcher",
+            "request_status": "ready_for_core_transaction_implementation_runtime_unvalidated",
+        })
+        runtime_rows.append({
+            "profile_id": profile_id,
+            "test_order": test_order,
+            "priority": priority,
+            "domain": domain,
+            "scene_group": scene_group,
+            "activation_mode": "exclusive_one_shader_profile_at_a_time",
+            "runtime_check": runtime_check,
+            "record": runtime_record,
+            "required_after_test": "rollback_to_stage27_pack10_01_baseline_before_next_profile",
+            "result": "not_tested_save_unavailable",
+        })
+        profile_payloads.append({
+            "profile_id": profile_id,
+            "rule_id": rule_id,
+            "domain": domain,
+            "priority": priority,
+            "test_order": test_order,
+            "source_relative_path": local_output,
+            "source_sha256": output_sha,
+            "source_size": output_size,
+            "target_relative_path": archive_rel,
+            "expected_target_sha256_before_activation": baseline_sha,
+            "expected_target_sha256_after_activation": output_sha,
+            "rollback_relative_path": rollback_relative_path,
+            "rollback_sha256": baseline_sha,
+            "expected_target_sha256_before_rollback": output_sha,
+            "selected_members": len(selected_files),
+            "runtime_validated": False,
+        })
+
+    requirements = [
+        ("GTX001", "required", "Core owns PACK10_01 activation and rollback; quartet_restoration must not write the installed game.", "parallel workstream ownership"),
+        ("GTX002", "required", "Verify installed target SHA-256 equals the stage-27 baseline before activation.", "avoid overwriting later mod or archive changes"),
+        ("GTX003", "required", "Verify the local shader-profile source SHA-256 immediately before copying.", "reject stale or corrupted local artifacts"),
+        ("GTX004", "required", "Copy to a same-filesystem temporary file, fsync it, then atomically replace PACK10_01.PAK.", "avoid a partially written shader archive"),
+        ("GTX005", "required", "Record the observed pre-activation SHA-256 and a core-managed rollback backup.", "deterministic rollback"),
+        ("GTX006", "required", "Rollback only if installed PACK10_01.PAK still matches the active shader profile SHA-256.", "do not overwrite changes made after activation"),
+        ("GTX007", "required", "Allow only one G1S shader test profile to be active at a time.", "keep heightfog and swater hypotheses isolated"),
+        ("GTX008", "required", "After rollback, verify PACK10_01.PAK equals the exact stage-27 baseline SHA-256.", "close the transaction"),
+        ("GTX009", "required", "Do not embed proprietary PAK payloads in the core update package.", "local artifacts only"),
+        ("GTX010", "required", "If any precondition differs, abort and require rerunning stages 27 and 28.", "preserve compatibility with the current local archive"),
+        ("GTX011", "recommended", "Do not combine an event PACK11 test profile with a shader PACK10_01 test profile during first runtime validation.", "avoid confounding independent restoration hypotheses"),
+    ]
+    requirement_rows = [
+        {"requirement_id": rid, "severity": severity, "requirement": text, "rationale": rationale}
+        for rid, severity, text, rationale in requirements
+    ]
+    rollback_rows = [
+        {"invariant_id": "GRB001", "invariant": "baseline archive equals installed PACK10_01.PAK immediately before first activation", "expected_sha256": baseline_sha},
+        {"invariant_id": "GRB002", "invariant": "active shader-profile SHA-256 is the only accepted rollback precondition", "expected_sha256": "profile_specific"},
+        {"invariant_id": "GRB003", "invariant": "rollback result equals the exact stage-27 PACK10_01 baseline", "expected_sha256": baseline_sha},
+        {"invariant_id": "GRB004", "invariant": "this workstream emits no activation or rollback command", "expected_sha256": "not_applicable"},
+        {"invariant_id": "GRB005", "invariant": "runtime validation state remains false until the relevant scene is inspected in game", "expected_sha256": "not_applicable"},
+    ]
+
+    write_tsv(evidence_root / "CORE_ACTIVATION_PROFILES.tsv", [
+        "profile_id", "rule_id", "domain", "priority", "test_order",
+        "activation_source_relative_path", "activation_source_sha256", "activation_source_size",
+        "target_relative_path", "activation_precondition_sha256", "rollback_source_relative_path",
+        "rollback_source_sha256", "rollback_precondition_sha256", "replaced_member_count",
+        "unchanged_member_count_verified", "transaction_owner", "request_status",
+    ], request_profile_rows)
+    write_tsv(evidence_root / "CORE_TRANSACTION_REQUIREMENTS.tsv", [
+        "requirement_id", "severity", "requirement", "rationale",
+    ], requirement_rows)
+    write_tsv(evidence_root / "RUNTIME_TEST_MATRIX.tsv", [
+        "profile_id", "test_order", "priority", "domain", "scene_group", "activation_mode",
+        "runtime_check", "record", "required_after_test", "result",
+    ], runtime_rows)
+    write_tsv(evidence_root / "ROLLBACK_INVARIANTS.tsv", [
+        "invariant_id", "invariant", "expected_sha256",
+    ], rollback_rows)
+
+    request = {
+        "type": "br_quartet_restoration_core_g1s_activation_request",
+        "format_version": FORMAT_VERSION,
+        "tool_version": TOOL_VERSION,
+        "workstream_id": "quartet_restoration",
+        "transaction_owner": "core_unified_patcher",
+        "status": "ready_for_core_owned_pack10_01_activation_rollback_implementation_runtime_unvalidated",
+        "installed_target_relative_path": archive_rel,
+        "installed_target_sha256_at_request": installed_sha,
+        "installed_target_size_at_request": installed_size,
+        "baseline_relative_path": str(baseline_archive.relative_to(project_root)),
+        "baseline_sha256": baseline_sha,
+        "baseline_size": baseline_size,
+        "profiles": profile_payloads,
+        "policy": {
+            "installed_game_modified": False,
+            "activation_script_generated": False,
+            "rollback_script_generated": False,
+            "proprietary_archive_in_report": False,
+            "one_shader_profile_at_a_time": True,
+            "precondition_gated": True,
+            "atomic_replace_required": True,
+            "rollback_checksum_gated": True,
+            "event_and_shader_first_tests_should_not_overlap": True,
+            "runtime_validation_deferred_until_scene_save_available": True,
+            "legacy_dlc_in_scope": False,
+        },
+    }
+    atomic_json(evidence_root / "CORE_ACTIVATION_REQUEST.json", request)
+
+    handoff = (
+        "# Quartet restoration G1S shader-profile activation request\n\n"
+        "Extend the existing **core-owned transactional activation/status/rollback mechanism** to "
+        "the two local `PACK10_01.PAK` shader profiles defined in this metadata report. Do not modify "
+        "files owned by `quartet_restoration`, and do not embed the local PAK files in the core update.\n\n"
+        f"Target: `{archive_rel}`  \nRequired current SHA-256: `{baseline_sha}`\n\n"
+        f"The request contains {len(profile_payloads)} mutually exclusive shader profiles. Test "
+        "`height_fog_shader_original_code` first, rollback and verify the exact baseline, then test "
+        "`water_shader_swater_original_code`. Runtime validation must remain false until a suitable "
+        "save reaches scenes where the respective shader is visibly active.\n\n"
+        "Use the same checksum gates, same-filesystem temporary file, fsync, atomic replacement, "
+        "core-managed backup and active-transaction state already implemented for the PACK11 event "
+        "profiles. Prefer isolated first tests with no event profile active.\n\n"
+        "The workstream has not modified the installed game and has not generated activation or "
+        "rollback scripts.\n"
+    )
+    (evidence_root / "CORE_CHAT_HANDOFF.md").write_text(handoff, encoding="utf-8")
+
+    summary = {
+        "type": "br_quartet_restoration_g1s_activation_request_summary",
+        "format_version": FORMAT_VERSION,
+        "tool_version": TOOL_VERSION,
+        "source_repack_test_tool_version": repack_summary.get("tool_version"),
+        "status": "core_g1s_activation_request_ready_game_not_modified_runtime_unvalidated",
+        "profile_rows": len(request_profile_rows),
+        "transaction_requirement_rows": len(requirement_rows),
+        "runtime_test_rows": len(runtime_rows),
+        "rollback_invariant_rows": len(rollback_rows),
+        "target_relative_path": archive_rel,
+        "target_sha256_matches_baseline": installed_sha == baseline_sha,
+        "baseline_sha256": baseline_sha,
+        "installed_game_modified": False,
+        "activation_or_rollback_generated": False,
+        "runtime_validated_profile_rows": 0,
+        "proprietary_archives_exported_in_report": False,
+        "next_action": (
+            "Give this metadata report to the core orchestration chat and extend its transactional "
+            "activator to PACK10_01. Runtime tests remain deferred until suitable fog/water saves exist."
+        ),
+    }
+    atomic_json(evidence_root / "SUMMARY.json", summary)
+    output = report_root / G1S_ACTIVATION_REQUEST_REPORT_NAME
+    make_report_archive(evidence_root, output)
+    return output, summary
+
+
+def cmd_prepare_g1s_activation_request(args: argparse.Namespace) -> int:
+    project_root = Path(args.project_root).expanduser().resolve()
+    quartet_root = Path(args.quartet_root).expanduser().resolve()
+    if not project_root.is_dir():
+        raise RestorationError(f"Project root does not exist: {project_root}")
+    if not quartet_root.is_dir():
+        raise RestorationError(f"Quartet game root does not exist: {quartet_root}")
+    default_workspace = project_root / ".local/build/quartet_restoration"
+    default_reports = project_root / ".local/reports/quartet_restoration"
+    workspace_root = Path(args.workspace_root).expanduser().resolve() if args.workspace_root else default_workspace
+    report_root = Path(args.report_root).expanduser().resolve() if args.report_root else default_reports
+    require_within(workspace_root, default_workspace, "Workspace")
+    require_within(report_root, default_reports, "Report root")
+    output, summary = prepare_g1s_activation_request(
+        project_root=project_root,
+        quartet_root=quartet_root,
+        workspace_root=workspace_root,
+        report_root=report_root,
+    )
+    print(f"Shader activation request profiles: {summary['profile_rows']}")
+    print(f"Target matches baseline: {summary['target_sha256_matches_baseline']}")
+    print(f"Runtime-validated profiles: {summary['runtime_validated_profile_rows']}")
+    print(f"Installed game modified: {summary['installed_game_modified']}")
+    print(f"Report: {output}")
+    return 0
+
+
+
+# Stage 29: combine all individually safe, cue-linked single-scene inverse
+# splices for one event in memory.  The goal is to determine whether isolated
+# steam, godray, water-visibility or costume-state candidates reconstruct the
+# Original control stream apart from already-known broad Quartet schema
+# migrations.  No candidate EBD is written and no runtime approval is inferred.
+
+
+def _event_byte_difference_count(left: bytes, right: bytes) -> int:
+    shared = min(len(left), len(right))
+    return sum(a != b for a, b in zip(left[:shared], right[:shared])) + abs(len(left) - len(right))
+
+
+def _event_delta_span_count(rows: Sequence[dict[str, Any]]) -> int:
+    return sum(
+        max(_parse_int_cell(row.get("source_atom_count")), _parse_int_cell(row.get("target_atom_count")))
+        for row in rows
+    )
+
+
+def construct_composite_inverse_event_candidate(
+    *, source_payload: bytes, target_payload: bytes,
+    selected_occurrences: Sequence[dict[str, Any]],
+) -> tuple[bytes | None, dict[str, Any], list[dict[str, Any]]]:
+    source_header = parse_ebd_header_schema(source_payload)
+    target_header = parse_ebd_header_schema(target_payload)
+    if source_header.get("classification") != "observed_ebd_name_description_header":
+        return None, {"status": "source_header_not_confirmed"}, []
+    if target_header.get("classification") != "observed_ebd_name_description_header":
+        return None, {"status": "target_header_not_confirmed"}, []
+    source_profile = profile_ebd_post_header_words(
+        source_payload, int(source_header["header_end"]), maximum_words=max(1, len(source_payload) // 4 + 8)
+    )
+    target_profile = profile_ebd_post_header_words(
+        target_payload, int(target_header["header_end"]), maximum_words=max(1, len(target_payload) // 4 + 8)
+    )
+    before_deltas = compare_ebd_tag_atoms(source_profile["atoms"], target_profile["atoms"])
+    matches_by_shape: defaultdict[str, list[dict[str, Any]]] = defaultdict(list)
+    for row in before_deltas:
+        matches_by_shape[event_residual_delta_shape_id(row)].append(row)
+
+    operations: list[dict[str, Any]] = []
+    selected_counter: Counter[str] = Counter()
+    for occurrence in selected_occurrences:
+        shape_id = str(occurrence.get("shape_id", ""))
+        occurrence_index = _parse_int_cell(occurrence.get("occurrence_index"))
+        matches = matches_by_shape.get(shape_id, [])
+        if occurrence_index < 0 or occurrence_index >= len(matches):
+            return None, {
+                "status": "reported_delta_occurrence_not_reproduced",
+                "failed_shape_id": shape_id,
+                "failed_occurrence_index": occurrence_index,
+            }, []
+        delta = matches[occurrence_index]
+        source_start, source_end = event_atom_word_span(
+            source_profile["atoms"], int(delta["source_atom_start"]), int(delta["source_atom_end"]),
+            int(source_profile["word_count"]),
+        )
+        target_start, target_end = event_atom_word_span(
+            target_profile["atoms"], int(delta["target_atom_start"]), int(delta["target_atom_end"]),
+            int(target_profile["word_count"]),
+        )
+        operations.append({
+            "shape_id": shape_id,
+            "occurrence_index": occurrence_index,
+            "source_start": source_start,
+            "source_end": source_end,
+            "target_start": target_start,
+            "target_end": target_end,
+            "source_words": list(source_profile["words"])[source_start:source_end],
+            "target_words": list(target_profile["words"])[target_start:target_end],
+            "cue_domains": occurrence.get("cue_domains", ""),
+            "selection_reasons": occurrence.get("selection_reasons", ""),
+        })
+        selected_counter[shape_id] += 1
+
+    # Original target-coordinate spans must be pairwise independent.  Two empty
+    # insertions at the same boundary are also ambiguous and are rejected.
+    ordered = sorted(operations, key=lambda row: (int(row["target_start"]), int(row["target_end"])))
+    previous_end = -1
+    previous_empty_at: int | None = None
+    for operation in ordered:
+        start = int(operation["target_start"])
+        end = int(operation["target_end"])
+        if start == end:
+            if previous_empty_at == start or (previous_end > start):
+                return None, {"status": "overlapping_or_ambiguous_target_spans"}, operations
+            previous_empty_at = start
+        else:
+            if start < previous_end or (previous_empty_at is not None and start <= previous_empty_at < end):
+                return None, {"status": "overlapping_or_ambiguous_target_spans"}, operations
+            previous_end = end
+            previous_empty_at = None
+
+    candidate_words = list(target_profile["words"])
+    for operation in sorted(operations, key=lambda row: (int(row["target_start"]), int(row["target_end"])), reverse=True):
+        start = int(operation["target_start"])
+        end = int(operation["target_end"])
+        candidate_words[start:end] = list(operation["source_words"])
+
+    target_header_end = int(target_header["header_end"])
+    target_word_bytes_end = target_header_end + int(target_profile["word_count"]) * 4
+    trailing = target_payload[target_word_bytes_end:]
+    candidate_payload = (
+        target_payload[:target_header_end]
+        + (struct.pack(f"<{len(candidate_words)}I", *candidate_words) if candidate_words else b"")
+        + trailing
+    )
+    candidate_header = parse_ebd_header_schema(candidate_payload)
+    candidate_profile = profile_ebd_post_header_words(
+        candidate_payload, int(candidate_header.get("header_end", 0)), maximum_words=max(1, len(candidate_words) + 8)
+    )
+    after_deltas = compare_ebd_tag_atoms(source_profile["atoms"], candidate_profile["atoms"])
+    before_counter = _counter_shape_ids(before_deltas)
+    after_counter = _counter_shape_ids(after_deltas)
+    introduced = after_counter - before_counter
+    removed = before_counter - after_counter
+    selected_before = sum(before_counter[shape_id] for shape_id in selected_counter)
+    selected_after = sum(after_counter[shape_id] for shape_id in selected_counter)
+    selected_required = sum(selected_counter.values())
+    residual_rows = []
+    for row in after_deltas:
+        residual_rows.append({
+            "shape_id": event_residual_delta_shape_id(row),
+            "sequence_tag": row.get("sequence_tag", ""),
+            "source_atom_count": row.get("source_atom_count", ""),
+            "target_atom_count": row.get("target_atom_count", ""),
+            "source_tag_values": row.get("source_tag_values", ""),
+            "target_tag_values": row.get("target_tag_values", ""),
+            "classification": row.get("classification", ""),
+        })
+    metadata = {
+        "status": "composite_candidate_constructed_in_memory",
+        "operation_count": len(operations),
+        "selected_shape_occurrence_count": selected_required,
+        "selected_shape_count_before": selected_before,
+        "selected_shape_count_after": selected_after,
+        "all_selected_shapes_removed": selected_after == 0 and selected_before >= selected_required,
+        "introduced_coarse_shape_count": sum(int(value) for value in introduced.values()),
+        "removed_nonselected_coarse_shape_count": sum(
+            int(value) for shape_id, value in removed.items() if shape_id not in selected_counter
+        ),
+        "before_delta_rows": len(before_deltas),
+        "after_delta_rows": len(after_deltas),
+        "before_delta_atom_span": _event_delta_span_count(before_deltas),
+        "after_delta_atom_span": _event_delta_span_count(after_deltas),
+        "source_size": len(source_payload),
+        "target_size": len(target_payload),
+        "candidate_size": len(candidate_payload),
+        "candidate_size_delta_from_target": len(candidate_payload) - len(target_payload),
+        "candidate_sha256": hashlib.sha256(candidate_payload).hexdigest(),
+        "candidate_equals_source_payload": candidate_payload == source_payload,
+        "candidate_header_preserved_from_target": candidate_payload[:target_header_end] == target_payload[:target_header_end],
+        "candidate_trailing_bytes_preserved_from_target": candidate_payload[-len(trailing):] == trailing if trailing else True,
+        "candidate_header_classification": candidate_header.get("classification", ""),
+        "candidate_post_header_family": candidate_profile.get("family", ""),
+        "target_byte_difference_to_source": _event_byte_difference_count(target_payload, source_payload),
+        "candidate_byte_difference_to_source": _event_byte_difference_count(candidate_payload, source_payload),
+    }
+    return candidate_payload, metadata, residual_rows
+
+
+def collect_single_scene_composite_evidence(
+    *, project_root: Path, workspace_root: Path, report_root: Path,
+    maximum_event_bytes: int, maximum_splices_per_event: int,
+) -> tuple[Path, dict[str, Any]]:
+    context_dir = report_root / EVENT_DELTA_CONTEXT_EVIDENCE_DIR
+    context_summary = load_json(context_dir / "SUMMARY.json")
+    if context_summary.get("type") != "br_quartet_restoration_event_delta_context_evidence_summary":
+        raise RestorationError(f"Not an event-delta-context report: {context_dir / 'SUMMARY.json'}")
+    migration_dir = report_root / EVENT_TAG_MIGRATION_EVIDENCE_DIR
+    migration_summary = load_json(migration_dir / "SUMMARY.json")
+    if migration_summary.get("type") != "br_quartet_restoration_event_tag_migration_evidence_summary":
+        raise RestorationError(f"Not an event-tag-migration report: {migration_dir / 'SUMMARY.json'}")
+    if maximum_splices_per_event < 1 or maximum_splices_per_event > 64:
+        raise RestorationError("maximum_splices_per_event must be in the range 1..64")
+
+    occurrence_rows = read_tsv(context_dir / "EVENT_DELTA_CONTEXT_OCCURRENCES.tsv")
+    splice_rows = read_tsv(context_dir / "IN_MEMORY_EVENT_DELTA_SPLICE_READINESS.tsv")
+    occurrence_by_key = {_event_occurrence_key(row): row for row in occurrence_rows}
+    promoted_keys: set[tuple[str, str, int]] = set()
+    prototype_file = report_root / EVENT_PROTOTYPE_EVIDENCE_DIR / "EVENT_PROTOTYPE_FILES.tsv"
+    if prototype_file.is_file():
+        promoted_keys = {_event_occurrence_key(row) for row in read_tsv(prototype_file)}
+
+    eligible_by_path: defaultdict[str, list[dict[str, Any]]] = defaultdict(list)
+    for row in splice_rows:
+        key = _event_occurrence_key(row)
+        occurrence = occurrence_by_key.get(key, row)
+        if key in promoted_keys:
+            continue
+        if str(row.get("in_memory_splice_status", "")) != "selected_shape_removed_without_other_coarse_delta_changes":
+            continue
+        if str(occurrence.get("cue_positive_occurrence", "")).casefold() != "true":
+            continue
+        if "domain_single_scene_context_shape" not in _split_ids(occurrence.get("selection_reasons", "")):
+            continue
+        eligible_by_path[str(occurrence.get("normalized_path", ""))].append(occurrence)
+
+    known_schema_shape_ids = {
+        event_residual_delta_shape_id(row)
+        for row in read_tsv(migration_dir / "EVENT_TAG_SCHEMA_MIGRATION_CANDIDATES.tsv")
+        if str(row.get("classification", "")) in {
+            "broad_schema_migration_candidate", "recurrent_schema_delta_candidate"
+        }
+    }
+    reports = load_report_jsons(report_root, "differences")
+    event_report = next((row for row in reports if str(row.get("source_archive_group", "")) == "br1_events"), None)
+    if event_report is None:
+        raise RestorationError("Missing br1_events difference report")
+    entry_by_path = {
+        str(row.get("normalized_path", "")): row
+        for row in event_report.get("entries", [])
+        if row.get("scope_status") == "in_scope" and row.get("source") and row.get("target")
+    }
+
+    event_rows: list[dict[str, Any]] = []
+    operation_rows: list[dict[str, Any]] = []
+    residual_output_rows: list[dict[str, Any]] = []
+    focused_rows: list[dict[str, Any]] = []
+    skipped_rows: list[dict[str, Any]] = []
+    priority_rank = {"critical": 0, "high": 1, "medium": 2, "low": 3, "deferred": 4}
+
+    for normalized_path in sorted(eligible_by_path, key=_event_path_sort_key):
+        selected = sorted(
+            eligible_by_path[normalized_path],
+            key=lambda row: (str(row.get("shape_id", "")), _parse_int_cell(row.get("occurrence_index"))),
+        )
+        if len(selected) > maximum_splices_per_event:
+            skipped_rows.append({
+                "normalized_path": normalized_path,
+                "reason": "maximum_splices_per_event_exceeded",
+                "selected_splice_count": len(selected),
+            })
+            continue
+        entry = entry_by_path.get(normalized_path)
+        if not entry:
+            skipped_rows.append({"normalized_path": normalized_path, "reason": "difference_entry_missing", "selected_splice_count": len(selected)})
+            continue
+        source_ref = entry.get("source") or {}
+        target_ref = entry.get("target") or {}
+        source_path = inventory_workspace_file(workspace_root, "source", "br1_events", str(source_ref.get("archive", "")), str(source_ref.get("path", "")))
+        target_path = inventory_workspace_file(workspace_root, "target", "br1_events", str(target_ref.get("archive", "")), str(target_ref.get("path", "")))
+        if not source_path.is_file() or not target_path.is_file():
+            skipped_rows.append({"normalized_path": normalized_path, "reason": "workspace_event_payload_missing", "selected_splice_count": len(selected)})
+            continue
+        if source_path.stat().st_size > maximum_event_bytes or target_path.stat().st_size > maximum_event_bytes:
+            skipped_rows.append({"normalized_path": normalized_path, "reason": "maximum_event_bytes_exceeded", "selected_splice_count": len(selected)})
+            continue
+        source_payload = source_path.read_bytes()
+        target_payload = target_path.read_bytes()
+        candidate_payload, metadata, residuals = construct_composite_inverse_event_candidate(
+            source_payload=source_payload,
+            target_payload=target_payload,
+            selected_occurrences=selected,
+        )
+        if candidate_payload is None:
+            skipped_rows.append({
+                "normalized_path": normalized_path,
+                "reason": metadata.get("status", "composite_candidate_failed"),
+                "selected_splice_count": len(selected),
+            })
+            continue
+        known_residual_count = sum(row["shape_id"] in known_schema_shape_ids for row in residuals)
+        unknown_residual_count = len(residuals) - known_residual_count
+        if metadata["candidate_equals_source_payload"]:
+            classification = "exact_original_payload_match_after_composite_inverse"
+            review_priority = "critical"
+        elif (
+            metadata["all_selected_shapes_removed"]
+            and metadata["introduced_coarse_shape_count"] == 0
+            and unknown_residual_count == 0
+        ):
+            classification = "residual_only_known_schema_migrations_after_composite_inverse"
+            review_priority = "critical"
+        elif metadata["all_selected_shapes_removed"] and metadata["introduced_coarse_shape_count"] == 0:
+            classification = "selected_single_scene_shapes_removed_unknown_residuals_remain"
+            review_priority = "high"
+        elif metadata["selected_shape_count_after"] < metadata["selected_shape_count_before"]:
+            classification = "partial_composite_inverse_reduction"
+            review_priority = "medium"
+        else:
+            classification = "composite_inverse_did_not_reduce_selected_shapes"
+            review_priority = "deferred"
+        domains = sorted({domain for row in selected for domain in _split_semicolon_cell(row.get("cue_domains", ""))})
+        event_row = {
+            "normalized_path": normalized_path,
+            "event_message_classification": selected[0].get("event_message_classification", "") if selected else "",
+            "cue_domains": ";".join(domains),
+            "selected_splice_count": len(selected),
+            **metadata,
+            "known_schema_residual_rows": known_residual_count,
+            "unknown_residual_rows": unknown_residual_count,
+            "classification": classification,
+            "review_priority": review_priority,
+            "review_status": "composite_in_memory_reconstruction_is_structural_evidence_not_runtime_or_censorship_validation",
+        }
+        event_rows.append(event_row)
+        for row in selected:
+            operation_rows.append({
+                "normalized_path": normalized_path,
+                "shape_id": row.get("shape_id", ""),
+                "occurrence_index": row.get("occurrence_index", ""),
+                "cue_domains": row.get("cue_domains", ""),
+                "selection_reasons": row.get("selection_reasons", ""),
+                "stage23_candidate_sha256": row.get("candidate_sha256", ""),
+                "composite_candidate_sha256": metadata["candidate_sha256"],
+                "review_status": "component_splice_included_in_in_memory_composite_only",
+            })
+        for row in residuals:
+            residual_output_rows.append({
+                "normalized_path": normalized_path,
+                **row,
+                "known_schema_migration_shape": row["shape_id"] in known_schema_shape_ids,
+                "review_status": "post_composite_residual_not_assigned_field_semantics",
+            })
+        focused_rows.append({
+            "normalized_path": normalized_path,
+            "cue_domains": ";".join(domains),
+            "selected_splice_count": len(selected),
+            "candidate_byte_difference_to_source": metadata["candidate_byte_difference_to_source"],
+            "target_byte_difference_to_source": metadata["target_byte_difference_to_source"],
+            "before_delta_rows": metadata["before_delta_rows"],
+            "after_delta_rows": metadata["after_delta_rows"],
+            "before_delta_atom_span": metadata["before_delta_atom_span"],
+            "after_delta_atom_span": metadata["after_delta_atom_span"],
+            "unknown_residual_rows": unknown_residual_count,
+            "classification": classification,
+            "review_priority": review_priority,
+            "next_gate": (
+                "eligible_for_separate_local_single_scene_prototype_review"
+                if review_priority == "critical"
+                else "retain_as_evidence_until_additional_context_or_runtime_scene_confirmation"
+            ),
+        })
+
+    event_rows.sort(key=lambda row: (priority_rank.get(str(row["review_priority"]), 9), _event_path_sort_key(str(row["normalized_path"]))))
+    operation_rows.sort(key=lambda row: (_event_path_sort_key(str(row["normalized_path"])), str(row["shape_id"]), _parse_int_cell(row["occurrence_index"])))
+    residual_output_rows.sort(key=lambda row: (_event_path_sort_key(str(row["normalized_path"])), str(row["shape_id"])))
+    focused_rows.sort(key=lambda row: (priority_rank.get(str(row["review_priority"]), 9), _event_path_sort_key(str(row["normalized_path"]))))
+
+    evidence_root = report_root / SINGLE_SCENE_COMPOSITE_EVIDENCE_DIR
+    if evidence_root.exists():
+        shutil.rmtree(evidence_root)
+    evidence_root.mkdir(parents=True, exist_ok=True)
+    event_fields = [
+        "normalized_path","event_message_classification","cue_domains","selected_splice_count","status",
+        "operation_count","selected_shape_occurrence_count","selected_shape_count_before","selected_shape_count_after",
+        "all_selected_shapes_removed","introduced_coarse_shape_count","removed_nonselected_coarse_shape_count",
+        "before_delta_rows","after_delta_rows","before_delta_atom_span","after_delta_atom_span",
+        "source_size","target_size","candidate_size","candidate_size_delta_from_target","candidate_sha256",
+        "candidate_equals_source_payload","candidate_header_preserved_from_target",
+        "candidate_trailing_bytes_preserved_from_target","candidate_header_classification",
+        "candidate_post_header_family","target_byte_difference_to_source","candidate_byte_difference_to_source",
+        "known_schema_residual_rows","unknown_residual_rows","classification","review_priority","review_status",
+    ]
+    write_tsv(evidence_root / "SINGLE_SCENE_COMPOSITE_EVENTS.tsv", event_fields, event_rows)
+    write_tsv(evidence_root / "SINGLE_SCENE_COMPOSITE_SPLICES.tsv", [
+        "normalized_path","shape_id","occurrence_index","cue_domains","selection_reasons",
+        "stage23_candidate_sha256","composite_candidate_sha256","review_status",
+    ], operation_rows)
+    write_tsv(evidence_root / "SINGLE_SCENE_COMPOSITE_RESIDUALS.tsv", [
+        "normalized_path","shape_id","sequence_tag","source_atom_count","target_atom_count",
+        "source_tag_values","target_tag_values","classification","known_schema_migration_shape","review_status",
+    ], residual_output_rows)
+    write_tsv(evidence_root / "FOCUSED_SINGLE_SCENE_COMPOSITE_REVIEW.tsv", [
+        "normalized_path","cue_domains","selected_splice_count","candidate_byte_difference_to_source",
+        "target_byte_difference_to_source","before_delta_rows","after_delta_rows","before_delta_atom_span",
+        "after_delta_atom_span","unknown_residual_rows","classification","review_priority","next_gate",
+    ], focused_rows)
+    write_tsv(evidence_root / "SINGLE_SCENE_COMPOSITE_SCAN_SKIPPED.tsv", [
+        "normalized_path","reason","selected_splice_count",
+    ], skipped_rows)
+    summary = {
+        "type": "br_quartet_restoration_single_scene_composite_evidence_summary",
+        "format_version": FORMAT_VERSION,
+        "tool_version": TOOL_VERSION,
+        "source_event_delta_context_tool_version": context_summary.get("tool_version"),
+        "source_event_tag_migration_tool_version": migration_summary.get("tool_version"),
+        "status": "cue_linked_single_scene_splices_combined_in_memory_no_event_payload_written",
+        "eligible_event_paths": len(eligible_by_path),
+        "analyzed_event_rows": len(event_rows),
+        "component_splice_rows": len(operation_rows),
+        "post_composite_residual_rows": len(residual_output_rows),
+        "critical_candidate_rows": sum(row["review_priority"] == "critical" for row in event_rows),
+        "high_candidate_rows": sum(row["review_priority"] == "high" for row in event_rows),
+        "exact_original_match_rows": sum(row["classification"] == "exact_original_payload_match_after_composite_inverse" for row in event_rows),
+        "schema_only_residual_rows": sum(row["classification"] == "residual_only_known_schema_migrations_after_composite_inverse" for row in event_rows),
+        "skipped_rows": len(skipped_rows),
+        "parameters": {
+            "maximum_event_bytes": maximum_event_bytes,
+            "maximum_splices_per_event": maximum_splices_per_event,
+        },
+        "core_transaction_state": {
+            "event_profiles_transaction_ready": True,
+            "shader_profiles_transaction_ready": True,
+            "event_profiles_runtime_validated": False,
+            "shader_profiles_runtime_validated": False,
+        },
+        "policy": {
+            "installed_games_modified": False,
+            "candidate_ebd_payloads_written": False,
+            "dialogue_or_localized_text_exported": False,
+            "single_scene_cue_treated_as_censorship_proof": False,
+            "event_tag_semantics_assigned": False,
+            "runtime_validation_inferred": False,
+            "legacy_dlc_in_scope": False,
+            "translation_or_core_files_modified": False,
+        },
+        "next_action": (
+            "Upload this report. Only exact-source or known-schema-only composite reconstructions may be considered "
+            "for separate local single-scene prototypes; all other steam, godray, water and costume-state leads remain evidence-only."
+        ),
+    }
+    atomic_json(evidence_root / "SUMMARY.json", summary)
+    output = report_root / SINGLE_SCENE_COMPOSITE_REPORT_NAME
+    make_report_archive(evidence_root, output)
+    return output, summary
+
+
+def cmd_collect_single_scene_composites(args: argparse.Namespace) -> int:
+    project_root = Path(args.project_root).expanduser().resolve()
+    if not project_root.is_dir():
+        raise RestorationError(f"Project root does not exist: {project_root}")
+    default_workspace = project_root / ".local/build/quartet_restoration"
+    default_reports = project_root / ".local/reports/quartet_restoration"
+    workspace_root = Path(args.workspace_root).expanduser().resolve() if args.workspace_root else default_workspace
+    report_root = Path(args.report_root).expanduser().resolve() if args.report_root else default_reports
+    require_within(workspace_root, default_workspace, "Workspace")
+    require_within(report_root, default_reports, "Report root")
+    output, summary = collect_single_scene_composite_evidence(
+        project_root=project_root,
+        workspace_root=workspace_root,
+        report_root=report_root,
+        maximum_event_bytes=args.maximum_event_bytes,
+        maximum_splices_per_event=args.maximum_splices_per_event,
+    )
+    print(f"Single-scene composite events: {summary['analyzed_event_rows']}")
+    print(f"Critical composite candidates: {summary['critical_candidate_rows']}")
+    print(f"High composite candidates: {summary['high_candidate_rows']}")
+    print(f"Candidate EBD payloads written: False")
+    print(f"Report: {output}")
+    return 0
+
+
+
+
+# Stage 30: promote only stage-29 single-scene composites that either reconstruct
+# Original exactly or leave no residual outside the already measured broad and
+# recurrent Quartet schema-migration set.  Each event remains its own profile.
+# Candidate EBD payloads are written only under the local restoration workspace;
+# no archive is repacked and no runtime/censorship conclusion is inferred.
+
+
+def _single_scene_profile_id(normalized_path: str, candidate_sha256: str) -> str:
+    stem = PurePosixPath(normalized_path).stem
+    cleaned = re.sub(r"[^a-z0-9]+", "_", stem.casefold()).strip("_") or "event"
+    return f"single_scene_{cleaned}_{candidate_sha256[:10]}"
+
+
+def _restore_target_from_composite_operations(
+    *, candidate_payload: bytes, target_payload: bytes,
+    target_header_end: int, operations: Sequence[dict[str, Any]],
+) -> bytes:
+    """Reverse a validated composite splice using final candidate coordinates."""
+    candidate_word_count = (len(candidate_payload) - target_header_end) // 4
+    target_word_count = (len(target_payload) - target_header_end) // 4
+    candidate_trailing_offset = target_header_end + candidate_word_count * 4
+    target_trailing_offset = target_header_end + target_word_count * 4
+    candidate_trailing = candidate_payload[candidate_trailing_offset:]
+    target_trailing = target_payload[target_trailing_offset:]
+    if candidate_trailing != target_trailing:
+        return b""
+    candidate_words = list(struct.unpack_from(f"<{candidate_word_count}I", candidate_payload, target_header_end)) if candidate_word_count else []
+    cumulative_shift = 0
+    mapped: list[tuple[int, int, list[int]]] = []
+    for operation in sorted(operations, key=lambda row: (int(row["target_start"]), int(row["target_end"]))):
+        target_start = int(operation["target_start"])
+        target_end = int(operation["target_end"])
+        source_words = list(operation["source_words"])
+        target_words = list(operation["target_words"])
+        candidate_start = target_start + cumulative_shift
+        candidate_end = candidate_start + len(source_words)
+        mapped.append((candidate_start, candidate_end, target_words))
+        cumulative_shift += len(source_words) - (target_end - target_start)
+    rebuilt_words = list(candidate_words)
+    for start, end, target_words in sorted(mapped, reverse=True):
+        rebuilt_words[start:end] = target_words
+    return (
+        target_payload[:target_header_end]
+        + (struct.pack(f"<{len(rebuilt_words)}I", *rebuilt_words) if rebuilt_words else b"")
+        + target_trailing
+    )
+
+
+def build_single_scene_event_prototypes(
+    *, project_root: Path, workspace_root: Path, report_root: Path,
+    maximum_event_bytes: int,
+) -> tuple[Path, dict[str, Any]]:
+    composite_dir = report_root / SINGLE_SCENE_COMPOSITE_EVIDENCE_DIR
+    composite_summary = load_json(composite_dir / "SUMMARY.json")
+    if composite_summary.get("type") != "br_quartet_restoration_single_scene_composite_evidence_summary":
+        raise RestorationError(f"Not a single-scene composite report: {composite_dir / 'SUMMARY.json'}")
+    migration_dir = report_root / EVENT_TAG_MIGRATION_EVIDENCE_DIR
+    migration_summary = load_json(migration_dir / "SUMMARY.json")
+    if migration_summary.get("type") != "br_quartet_restoration_event_tag_migration_evidence_summary":
+        raise RestorationError(f"Not an event-tag-migration report: {migration_dir / 'SUMMARY.json'}")
+
+    event_rows = read_tsv(composite_dir / "SINGLE_SCENE_COMPOSITE_EVENTS.tsv")
+    focused_rows = read_tsv(composite_dir / "FOCUSED_SINGLE_SCENE_COMPOSITE_REVIEW.tsv")
+    splice_rows = read_tsv(composite_dir / "SINGLE_SCENE_COMPOSITE_SPLICES.tsv")
+    event_by_path = {str(row.get("normalized_path", "")): row for row in event_rows}
+    splices_by_path: defaultdict[str, list[dict[str, Any]]] = defaultdict(list)
+    for row in splice_rows:
+        splices_by_path[str(row.get("normalized_path", ""))].append(row)
+
+    eligible_paths = []
+    for row in focused_rows:
+        path = str(row.get("normalized_path", ""))
+        if str(row.get("next_gate", "")) != "eligible_for_separate_local_single_scene_prototype_review":
+            continue
+        event_row = event_by_path.get(path, {})
+        if str(event_row.get("classification", "")) not in {
+            "exact_original_payload_match_after_composite_inverse",
+            "residual_only_known_schema_migrations_after_composite_inverse",
+        }:
+            continue
+        if _parse_int_cell(event_row.get("unknown_residual_rows")) != 0:
+            continue
+        eligible_paths.append(path)
+
+    known_schema_shape_ids = {
+        event_residual_delta_shape_id(row)
+        for row in read_tsv(migration_dir / "EVENT_TAG_SCHEMA_MIGRATION_CANDIDATES.tsv")
+        if str(row.get("classification", "")) in {
+            "broad_schema_migration_candidate", "recurrent_schema_delta_candidate"
+        }
+    }
+    reports = load_report_jsons(report_root, "differences")
+    event_report = next((row for row in reports if str(row.get("source_archive_group", "")) == "br1_events"), None)
+    if event_report is None:
+        raise RestorationError("Missing br1_events difference report")
+    entry_by_path = {
+        str(row.get("normalized_path", "")): row
+        for row in event_report.get("entries", [])
+        if row.get("scope_status") == "in_scope" and row.get("source") and row.get("target")
+    }
+
+    prototype_root = workspace_root / SINGLE_SCENE_EVENT_PROTOTYPE_BUILD_DIR
+    require_within(prototype_root, workspace_root, "Single-scene event prototype root")
+    if prototype_root.exists():
+        shutil.rmtree(prototype_root)
+    prototype_root.mkdir(parents=True, exist_ok=True)
+
+    profile_rows: list[dict[str, Any]] = []
+    file_rows: list[dict[str, Any]] = []
+    validation_rows: list[dict[str, Any]] = []
+    residual_rows: list[dict[str, Any]] = []
+    skipped_rows: list[dict[str, Any]] = []
+
+    for normalized_path in sorted(set(eligible_paths), key=_event_path_sort_key):
+        stage29 = event_by_path.get(normalized_path, {})
+        selected = sorted(
+            splices_by_path.get(normalized_path, []),
+            key=lambda row: (str(row.get("shape_id", "")), _parse_int_cell(row.get("occurrence_index"))),
+        )
+        if not selected:
+            skipped_rows.append({"profile_id": "", "normalized_path": normalized_path, "reason": "stage29_selected_splices_missing"})
+            continue
+        entry = entry_by_path.get(normalized_path)
+        if not entry:
+            skipped_rows.append({"profile_id": "", "normalized_path": normalized_path, "reason": "difference_entry_missing"})
+            continue
+        source_ref = entry.get("source") or {}
+        target_ref = entry.get("target") or {}
+        source_path = inventory_workspace_file(workspace_root, "source", "br1_events", str(source_ref.get("archive", "")), str(source_ref.get("path", "")))
+        target_path = inventory_workspace_file(workspace_root, "target", "br1_events", str(target_ref.get("archive", "")), str(target_ref.get("path", "")))
+        if not source_path.is_file() or not target_path.is_file():
+            skipped_rows.append({"profile_id": "", "normalized_path": normalized_path, "reason": "workspace_event_payload_missing"})
+            continue
+        if source_path.stat().st_size > maximum_event_bytes or target_path.stat().st_size > maximum_event_bytes:
+            skipped_rows.append({"profile_id": "", "normalized_path": normalized_path, "reason": "maximum_event_bytes_exceeded"})
+            continue
+        source_payload = source_path.read_bytes()
+        target_payload = target_path.read_bytes()
+        source_sha = hashlib.sha256(source_payload).hexdigest()
+        target_sha = hashlib.sha256(target_payload).hexdigest()
+        if source_ref.get("sha256") and source_sha != str(source_ref.get("sha256")):
+            skipped_rows.append({"profile_id": "", "normalized_path": normalized_path, "reason": "source_payload_sha256_mismatch"})
+            continue
+        if target_ref.get("sha256") and target_sha != str(target_ref.get("sha256")):
+            skipped_rows.append({"profile_id": "", "normalized_path": normalized_path, "reason": "target_payload_sha256_mismatch"})
+            continue
+
+        selected_occurrences = [{
+            "shape_id": row.get("shape_id", ""),
+            "occurrence_index": _parse_int_cell(row.get("occurrence_index")),
+            "cue_domains": row.get("cue_domains", ""),
+            "selection_reasons": row.get("selection_reasons", ""),
+        } for row in selected]
+        candidate_payload, metadata, residuals = construct_composite_inverse_event_candidate(
+            source_payload=source_payload,
+            target_payload=target_payload,
+            selected_occurrences=selected_occurrences,
+        )
+        if candidate_payload is None:
+            skipped_rows.append({"profile_id": "", "normalized_path": normalized_path, "reason": str(metadata.get("status", "composite_candidate_failed"))})
+            continue
+        candidate_sha = hashlib.sha256(candidate_payload).hexdigest()
+        profile_id = _single_scene_profile_id(normalized_path, candidate_sha)
+
+        # Reproduce operations once more so the final candidate can be reversed
+        # exactly to the current Quartet target before any local payload is kept.
+        source_header = parse_ebd_header_schema(source_payload)
+        target_header = parse_ebd_header_schema(target_payload)
+        source_profile = profile_ebd_post_header_words(source_payload, int(source_header.get("header_end", 0)), maximum_words=max(1, len(source_payload) // 4 + 8))
+        target_profile = profile_ebd_post_header_words(target_payload, int(target_header.get("header_end", 0)), maximum_words=max(1, len(target_payload) // 4 + 8))
+        matches_by_shape: defaultdict[str, list[dict[str, Any]]] = defaultdict(list)
+        for delta in compare_ebd_tag_atoms(source_profile["atoms"], target_profile["atoms"]):
+            matches_by_shape[event_residual_delta_shape_id(delta)].append(delta)
+        operations: list[dict[str, Any]] = []
+        operation_failure = False
+        for row in selected_occurrences:
+            shape_id = str(row["shape_id"])
+            occurrence_index = int(row["occurrence_index"])
+            matches = matches_by_shape.get(shape_id, [])
+            if occurrence_index >= len(matches):
+                operation_failure = True
+                break
+            delta = matches[occurrence_index]
+            source_start, source_end = event_atom_word_span(source_profile["atoms"], int(delta["source_atom_start"]), int(delta["source_atom_end"]), int(source_profile["word_count"]))
+            target_start, target_end = event_atom_word_span(target_profile["atoms"], int(delta["target_atom_start"]), int(delta["target_atom_end"]), int(target_profile["word_count"]))
+            operations.append({
+                "target_start": target_start,
+                "target_end": target_end,
+                "source_words": list(source_profile["words"])[source_start:source_end],
+                "target_words": list(target_profile["words"])[target_start:target_end],
+            })
+        if operation_failure:
+            skipped_rows.append({"profile_id": profile_id, "normalized_path": normalized_path, "reason": "reported_delta_occurrence_not_reproduced_for_roundtrip"})
+            continue
+        rebuilt_target = _restore_target_from_composite_operations(
+            candidate_payload=candidate_payload,
+            target_payload=target_payload,
+            target_header_end=int(target_header["header_end"]),
+            operations=operations,
+        )
+        residual_shape_ids = [str(row.get("shape_id", "")) for row in residuals]
+        checks = {
+            "stage29_candidate_sha256_matches": candidate_sha == str(stage29.get("candidate_sha256", "")),
+            "stage29_classification_is_promotable": str(stage29.get("classification", "")) in {
+                "exact_original_payload_match_after_composite_inverse",
+                "residual_only_known_schema_migrations_after_composite_inverse",
+            },
+            "stage29_unknown_residual_rows_zero": _parse_int_cell(stage29.get("unknown_residual_rows")) == 0,
+            "selected_splice_count_matches": len(selected) == _parse_int_cell(stage29.get("selected_splice_count")),
+            "all_selected_shapes_removed": bool(metadata.get("all_selected_shapes_removed")),
+            "no_new_coarse_shapes": _parse_int_cell(metadata.get("introduced_coarse_shape_count")) == 0,
+            "candidate_header_preserved_from_target": bool(metadata.get("candidate_header_preserved_from_target")),
+            "candidate_trailing_bytes_preserved_from_target": bool(metadata.get("candidate_trailing_bytes_preserved_from_target")),
+            "candidate_header_valid": metadata.get("candidate_header_classification") == "observed_ebd_name_description_header",
+            "residuals_only_known_schema_migrations": all(shape_id in known_schema_shape_ids for shape_id in residual_shape_ids),
+            "target_roundtrip_exact": rebuilt_target == target_payload,
+            "candidate_differs_from_target": candidate_payload != target_payload,
+        }
+        if str(stage29.get("classification", "")) == "exact_original_payload_match_after_composite_inverse":
+            checks["exact_original_payload_match"] = candidate_payload == source_payload
+        else:
+            checks["candidate_not_farther_from_original"] = _parse_int_cell(metadata.get("candidate_byte_difference_to_source")) <= _parse_int_cell(metadata.get("target_byte_difference_to_source"))
+        validation_status = "passed" if all(checks.values()) else "failed"
+        if validation_status != "passed":
+            skipped_rows.append({"profile_id": profile_id, "normalized_path": normalized_path, "reason": "profile_removed_after_validation_failure"})
+            continue
+
+        profile_dir = prototype_root / profile_id
+        local_rel = PurePosixPath("payload") / PurePosixPath(normalized_path)
+        output_path = profile_dir / Path(local_rel.as_posix())
+        _atomic_write_bytes(output_path, candidate_payload)
+        manifest = {
+            "type": "br_quartet_restoration_local_single_scene_event_prototype",
+            "format_version": FORMAT_VERSION,
+            "tool_version": TOOL_VERSION,
+            "profile_id": profile_id,
+            "profile_classification": "critical_single_scene_known_schema_only_local_prototype",
+            "prototype_confidence": "critical_structural_runtime_unvalidated",
+            "normalized_path": normalized_path,
+            "cue_domains": stage29.get("cue_domains", ""),
+            "source_sha256": source_sha,
+            "target_sha256": target_sha,
+            "candidate_sha256": candidate_sha,
+            "candidate_relative_path": local_rel.as_posix(),
+            "selected_splices": [{"shape_id": row.get("shape_id", ""), "occurrence_index": _parse_int_cell(row.get("occurrence_index"))} for row in selected],
+            "residual_shape_ids": residual_shape_ids,
+            "residual_classification": stage29.get("classification", ""),
+            "installed_game_files_modified": False,
+            "installable_package_generated": False,
+            "runtime_validated": False,
+        }
+        atomic_json(profile_dir / "PROTOTYPE.json", manifest)
+
+        profile_rows.append({
+            "profile_id": profile_id,
+            "profile_classification": manifest["profile_classification"],
+            "prototype_confidence": manifest["prototype_confidence"],
+            "normalized_path": normalized_path,
+            "cue_domains": stage29.get("cue_domains", ""),
+            "selected_splice_count": len(selected),
+            "residual_classification": stage29.get("classification", ""),
+            "known_schema_residual_rows": len(residuals),
+            "unknown_residual_rows": 0,
+            "candidate_byte_difference_to_source": metadata.get("candidate_byte_difference_to_source", ""),
+            "target_byte_difference_to_source": metadata.get("target_byte_difference_to_source", ""),
+            "local_profile_root": profile_dir.relative_to(project_root).as_posix() if profile_dir.is_relative_to(project_root) else str(profile_dir),
+            "validation_status": validation_status,
+            "runtime_validation_status": "deferred_until_relevant_scene_save_available",
+            "review_status": "separate_local_single_scene_prototype_not_censorship_or_runtime_approval",
+        })
+        file_rows.append({
+            "profile_id": profile_id,
+            "normalized_path": normalized_path,
+            "source_archive": source_ref.get("archive", ""),
+            "source_member_path": source_ref.get("path", ""),
+            "target_archive": target_ref.get("archive", ""),
+            "target_member_path": target_ref.get("path", ""),
+            "source_sha256": source_sha,
+            "target_sha256": target_sha,
+            "candidate_sha256": candidate_sha,
+            "source_size": len(source_payload),
+            "target_size": len(target_payload),
+            "candidate_size": len(candidate_payload),
+            "candidate_size_delta_from_target": len(candidate_payload) - len(target_payload),
+            "local_relative_path": local_rel.as_posix(),
+            "validation_status": validation_status,
+        })
+        for check_name, passed in checks.items():
+            validation_rows.append({
+                "profile_id": profile_id,
+                "normalized_path": normalized_path,
+                "check_name": check_name,
+                "passed": passed,
+                "review_status": "single_scene_prototype_validation_metadata_only",
+            })
+        for row in residuals:
+            residual_rows.append({
+                "profile_id": profile_id,
+                "normalized_path": normalized_path,
+                "shape_id": row.get("shape_id", ""),
+                "sequence_tag": row.get("sequence_tag", ""),
+                "source_atom_count": row.get("source_atom_count", ""),
+                "target_atom_count": row.get("target_atom_count", ""),
+                "source_tag_values": row.get("source_tag_values", ""),
+                "target_tag_values": row.get("target_tag_values", ""),
+                "known_schema_migration_shape": str(row.get("shape_id", "")) in known_schema_shape_ids,
+                "review_status": "retained_schema_residual_not_assigned_field_semantics",
+            })
+
+    profile_rows.sort(key=lambda row: _event_path_sort_key(str(row["normalized_path"])))
+    file_rows.sort(key=lambda row: (str(row["profile_id"]), _event_path_sort_key(str(row["normalized_path"]))))
+    validation_rows.sort(key=lambda row: (str(row["profile_id"]), str(row["check_name"])))
+    residual_rows.sort(key=lambda row: (str(row["profile_id"]), str(row["shape_id"])))
+    skipped_rows.sort(key=lambda row: (_event_path_sort_key(str(row.get("normalized_path", ""))), str(row.get("reason", ""))))
+
+    evidence_root = report_root / SINGLE_SCENE_EVENT_PROTOTYPE_EVIDENCE_DIR
+    if evidence_root.exists():
+        shutil.rmtree(evidence_root)
+    evidence_root.mkdir(parents=True, exist_ok=True)
+    write_tsv(evidence_root / "SINGLE_SCENE_EVENT_PROTOTYPE_PROFILES.tsv", [
+        "profile_id","profile_classification","prototype_confidence","normalized_path","cue_domains",
+        "selected_splice_count","residual_classification","known_schema_residual_rows","unknown_residual_rows",
+        "candidate_byte_difference_to_source","target_byte_difference_to_source","local_profile_root",
+        "validation_status","runtime_validation_status","review_status",
+    ], profile_rows)
+    write_tsv(evidence_root / "SINGLE_SCENE_EVENT_PROTOTYPE_FILES.tsv", [
+        "profile_id","normalized_path","source_archive","source_member_path","target_archive","target_member_path",
+        "source_sha256","target_sha256","candidate_sha256","source_size","target_size","candidate_size",
+        "candidate_size_delta_from_target","local_relative_path","validation_status",
+    ], file_rows)
+    write_tsv(evidence_root / "SINGLE_SCENE_EVENT_PROTOTYPE_VALIDATION.tsv", [
+        "profile_id","normalized_path","check_name","passed","review_status",
+    ], validation_rows)
+    write_tsv(evidence_root / "SINGLE_SCENE_EVENT_PROTOTYPE_RESIDUALS.tsv", [
+        "profile_id","normalized_path","shape_id","sequence_tag","source_atom_count","target_atom_count",
+        "source_tag_values","target_tag_values","known_schema_migration_shape","review_status",
+    ], residual_rows)
+    write_tsv(evidence_root / "SINGLE_SCENE_EVENT_PROTOTYPE_BUILD_SKIPPED.tsv", [
+        "profile_id","normalized_path","reason",
+    ], skipped_rows)
+
+    validation_failures = sum(str(row.get("passed", "")).casefold() != "true" for row in validation_rows)
+    summary = {
+        "type": "br_quartet_restoration_single_scene_event_prototype_evidence_summary",
+        "format_version": FORMAT_VERSION,
+        "tool_version": TOOL_VERSION,
+        "source_single_scene_composite_tool_version": composite_summary.get("tool_version"),
+        "source_event_tag_migration_tool_version": migration_summary.get("tool_version"),
+        "status": "separate_local_single_scene_event_prototypes_built_roundtrip_validated_not_repacked_or_installed",
+        "eligible_profile_rows": len(profile_rows),
+        "prototype_file_rows": len(file_rows),
+        "prototype_validation_rows": len(validation_rows),
+        "validation_failures": validation_failures,
+        "known_schema_residual_rows": len(residual_rows),
+        "skipped_rows": len(skipped_rows),
+        "local_prototype_root": prototype_root.relative_to(project_root).as_posix() if prototype_root.is_relative_to(project_root) else str(prototype_root),
+        "parameters": {"maximum_event_bytes": maximum_event_bytes},
+        "core_transaction_state": {
+            "existing_event_profiles_transaction_ready": True,
+            "existing_shader_profiles_transaction_ready": True,
+            "new_single_scene_profile_transaction_ready": False,
+            "all_profiles_runtime_validated": False,
+        },
+        "policy": {
+            "installed_games_modified": False,
+            "archive_repacked": False,
+            "candidate_ebd_payloads_written_only_under_local_workspace": True,
+            "candidate_ebd_payloads_exported_in_report": False,
+            "dialogue_or_localized_text_exported": False,
+            "known_schema_residuals_treated_as_field_semantics": False,
+            "prototype_treated_as_censorship_proof": False,
+            "runtime_validation_inferred": False,
+            "other_single_scene_steam_godray_water_costume_leads_promoted": False,
+            "legacy_dlc_in_scope": False,
+            "translation_or_core_files_modified": False,
+        },
+        "next_action": "Upload this metadata report. If all validations pass, prepare one separate checksum-gated PACK11 repack-test profile for the promoted single-scene event; keep all other unresolved single-scene leads evidence-only.",
+    }
+    atomic_json(evidence_root / "SUMMARY.json", summary)
+    output = report_root / SINGLE_SCENE_EVENT_PROTOTYPE_REPORT_NAME
+    make_report_archive(evidence_root, output)
+    return output, summary
+
+
+def cmd_build_single_scene_event_prototypes(args: argparse.Namespace) -> int:
+    project_root = Path(args.project_root).expanduser().resolve()
+    if not project_root.is_dir():
+        raise RestorationError(f"Project root does not exist: {project_root}")
+    default_workspace = project_root / ".local/build/quartet_restoration"
+    default_reports = project_root / ".local/reports/quartet_restoration"
+    workspace_root = Path(args.workspace_root).expanduser().resolve() if args.workspace_root else default_workspace
+    report_root = Path(args.report_root).expanduser().resolve() if args.report_root else default_reports
+    require_within(workspace_root, default_workspace, "Workspace")
+    require_within(report_root, default_reports, "Report root")
+    output, summary = build_single_scene_event_prototypes(
+        project_root=project_root,
+        workspace_root=workspace_root,
+        report_root=report_root,
+        maximum_event_bytes=args.maximum_event_bytes,
+    )
+    print(f"Local single-scene event profiles built: {summary['eligible_profile_rows']}")
+    print(f"Local candidate EBD files: {summary['prototype_file_rows']}")
+    print(f"Validation failures: {summary['validation_failures']}")
+    print(f"Metadata-only report: {output}")
+    print(f"Local prototypes: {summary['local_prototype_root']}")
+    print("Installed game files were not modified.")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--version", action="version", version=TOOL_VERSION)
@@ -14198,6 +18947,117 @@ def build_parser() -> argparse.ArgumentParser:
     event_presentation_cohorts.add_argument("--common-shape-ratio", type=float, default=0.75)
     event_presentation_cohorts.add_argument("--maximum-sequence-gap", type=int, default=50)
     event_presentation_cohorts.set_defaults(func=cmd_collect_event_presentation_cohorts)
+
+    event_delta_context = sub.add_parser(
+        "collect-event-delta-context",
+        help="profile bounded scalar/opaque contexts around selected presentation delta shapes and test simple inverse splices in memory",
+    )
+    event_delta_context.add_argument("--project-root", required=True)
+    event_delta_context.add_argument("--workspace-root")
+    event_delta_context.add_argument("--report-root")
+    event_delta_context.add_argument("--maximum-event-bytes", type=int, default=2 * 1024 * 1024)
+    event_delta_context.add_argument("--context-words", type=int, default=6)
+    event_delta_context.add_argument("--maximum-single-scene-shapes-per-event", type=int, default=8)
+    event_delta_context.set_defaults(func=cmd_collect_event_delta_context)
+
+    event_prototypes = sub.add_parser(
+        "build-event-prototypes",
+        help="build separate local round-trip-validated EBD prototype profiles from promoted stage-23 delta contexts",
+    )
+    event_prototypes.add_argument("--project-root", required=True)
+    event_prototypes.add_argument("--workspace-root")
+    event_prototypes.add_argument("--report-root")
+    event_prototypes.add_argument("--maximum-event-bytes", type=int, default=2 * 1024 * 1024)
+    event_prototypes.add_argument("--minimum-repeated-files", type=int, default=3)
+    event_prototypes.add_argument("--minimum-route-files", type=int, default=4)
+    event_prototypes.set_defaults(func=cmd_build_event_prototypes)
+
+    event_repack_tests = sub.add_parser(
+        "prepare-event-repack-tests",
+        help="build separate local checksum-gated PACK11 test archives from validated event prototype profiles",
+    )
+    event_repack_tests.add_argument("--project-root", required=True)
+    event_repack_tests.add_argument("--quartet-root", required=True)
+    event_repack_tests.add_argument("--gust-pak", required=True)
+    event_repack_tests.add_argument("--workspace-root")
+    event_repack_tests.add_argument("--report-root")
+    event_repack_tests.add_argument("--timeout-seconds", type=int, default=1800)
+    event_repack_tests.set_defaults(func=cmd_prepare_event_repack_tests)
+
+    g1s_repack_tests = sub.add_parser(
+        "prepare-g1s-repack-tests",
+        help="build separate local checksum-gated PACK10_01 test archives from validated G1S prototype profiles",
+    )
+    g1s_repack_tests.add_argument("--project-root", required=True)
+    g1s_repack_tests.add_argument("--quartet-root", required=True)
+    g1s_repack_tests.add_argument("--gust-pak", required=True)
+    g1s_repack_tests.add_argument("--workspace-root")
+    g1s_repack_tests.add_argument("--report-root")
+    g1s_repack_tests.add_argument("--timeout-seconds", type=int, default=1800)
+    g1s_repack_tests.set_defaults(func=cmd_prepare_g1s_repack_tests)
+
+    event_activation_request = sub.add_parser(
+        "prepare-event-activation-request",
+        help="validate local event test archives and emit a metadata-only core activation/rollback request",
+    )
+    event_activation_request.add_argument("--project-root", required=True)
+    event_activation_request.add_argument("--quartet-root", required=True)
+    event_activation_request.add_argument("--workspace-root")
+    event_activation_request.add_argument("--report-root")
+    event_activation_request.set_defaults(func=cmd_prepare_event_activation_request)
+
+    g1s_activation_request = sub.add_parser(
+        "prepare-g1s-activation-request",
+        help="validate local G1S test archives and emit a metadata-only core PACK10_01 activation/rollback request",
+    )
+    g1s_activation_request.add_argument("--project-root", required=True)
+    g1s_activation_request.add_argument("--quartet-root", required=True)
+    g1s_activation_request.add_argument("--workspace-root")
+    g1s_activation_request.add_argument("--report-root")
+    g1s_activation_request.set_defaults(func=cmd_prepare_g1s_activation_request)
+
+    single_scene_event_activation_request = sub.add_parser(
+        "prepare-single-scene-event-activation-request",
+        help="validate the stage-31 PACK11 profile and emit metadata for adding it to the existing core event transaction registry",
+    )
+    single_scene_event_activation_request.add_argument("--project-root", required=True)
+    single_scene_event_activation_request.add_argument("--quartet-root", required=True)
+    single_scene_event_activation_request.add_argument("--workspace-root")
+    single_scene_event_activation_request.add_argument("--report-root")
+    single_scene_event_activation_request.set_defaults(func=cmd_prepare_single_scene_event_activation_request)
+
+    single_scene_composites = sub.add_parser(
+        "collect-single-scene-composites",
+        help="combine individually safe cue-linked single-scene EBD inverse splices in memory and measure remaining schema residuals",
+    )
+    single_scene_composites.add_argument("--project-root", required=True)
+    single_scene_composites.add_argument("--workspace-root")
+    single_scene_composites.add_argument("--report-root")
+    single_scene_composites.add_argument("--maximum-event-bytes", type=int, default=2 * 1024 * 1024)
+    single_scene_composites.add_argument("--maximum-splices-per-event", type=int, default=16)
+    single_scene_composites.set_defaults(func=cmd_collect_single_scene_composites)
+
+    single_scene_event_repack_tests = sub.add_parser(
+        "prepare-single-scene-event-repack-tests",
+        help="Build a separate checksum-gated PACK11 test archive for stage-30 single-scene EBD prototypes",
+    )
+    single_scene_event_repack_tests.add_argument("--project-root", required=True)
+    single_scene_event_repack_tests.add_argument("--quartet-root", required=True)
+    single_scene_event_repack_tests.add_argument("--gust-pak", required=True)
+    single_scene_event_repack_tests.add_argument("--workspace-root")
+    single_scene_event_repack_tests.add_argument("--report-root")
+    single_scene_event_repack_tests.add_argument("--timeout-seconds", type=int, default=1800)
+    single_scene_event_repack_tests.set_defaults(func=cmd_prepare_single_scene_event_repack_tests)
+
+    single_scene_event_prototypes = sub.add_parser(
+        "build-single-scene-event-prototypes",
+        help="build separate local round-trip-validated EBD prototypes only for stage-29 exact or known-schema-only single-scene candidates",
+    )
+    single_scene_event_prototypes.add_argument("--project-root", required=True)
+    single_scene_event_prototypes.add_argument("--workspace-root")
+    single_scene_event_prototypes.add_argument("--report-root")
+    single_scene_event_prototypes.add_argument("--maximum-event-bytes", type=int, default=2 * 1024 * 1024)
+    single_scene_event_prototypes.set_defaults(func=cmd_build_single_scene_event_prototypes)
     return parser
 
 

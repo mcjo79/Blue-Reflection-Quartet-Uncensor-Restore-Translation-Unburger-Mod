@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://unburger.example/schemas/translation_records_merge_manifest_entry_v1.schema.json",
+  "title": "Blue Reflection workstream update entry for translation_records_merge/v1",
+  "description": "A format_version 3 WORKSTREAM_UPDATE.json file entry that applies a checksum-protected logical record patch without whole-document hashes.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "path",
+    "action",
+    "capability",
+    "patch_sha256"
+  ],
+  "properties": {
+    "path": {
+      "type": "string",
+      "pattern": "^titles/(blue_reflection|second_light)/translation/.+\\.json$"
+    },
+    "action": {
+      "const": "translation_records_merge"
+    },
+    "capability": {
+      "const": "translation_records_merge/v1"
+    },
+    "patch_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "mode": {
+      "oneOf": [
+        {
+          "type": "string",
+          "pattern": "^[0-7]{3,4}$"
+        },
+        {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4095
+        }
+      ]
+    }
+  }
+}
