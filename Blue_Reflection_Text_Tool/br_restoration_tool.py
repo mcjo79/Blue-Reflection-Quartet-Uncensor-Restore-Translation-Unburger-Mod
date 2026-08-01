@@ -1,0 +1,14215 @@
+#!/usr/bin/env python3
+"""Read-only Original vs Quartet asset inventory and comparison tooling.
+
+The tool reads legally installed game archives, extracts them only into the
+quartet_restoration local workspace, and writes metadata-only reports.  It never
+writes to an installed game and never labels structural differences as
+censorship automatically.
+"""
+
+from __future__ import annotations
+
+import argparse
+import bisect
+import csv
+import difflib
+import fnmatch
+import gzip
+import hashlib
+import json
+import math
+import os
+import re
+import shutil
+import subprocess
+import struct
+import sys
+import tempfile
+import time
+import zlib
+import xml.etree.ElementTree as ET
+from collections import Counter, defaultdict
+from pathlib import Path, PurePosixPath
+from typing import Any, Iterable, Sequence
+
+TOOL_VERSION = "0.0.26"
+FORMAT_VERSION = 1
+SAMPLE_BLOCK_SIZE = 4096
+SAMPLE_BLOCKS = 32
+EXTRACTION_MARKER = ".br_restoration_extraction.json"
+EXTRACTION_LOG = "extraction.log"
+GENERATED_REPORT_NAME = "BR_quartet_restoration_inventory_and_diff.tar.zst"
+REFERENCE_REPORT_NAME = "BR_quartet_restoration_reference_evidence.tar.zst"
+REFERENCE_EVIDENCE_DIR = "reference_evidence"
+SCENE_EFFECT_REPORT_NAME = "BR_quartet_restoration_scene_effect_evidence.tar.zst"
+SCENE_EFFECT_EVIDENCE_DIR = "scene_effect_evidence"
+STRUCTURAL_REPORT_NAME = "BR_quartet_restoration_structural_evidence.tar.zst"
+STRUCTURAL_EVIDENCE_DIR = "structural_evidence"
+MATERIAL_PARAMETER_REPORT_NAME = "BR_quartet_restoration_material_parameter_evidence.tar.zst"
+MATERIAL_PARAMETER_EVIDENCE_DIR = "material_parameter_evidence"
+MATERIAL_DELTA_REPORT_NAME = "BR_quartet_restoration_material_delta_evidence.tar.zst"
+MATERIAL_DELTA_EVIDENCE_DIR = "material_delta_evidence"
+SHADER_EFFECT_REPORT_NAME = "BR_quartet_restoration_shader_effect_evidence.tar.zst"
+SHADER_EFFECT_EVIDENCE_DIR = "shader_effect_evidence"
+BINARY_DELTA_REPORT_NAME = "BR_quartet_restoration_binary_delta_evidence.tar.zst"
+BINARY_DELTA_EVIDENCE_DIR = "binary_delta_evidence"
+DXBC_REFLECTION_REPORT_NAME = "BR_quartet_restoration_dxbc_reflection_evidence.tar.zst"
+DXBC_REFLECTION_EVIDENCE_DIR = "dxbc_reflection_evidence"
+G1S_ENVELOPE_REPORT_NAME = "BR_quartet_restoration_g1s_envelope_evidence.tar.zst"
+G1S_ENVELOPE_EVIDENCE_DIR = "g1s_envelope_evidence"
+G1S_PROTOTYPE_REPORT_NAME = "BR_quartet_restoration_g1s_prototype_evidence.tar.zst"
+G1S_PROTOTYPE_EVIDENCE_DIR = "g1s_prototype_evidence"
+G1S_PROTOTYPE_BUILD_DIR = "prototypes/g1s"
+PRESENTATION_SURFACE_REPORT_NAME = "BR_quartet_restoration_presentation_surface_evidence.tar.zst"
+PRESENTATION_SURFACE_EVIDENCE_DIR = "presentation_surface_evidence"
+EVENT_IDENTIFIER_REPORT_NAME = "BR_quartet_restoration_event_identifier_evidence.tar.zst"
+EVENT_IDENTIFIER_EVIDENCE_DIR = "event_identifier_evidence"
+EVENT_STRUCTURE_REPORT_NAME = "BR_quartet_restoration_event_structure_evidence.tar.zst"
+EVENT_STRUCTURE_EVIDENCE_DIR = "event_structure_evidence"
+EVENT_RECORD_REPORT_NAME = "BR_quartet_restoration_event_record_evidence.tar.zst"
+EVENT_RECORD_EVIDENCE_DIR = "event_record_evidence"
+EVENT_FAMILY_REPORT_NAME = "BR_quartet_restoration_event_family_evidence.tar.zst"
+EVENT_FAMILY_EVIDENCE_DIR = "event_family_evidence"
+EVENT_OPCODE_REPORT_NAME = "BR_quartet_restoration_event_opcode_evidence.tar.zst"
+EVENT_OPCODE_EVIDENCE_DIR = "event_opcode_evidence"
+EVENT_SCHEMA_REPORT_NAME = "BR_quartet_restoration_event_schema_evidence.tar.zst"
+EVENT_SCHEMA_EVIDENCE_DIR = "event_schema_evidence"
+EVENT_TAG_GRAMMAR_REPORT_NAME = "BR_quartet_restoration_event_tag_grammar_evidence.tar.zst"
+EVENT_TAG_GRAMMAR_EVIDENCE_DIR = "event_tag_grammar_evidence"
+EVENT_TAG_MIGRATION_REPORT_NAME = "BR_quartet_restoration_event_tag_migration_evidence.tar.zst"
+EVENT_TAG_MIGRATION_EVIDENCE_DIR = "event_tag_migration_evidence"
+EVENT_SCENE_CUE_REPORT_NAME = "BR_quartet_restoration_event_scene_cue_evidence.tar.zst"
+EVENT_SCENE_CUE_EVIDENCE_DIR = "event_scene_cue_evidence"
+EVENT_PRESENTATION_COHORT_REPORT_NAME = "BR_quartet_restoration_event_presentation_cohort_evidence.tar.zst"
+EVENT_PRESENTATION_COHORT_EVIDENCE_DIR = "event_presentation_cohort_evidence"
+EARC_MAGIC = 0x45415243
+EARC_HEADER_SIZE = 0x1C
+DEFAULT_MAX_EARC_BYTES = 256 * 1024 * 1024
+STREAM_READ_SIZE = 1024 * 1024
+SIGNATURE_BLOCK_SIZE = 64 * 1024
+GUST_MAX_COMPRESSED_CHUNK = 1024 * 1024
+
+
+class RestorationError(RuntimeError):
+    pass
+
+
+def eprint(*args: object) -> None:
+    print(*args, file=sys.stderr)
+
+
+def sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def sha256_text(value: str) -> str:
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+
+def atomic_json(path: Path, data: Any) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, temporary = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as handle:
+            json.dump(data, handle, ensure_ascii=False, indent=2, sort_keys=False)
+            handle.write("\n")
+        os.replace(temporary, path)
+    except Exception:
+        try:
+            os.unlink(temporary)
+        except FileNotFoundError:
+            pass
+        raise
+
+
+def load_json(path: Path) -> Any:
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError as exc:
+        raise RestorationError(f"Missing JSON file: {path}") from exc
+    except json.JSONDecodeError as exc:
+        raise RestorationError(f"Invalid JSON file {path}: {exc}") from exc
+
+
+def read_tsv(path: Path) -> list[dict[str, str]]:
+    try:
+        with path.open("r", encoding="utf-8", newline="") as handle:
+            return list(csv.DictReader(handle, delimiter="\t"))
+    except FileNotFoundError as exc:
+        raise RestorationError(f"Missing TSV file: {path}") from exc
+
+
+def is_relative_to(path: Path, root: Path) -> bool:
+    try:
+        path.relative_to(root)
+        return True
+    except ValueError:
+        return False
+
+
+def require_within(path: Path, root: Path, label: str) -> None:
+    if not is_relative_to(path, root):
+        raise RestorationError(f"{label} must stay under {root}: {path}")
+
+
+def safe_posix_path(raw: str) -> str:
+    value = raw.replace("\\", "/")
+    while value.startswith("./"):
+        value = value[2:]
+    value = re.sub(r"/+", "/", value).lstrip("/")
+    pure = PurePosixPath(value)
+    if not pure.parts or ".." in pure.parts:
+        raise RestorationError(f"Unsafe internal path: {raw!r}")
+    return pure.as_posix()
+
+
+def normalize_prefix(value: str) -> str:
+    result = safe_posix_path(value)
+    return result if result.endswith("/") else result + "/"
+
+
+def load_path_rules(path: Path, side: str) -> list[tuple[str, str, str]]:
+    rules: list[tuple[str, str, str]] = []
+    for row in read_tsv(path):
+        if row.get("side") != side or row.get("status") != "active":
+            continue
+        source = normalize_prefix(row["path_prefix"])
+        target = normalize_prefix(row["normalized_prefix"])
+        rules.append((source, target, row.get("rule_id", "")))
+    return sorted(rules, key=lambda item: len(item[0]), reverse=True)
+
+
+def normalize_internal_path(
+    raw: str, rules: Sequence[tuple[str, str, str]]
+) -> tuple[str, str | None]:
+    value = safe_posix_path(raw)
+    folded = value.casefold()
+    for prefix, replacement, rule_id in rules:
+        if folded.startswith(prefix.casefold()):
+            return replacement + value[len(prefix):], rule_id
+    return value, None
+
+
+def archive_relative(path: Path, game_root: Path) -> str:
+    return path.relative_to(game_root).as_posix()
+
+
+def discover_archives(game_root: Path, archive_glob: str) -> list[Path]:
+    pattern = safe_posix_path(archive_glob)
+    matches = [path.resolve() for path in game_root.glob(pattern) if path.is_file()]
+    for path in matches:
+        if not is_relative_to(path, game_root):
+            raise RestorationError(f"Archive escaped game root: {path}")
+    return sorted(matches, key=lambda item: archive_relative(item, game_root).casefold())
+
+
+def archive_workspace_name(archive_rel: str) -> str:
+    stem = Path(archive_rel).stem
+    safe = re.sub(r"[^A-Za-z0-9_.-]+", "_", stem).strip("._") or "archive"
+    return f"{safe}_{sha256_text(archive_rel)[:10]}"
+
+
+def marker_matches(marker: Path, expected: dict[str, Any], manifest_name: str) -> bool:
+    if not marker.is_file() or not (marker.parent / manifest_name).is_file():
+        return False
+    try:
+        current = load_json(marker)
+    except RestorationError:
+        return False
+    keys = (
+        "type",
+        "format_version",
+        "source_archive_relative",
+        "source_archive_size",
+        "source_archive_sha256",
+        "gust_pak_sha256",
+    )
+    return all(current.get(key) == expected.get(key) for key in keys)
+
+
+def remove_generated_directory(path: Path) -> None:
+    if not path.exists():
+        return
+    marker = path / EXTRACTION_MARKER
+    if not marker.is_file():
+        raise RestorationError(f"Refusing to replace unmarked directory: {path}")
+    data = load_json(marker)
+    if data.get("type") != "br_restoration_extraction_marker":
+        raise RestorationError(f"Unknown generated-directory marker: {marker}")
+    shutil.rmtree(path)
+
+
+def extract_archive(
+    *,
+    archive: Path,
+    game_root: Path,
+    gust_pak: Path,
+    gust_pak_sha256: str,
+    pair_id: str,
+    side: str,
+    workspace_root: Path,
+    timeout_seconds: int,
+) -> dict[str, Any]:
+    rel = archive_relative(archive, game_root)
+    source_size = archive.stat().st_size
+    source_sha = sha256_file(archive)
+    final = workspace_root / side / pair_id / archive_workspace_name(rel)
+    manifest_name = f"{archive.stem}.json"
+    marker_data = {
+        "type": "br_restoration_extraction_marker",
+        "format_version": FORMAT_VERSION,
+        "tool_version": TOOL_VERSION,
+        "pair_id": pair_id,
+        "side": side,
+        "source_archive_relative": rel,
+        "source_archive_size": source_size,
+        "source_archive_sha256": source_sha,
+        "gust_pak_sha256": gust_pak_sha256,
+        "manifest_name": manifest_name,
+    }
+
+    if marker_matches(final / EXTRACTION_MARKER, marker_data, manifest_name):
+        return {
+            **marker_data,
+            "workspace": final,
+            "status": "unchanged",
+        }
+
+    final.parent.mkdir(parents=True, exist_ok=True)
+    remove_generated_directory(final)
+    temporary = Path(tempfile.mkdtemp(prefix=f".{final.name}.", dir=final.parent))
+    try:
+        linked_archive = temporary / archive.name
+        linked_archive.symlink_to(archive)
+        log_path = temporary / EXTRACTION_LOG
+        command = [str(gust_pak), archive.name]
+        with log_path.open("wb") as log_handle:
+            try:
+                result = subprocess.run(
+                    command,
+                    cwd=temporary,
+                    stdin=subprocess.DEVNULL,
+                    stdout=log_handle,
+                    stderr=subprocess.STDOUT,
+                    timeout=timeout_seconds,
+                    check=False,
+                )
+            except subprocess.TimeoutExpired as exc:
+                raise RestorationError(
+                    f"gust_pak timed out after {timeout_seconds}s: {rel}"
+                ) from exc
+        linked_archive.unlink(missing_ok=True)
+        if result.returncode != 0:
+            excerpt = log_path.read_text(encoding="utf-8", errors="replace")[:4000]
+            raise RestorationError(
+                f"gust_pak failed for {rel} (exit {result.returncode})\n{excerpt}"
+            )
+        if not (temporary / manifest_name).is_file():
+            excerpt = log_path.read_text(encoding="utf-8", errors="replace")[:4000]
+            raise RestorationError(
+                f"gust_pak did not create {manifest_name} for {rel}\n{excerpt}"
+            )
+        atomic_json(temporary / EXTRACTION_MARKER, marker_data)
+        os.replace(temporary, final)
+    except Exception:
+        shutil.rmtree(temporary, ignore_errors=True)
+        raise
+
+    return {
+        **marker_data,
+        "workspace": final,
+        "status": "extracted",
+    }
+
+
+def sample_hashes(path: Path) -> list[str]:
+    size = path.stat().st_size
+    if size == 0:
+        return []
+    total_blocks = max(1, math.ceil(size / SAMPLE_BLOCK_SIZE))
+    if total_blocks <= SAMPLE_BLOCKS:
+        indices = list(range(total_blocks))
+    else:
+        indices = sorted(
+            {
+                round(index * (total_blocks - 1) / (SAMPLE_BLOCKS - 1))
+                for index in range(SAMPLE_BLOCKS)
+            }
+        )
+    hashes: list[str] = []
+    with path.open("rb") as handle:
+        for block_index in indices:
+            handle.seek(block_index * SAMPLE_BLOCK_SIZE)
+            data = handle.read(SAMPLE_BLOCK_SIZE)
+            hashes.append(hashlib.sha256(data).hexdigest())
+    return hashes
+
+
+def bounded_similarity(left: dict[str, Any], right: dict[str, Any]) -> float:
+    if left.get("sha256") == right.get("sha256"):
+        return 1.0
+    a = list(left.get("sample_hashes", []))
+    b = list(right.get("sample_hashes", []))
+    if not a and not b:
+        return 1.0
+    if not a or not b:
+        return 0.0
+    aligned = sum(1 for x, y in zip(a, b) if x == y) / max(len(a), len(b))
+    union = set(a) | set(b)
+    jaccard = len(set(a) & set(b)) / len(union) if union else 0.0
+    return round((aligned * 0.75) + (jaccard * 0.25), 6)
+
+
+def read_magic(path: Path, length: int = 16) -> str:
+    with path.open("rb") as handle:
+        return handle.read(length).hex()
+
+
+def classify_asset(path: str, magic_hex: str) -> str:
+    suffix = Path(path).suffix.casefold()
+    groups = {
+        "texture": {".g1t", ".dds", ".png", ".jpg", ".jpeg", ".bmp", ".tga"},
+        "model": {".g1m", ".mdl", ".model"},
+        "animation": {".g1a", ".anm", ".mot"},
+        "event_or_script": {".ebm", ".ebd", ".xml", ".lua", ".ks", ".txt", ".csv", ".json"},
+        "audio": {".ogg", ".wav", ".hca", ".awb", ".acb", ".at9"},
+        "video": {".mp4", ".wmv", ".avi", ".usm"},
+        "identifier_or_mapping": {".ktid", ".kts", ".tbl", ".lst"},
+        "font": {".ttf", ".otf", ".fnt"},
+        "shader": {".shader", ".fx", ".glsl", ".hlsl"},
+    }
+    for name, extensions in groups.items():
+        if suffix in extensions:
+            return name
+    if magic_hex.startswith("89504e470d0a1a0a"):
+        return "texture"
+    if magic_hex.startswith("44445320"):
+        return "texture"
+    if magic_hex.startswith("4f676753"):
+        return "audio"
+    if magic_hex.startswith("52494646"):
+        return "audio_or_container"
+    return "binary_or_unknown"
+
+
+def extracted_asset_files(workspace: Path, manifest_name: str) -> Iterable[Path]:
+    ignored_root = {EXTRACTION_MARKER, EXTRACTION_LOG, manifest_name}
+    for path in sorted(workspace.rglob("*"), key=lambda item: item.as_posix().casefold()):
+        if not path.is_file():
+            continue
+        rel = path.relative_to(workspace).as_posix()
+        if "/" not in rel and rel in ignored_root:
+            continue
+        yield path
+
+
+def inventory_side(
+    *,
+    target_id: str,
+    pair_id: str,
+    side: str,
+    extractions: Sequence[dict[str, Any]],
+    path_rules: Sequence[tuple[str, str, str]],
+) -> dict[str, Any]:
+    files: list[dict[str, Any]] = []
+    archives: list[dict[str, Any]] = []
+    normalized_counts: Counter[str] = Counter()
+
+    for extraction in extractions:
+        workspace = Path(extraction["workspace"])
+        manifest_name = str(extraction["manifest_name"])
+        archive_rel = str(extraction["source_archive_relative"])
+        archive_record = {
+            "archive": archive_rel,
+            "size": extraction["source_archive_size"],
+            "sha256": extraction["source_archive_sha256"],
+            "extraction_status": extraction["status"],
+        }
+        archives.append(archive_record)
+        for path in extracted_asset_files(workspace, manifest_name):
+            internal = path.relative_to(workspace).as_posix()
+            normalized, rule_id = normalize_internal_path(internal, path_rules)
+            comparison_key = normalized.casefold()
+            normalized_counts[comparison_key] += 1
+            magic = read_magic(path)
+            entry = {
+                "archive": archive_rel,
+                "path": internal,
+                "normalized_path": normalized,
+                "comparison_key": comparison_key,
+                "normalization_rule": rule_id,
+                "size": path.stat().st_size,
+                "sha256": sha256_file(path),
+                "extension": path.suffix.casefold(),
+                "asset_type": classify_asset(internal, magic),
+                "magic_hex": magic,
+                "sample_block_size": SAMPLE_BLOCK_SIZE,
+                "sample_hashes": sample_hashes(path),
+            }
+            files.append(entry)
+
+    for entry in files:
+        entry["normalized_path_collision_count"] = normalized_counts[entry["comparison_key"]]
+
+    extensions = Counter(entry["extension"] or "(none)" for entry in files)
+    types = Counter(entry["asset_type"] for entry in files)
+    return {
+        "type": "br_asset_inventory",
+        "format_version": FORMAT_VERSION,
+        "tool_version": TOOL_VERSION,
+        "target_id": target_id,
+        "archive_group": pair_id,
+        "root": "<LOCAL_QUARTET_RESTORATION_WORKSPACE>",
+        "normalization_side": side,
+        "sample_method": {
+            "method": "deterministic_relative_blocks",
+            "block_size": SAMPLE_BLOCK_SIZE,
+            "maximum_blocks": SAMPLE_BLOCKS,
+        },
+        "archives": archives,
+        "files": files,
+        "summary": {
+            "archives": len(archives),
+            "files": len(files),
+            "bytes": sum(entry["size"] for entry in files),
+            "extensions": dict(sorted(extensions.items())),
+            "asset_types": dict(sorted(types.items())),
+            "normalized_path_collision_keys": sum(
+                1 for count in normalized_counts.values() if count > 1
+            ),
+        },
+    }
+
+
+def file_ref(entry: dict[str, Any] | None) -> dict[str, Any] | None:
+    if entry is None:
+        return None
+    return {
+        "archive": entry["archive"],
+        "path": entry["path"],
+        "normalized_path": entry["normalized_path"],
+        "size": entry["size"],
+        "sha256": entry["sha256"],
+        "extension": entry["extension"],
+        "asset_type": entry["asset_type"],
+        "magic_hex": entry["magic_hex"],
+    }
+
+
+def size_ratio(left: dict[str, Any], right: dict[str, Any]) -> float:
+    a = int(left["size"])
+    b = int(right["size"])
+    if a == b == 0:
+        return 1.0
+    return round(min(a, b) / max(a, b), 6) if max(a, b) else 0.0
+
+
+def prepare_inventory_for_comparison(
+    inventory: dict[str, Any],
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Apply pair-specific comparison semantics without deleting inventory evidence.
+
+    The Original release duplicates some language-independent records inside
+    locale roots. Quartet consolidates those records. Inventories always retain
+    every extracted file; only the structural difference pass collapses known
+    duplicate source copies.
+    """
+    pair_id = str(inventory.get("archive_group", ""))
+    side = str(inventory.get("normalization_side", ""))
+    files = list(inventory.get("files", []))
+
+    if side == "source" and pair_id == "br1_events":
+        kept: list[dict[str, Any]] = []
+        collapsed = Counter()
+        for entry in files:
+            normalized = str(entry.get("normalized_path", "")).casefold()
+            if entry.get("extension") == ".ebd" and normalized.startswith(
+                ("event/event_en/", "event/event_tc/")
+            ):
+                locale = normalized.split("/", 2)[1]
+                collapsed[f"{locale}_ebd_copy"] += 1
+            else:
+                kept.append(entry)
+        prepared = dict(inventory)
+        prepared["files"] = kept
+        return prepared, {
+            "profile": "quartet_event_language_consolidation_v1",
+            "input_files": len(files),
+            "comparison_files": len(kept),
+            "collapsed_source_locale_copies": sum(collapsed.values()),
+            "collapsed_by_root": dict(sorted(collapsed.items())),
+            "canonical_language_independent_ebd_root": "event/event_jp/",
+            "localized_ebm_mappings": {
+                "event/event_en/": "event/event_en/",
+                "event/event_ch/": "event/event_tc/",
+                "event/event_jp/": "event/event_jp/",
+            },
+            "note": (
+                "Original EN/CH EBD copies are retained in inventories but collapsed "
+                "because Quartet stores language-independent EBD files only once."
+            ),
+        }
+
+    if side == "source" and pair_id == "br1_language":
+        kept = []
+        collapsed = Counter()
+        for entry in files:
+            path = str(entry.get("path", "")).casefold()
+            if path.startswith(("saves_en/text/", "saves_ch/text/", "saves_jp/text/")):
+                kept.append(entry)
+            elif path.startswith("saves_jp/"):
+                kept.append(entry)
+            elif path.startswith("saves_en/"):
+                collapsed["saves_en_shared_copy"] += 1
+            elif path.startswith("saves_ch/"):
+                collapsed["saves_ch_shared_copy"] += 1
+            else:
+                kept.append(entry)
+
+        prepared = dict(inventory)
+        prepared["files"] = kept
+        return prepared, {
+            "profile": "quartet_language_consolidation_v1",
+            "input_files": len(files),
+            "comparison_files": len(kept),
+            "collapsed_source_locale_copies": sum(collapsed.values()),
+            "collapsed_by_root": dict(sorted(collapsed.items())),
+            "canonical_shared_source_root": "saves_jp/",
+            "localized_text_mappings": {
+                "saves_en/text/": "saves/text_en/",
+                "saves_ch/text/": "saves/text_tc/",
+                "saves_jp/text/": "saves/text_jp/",
+            },
+            "note": (
+                "Original EN/CH non-text locale copies are retained in inventories but "
+                "collapsed from the structural diff because Quartet stores one shared copy."
+            ),
+        }
+
+    return inventory, {
+        "profile": "direct",
+        "input_files": len(files),
+        "comparison_files": len(files),
+        "collapsed_source_locale_copies": 0,
+    }
+
+
+def scope_status(
+    classification: str,
+    normalized_path: str,
+    source_entry: dict[str, Any] | None,
+    target_entry: dict[str, Any] | None,
+) -> tuple[str, str]:
+    paths = [normalized_path]
+    for entry in (source_entry, target_entry):
+        if entry:
+            paths.extend([str(entry.get("path", "")), str(entry.get("normalized_path", ""))])
+    folded = "\n".join(paths).casefold()
+    tokens = {token for token in re.split(r"[^a-z0-9]+", folded) if token}
+    if "dlc" in tokens:
+        return "deferred_legacy_dlc", "Legacy DLC is explicitly outside this workstream stage."
+    folded_normalized = normalized_path.casefold()
+    if classification == "new_in_target" and folded_normalized.startswith(
+        ("saves/text_sc/", "event/event_sc/")
+    ):
+        return (
+            "expected_target_addition",
+            "Quartet adds a separate Simplified Chinese locale tree absent from the Original PC archive.",
+        )
+    if folded_normalized.startswith("saves/text_") or folded_normalized.startswith(
+        ("event/event_en/", "event/event_tc/")
+    ):
+        return (
+            "cross_workstream_translation_evidence",
+            "Localized text evidence is retained, but edits belong to the translation workstream.",
+        )
+    return "in_scope", ""
+
+
+def manual_review_priority(
+    classification: str,
+    entry: dict[str, Any] | None,
+    scope: str = "in_scope",
+) -> str:
+    if scope != "in_scope":
+        return "deferred"
+    asset_type = entry.get("asset_type") if entry else ""
+    if classification in {"changed", "removed_in_target"}:
+        if asset_type in {"texture", "model", "animation", "event_or_script", "video"}:
+            return "high"
+        return "medium"
+    if classification == "new_in_target" and asset_type in {"texture", "model", "animation", "event_or_script", "video"}:
+        return "medium"
+    return "low"
+
+
+def compare_inventories(source: dict[str, Any], target: dict[str, Any]) -> dict[str, Any]:
+    if source.get("type") != "br_asset_inventory":
+        raise RestorationError("Source is not a BR asset inventory")
+    if target.get("type") != "br_asset_inventory":
+        raise RestorationError("Target is not a BR asset inventory")
+
+    source, source_profile = prepare_inventory_for_comparison(source)
+    target, target_profile = prepare_inventory_for_comparison(target)
+
+    source_groups: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    target_groups: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for entry in source.get("files", []):
+        source_groups[entry["comparison_key"]].append(entry)
+    for entry in target.get("files", []):
+        target_groups[entry["comparison_key"]].append(entry)
+
+    entries: list[dict[str, Any]] = []
+    unmatched_source: list[dict[str, Any]] = []
+    unmatched_target: list[dict[str, Any]] = []
+
+    def identity(entry: dict[str, Any]) -> tuple[str, str]:
+        return str(entry["archive"]), str(entry["path"])
+
+    def add(
+        classification: str,
+        normalized_path: str,
+        source_entry: dict[str, Any] | None,
+        target_entry: dict[str, Any] | None,
+        confidence: str,
+        similarity: float,
+        mapping_basis: str,
+    ) -> None:
+        key = "|".join(
+            [
+                str(source.get("target_id", "")),
+                str(target.get("target_id", "")),
+                classification,
+                normalized_path,
+                source_entry["archive"] + ":" + source_entry["path"] if source_entry else "",
+                target_entry["archive"] + ":" + target_entry["path"] if target_entry else "",
+            ]
+        )
+        review_basis = source_entry or target_entry
+        scope, scope_reason = scope_status(
+            classification, normalized_path, source_entry, target_entry
+        )
+        entries.append(
+            {
+                "difference_id": "diff_" + sha256_text(key)[:20],
+                "classification": classification,
+                "normalized_path": normalized_path,
+                "source": file_ref(source_entry),
+                "target": file_ref(target_entry),
+                "binary_similarity": similarity,
+                "binary_similarity_method": "bounded_sample_hash_alignment_and_jaccard",
+                "size_ratio": (
+                    size_ratio(source_entry, target_entry)
+                    if source_entry is not None and target_entry is not None
+                    else 0.0
+                ),
+                "confidence": confidence,
+                "mapping_basis": mapping_basis,
+                "scope_status": scope,
+                "scope_reason": scope_reason,
+                "manual_review_priority": manual_review_priority(
+                    classification, review_basis, scope
+                ),
+                "dependencies": [],
+                "references": [],
+                "review_classification": "not_assessed",
+                "review_note": (
+                    "A structural or binary difference is not automatically a censorship change."
+                ),
+            }
+        )
+
+    all_keys = sorted(set(source_groups) | set(target_groups))
+    for comparison_key in all_keys:
+        src = list(source_groups.get(comparison_key, []))
+        dst = list(target_groups.get(comparison_key, []))
+        used_target: set[int] = set()
+        remaining_source: list[dict[str, Any]] = []
+
+        for source_entry in src:
+            exact_index = next(
+                (
+                    index
+                    for index, target_entry in enumerate(dst)
+                    if index not in used_target
+                    and target_entry["sha256"] == source_entry["sha256"]
+                ),
+                None,
+            )
+            if exact_index is None:
+                remaining_source.append(source_entry)
+                continue
+            used_target.add(exact_index)
+            target_entry = dst[exact_index]
+            add(
+                "identical",
+                source_entry["normalized_path"],
+                source_entry,
+                target_entry,
+                "exact",
+                1.0,
+                "normalized_path_and_sha256",
+            )
+
+        remaining_target = [
+            target_entry for index, target_entry in enumerate(dst) if index not in used_target
+        ]
+        if len(remaining_source) == 1 and len(remaining_target) == 1:
+            source_entry = remaining_source[0]
+            target_entry = remaining_target[0]
+            add(
+                "changed",
+                source_entry["normalized_path"],
+                source_entry,
+                target_entry,
+                "exact_path",
+                bounded_similarity(source_entry, target_entry),
+                "normalized_path",
+            )
+        else:
+            unmatched_source.extend(remaining_source)
+            unmatched_target.extend(remaining_target)
+
+    target_by_hash: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for entry in unmatched_target:
+        target_by_hash[entry["sha256"]].append(entry)
+    consumed_targets: set[tuple[str, str]] = set()
+    still_source: list[dict[str, Any]] = []
+
+    for source_entry in unmatched_source:
+        candidates = [
+            entry
+            for entry in target_by_hash.get(source_entry["sha256"], [])
+            if identity(entry) not in consumed_targets
+        ]
+        if len(candidates) == 1:
+            target_entry = candidates[0]
+            consumed_targets.add(identity(target_entry))
+            add(
+                "probably_moved",
+                source_entry["normalized_path"],
+                source_entry,
+                target_entry,
+                "exact_hash",
+                1.0,
+                "sha256_outside_normalized_path",
+            )
+        else:
+            still_source.append(source_entry)
+
+    remaining_targets = [
+        entry for entry in unmatched_target if identity(entry) not in consumed_targets
+    ]
+
+    target_by_basename: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    target_by_extension: dict[str, list[tuple[int, str, str, dict[str, Any]]]] = defaultdict(list)
+    for entry in remaining_targets:
+        basename = Path(entry["normalized_path"]).name.casefold()
+        target_by_basename[basename].append(entry)
+        target_by_extension[entry["extension"]].append(
+            (int(entry["size"]), str(entry["archive"]), str(entry["path"]), entry)
+        )
+    extension_sizes: dict[str, list[int]] = {}
+    for extension, values in target_by_extension.items():
+        values.sort(key=lambda item: (item[0], item[1].casefold(), item[2].casefold()))
+        extension_sizes[extension] = [item[0] for item in values]
+
+    final_source: list[dict[str, Any]] = []
+    for source_entry in still_source:
+        basename = Path(source_entry["normalized_path"]).name.casefold()
+        extension = source_entry["extension"]
+        candidate_map: dict[tuple[str, str], dict[str, Any]] = {}
+        for target_entry in target_by_basename.get(basename, []):
+            if identity(target_entry) not in consumed_targets:
+                candidate_map[identity(target_entry)] = target_entry
+
+        source_size = int(source_entry["size"])
+        extension_values = target_by_extension.get(extension, [])
+        sizes = extension_sizes.get(extension, [])
+        if extension_values and source_size >= 0:
+            lower = math.ceil(source_size * 0.95)
+            upper = math.floor(source_size / 0.95) if source_size else 0
+            start = bisect.bisect_left(sizes, lower)
+            stop = bisect.bisect_right(sizes, upper)
+            for _, _, _, target_entry in extension_values[start:stop]:
+                if identity(target_entry) not in consumed_targets:
+                    candidate_map[identity(target_entry)] = target_entry
+
+        candidates: list[tuple[float, float, dict[str, Any]]] = []
+        for target_entry in candidate_map.values():
+            same_basename = Path(target_entry["normalized_path"]).name.casefold() == basename
+            ratio = size_ratio(source_entry, target_entry)
+            similarity = bounded_similarity(source_entry, target_entry)
+            score = (similarity * 0.75) + (ratio * 0.2) + (0.05 if same_basename else 0.0)
+            candidates.append((score, similarity, target_entry))
+        candidates.sort(key=lambda item: item[0], reverse=True)
+        if candidates:
+            best_score, best_similarity, best_target = candidates[0]
+            runner_up = candidates[1][0] if len(candidates) > 1 else 0.0
+            if best_score >= 0.78 and best_score - runner_up >= 0.12:
+                consumed_targets.add(identity(best_target))
+                add(
+                    "probably_moved",
+                    source_entry["normalized_path"],
+                    source_entry,
+                    best_target,
+                    "bounded_similarity",
+                    best_similarity,
+                    "unique_fuzzy_candidate",
+                )
+                continue
+        final_source.append(source_entry)
+
+    for source_entry in final_source:
+        add(
+            "removed_in_target",
+            source_entry["normalized_path"],
+            source_entry,
+            None,
+            "structural",
+            0.0,
+            "no_target_match",
+        )
+
+    for target_entry in remaining_targets:
+        if identity(target_entry) in consumed_targets:
+            continue
+        add(
+            "new_in_target",
+            target_entry["normalized_path"],
+            None,
+            target_entry,
+            "structural",
+            0.0,
+            "no_source_match",
+        )
+
+    entries.sort(
+        key=lambda entry: (
+            entry["classification"],
+            entry["normalized_path"].casefold(),
+            (entry["source"] or {}).get("archive", ""),
+            (entry["target"] or {}).get("archive", ""),
+        )
+    )
+    classifications = Counter(entry["classification"] for entry in entries)
+    priorities = Counter(entry["manual_review_priority"] for entry in entries)
+    scopes = Counter(entry["scope_status"] for entry in entries)
+    return {
+        "type": "br_asset_difference_report",
+        "format_version": FORMAT_VERSION,
+        "tool_version": TOOL_VERSION,
+        "source_target": source.get("target_id"),
+        "target_target": target.get("target_id"),
+        "source_archive_group": source.get("archive_group"),
+        "target_archive_group": target.get("archive_group"),
+        "comparison_profiles": {
+            "source": source_profile,
+            "target": target_profile,
+        },
+        "entries": entries,
+        "summary": {
+            "entries": len(entries),
+            "classifications": dict(sorted(classifications.items())),
+            "manual_review_priorities": dict(sorted(priorities.items())),
+            "scope_statuses": dict(sorted(scopes.items())),
+            "censorship_candidates": 0,
+            "note": (
+                "Censorship/restoration classification is intentionally manual and remains "
+                "separate from structural comparison. Deferred DLC and expected locale additions "
+                "are excluded from the active review queue."
+            ),
+        },
+    }
+
+
+def restoration_focus(pair_id: str, entry: dict[str, Any]) -> tuple[int, list[str]]:
+    if entry.get("scope_status", "in_scope") != "in_scope":
+        return 0, []
+    source = entry.get("source") or {}
+    target = entry.get("target") or {}
+    basis = source or target
+    normalized = str(entry.get("normalized_path", "")).casefold()
+    asset_type = str(basis.get("asset_type", ""))
+    classification = str(entry.get("classification", ""))
+    score = 0
+    tags: list[str] = []
+
+    if classification == "changed":
+        score += 25
+        tags.append("same_path_changed")
+    elif classification == "removed_in_target":
+        score += 20
+        tags.append("source_only")
+    elif classification == "new_in_target":
+        score += 5
+        tags.append("target_only")
+    elif classification == "probably_moved":
+        tags.append("probably_moved")
+
+    if asset_type in {"texture", "model", "animation"}:
+        score += 25
+        tags.append("visual_asset")
+    elif asset_type == "event_or_script":
+        score += 12
+        tags.append("script_or_data")
+
+    if pair_id == "br1_assets":
+        score += 10
+        tags.append("asset_archive")
+    if "/character/" in normalized:
+        score += 20
+        tags.append("character_asset")
+    if normalized.startswith("event/event_jp/"):
+        score += 18
+        tags.append("japanese_event_source")
+    if normalized.endswith(".ebd"):
+        score += 15
+        tags.append("event_data")
+    if normalized.startswith("saves/") and not normalized.startswith("saves/text_"):
+        score += 8
+        tags.append("shared_game_data")
+
+    sensitive_terms = {
+        "bath": "bath_related",
+        "bathtowel": "bath_related",
+        "swm": "swimwear_related",
+        "tng": "underwear_related",
+        "scl": "school_costume_related",
+        "costume": "costume_related",
+        "body": "body_model_related",
+        "skin": "body_model_related",
+        "shower": "bath_related",
+    }
+    for term, tag in sensitive_terms.items():
+        if term in normalized:
+            score += 18
+            if tag not in tags:
+                tags.append(tag)
+
+    return score, tags
+
+
+def review_row(pair_id: str, entry: dict[str, Any]) -> dict[str, str]:
+    source = entry.get("source") or {}
+    target = entry.get("target") or {}
+    focus_score, focus_tags = restoration_focus(pair_id, entry)
+    return {
+        "pair_id": pair_id,
+        "priority": entry["manual_review_priority"],
+        "focus_score": str(focus_score),
+        "focus_tags": ",".join(focus_tags),
+        "scope_status": entry.get("scope_status", "in_scope"),
+        "scope_reason": entry.get("scope_reason", ""),
+        "classification": entry["classification"],
+        "normalized_path": entry["normalized_path"],
+        "asset_type": str((source or target).get("asset_type", "")),
+        "binary_similarity": str(entry["binary_similarity"]),
+        "size_ratio": str(entry["size_ratio"]),
+        "source_archive": str(source.get("archive", "")),
+        "source_path": str(source.get("path", "")),
+        "target_archive": str(target.get("archive", "")),
+        "target_path": str(target.get("path", "")),
+        "review_classification": "not_assessed",
+        "review_note": "",
+    }
+
+
+def write_review_queues(
+    active_path: Path,
+    focused_path: Path,
+    deferred_path: Path,
+    reports: Sequence[dict[str, Any]],
+) -> tuple[int, int, int]:
+    active_rows: list[dict[str, str]] = []
+    focused_rows: list[dict[str, str]] = []
+    deferred_rows: list[dict[str, str]] = []
+    priority_order = {"high": 0, "medium": 1, "low": 2, "deferred": 3}
+    class_order = {
+        "removed_in_target": 0,
+        "changed": 1,
+        "probably_moved": 2,
+        "new_in_target": 3,
+        "identical": 4,
+    }
+    for report in reports:
+        pair_id = str(report.get("source_archive_group", ""))
+        for entry in report.get("entries", []):
+            if entry["classification"] == "identical":
+                continue
+            row = review_row(pair_id, entry)
+            if entry.get("scope_status", "in_scope") == "in_scope":
+                active_rows.append(row)
+                if int(row["focus_score"]) >= 60:
+                    focused_rows.append(row)
+            else:
+                deferred_rows.append(row)
+
+    def sort_key(row: dict[str, str]) -> tuple[Any, ...]:
+        return (
+            priority_order.get(row["priority"], 9),
+            class_order.get(row["classification"], 9),
+            row["normalized_path"].casefold(),
+        )
+
+    active_rows.sort(key=sort_key)
+    focused_rows.sort(
+        key=lambda row: (
+            -int(row["focus_score"]),
+            priority_order.get(row["priority"], 9),
+            class_order.get(row["classification"], 9),
+            row["normalized_path"].casefold(),
+        )
+    )
+    deferred_rows.sort(key=sort_key)
+    fieldnames = [
+        "pair_id",
+        "priority",
+        "focus_score",
+        "focus_tags",
+        "scope_status",
+        "scope_reason",
+        "classification",
+        "normalized_path",
+        "asset_type",
+        "binary_similarity",
+        "size_ratio",
+        "source_archive",
+        "source_path",
+        "target_archive",
+        "target_path",
+        "review_classification",
+        "review_note",
+    ]
+    for path, rows in (
+        (active_path, active_rows),
+        (focused_path, focused_rows),
+        (deferred_path, deferred_rows),
+    ):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("w", encoding="utf-8", newline="") as handle:
+            writer = csv.DictWriter(handle, fieldnames=fieldnames, delimiter="\t")
+            writer.writeheader()
+            writer.writerows(rows)
+    return len(active_rows), len(focused_rows), len(deferred_rows)
+
+
+def write_archive_inventory(path: Path, pair_results: Sequence[dict[str, Any]]) -> None:
+    fieldnames = [
+        "pair_id",
+        "category",
+        "side",
+        "target_id",
+        "archive",
+        "size",
+        "sha256",
+        "extraction_status",
+    ]
+    rows: list[dict[str, Any]] = []
+    for result in pair_results:
+        for side in ("source", "target"):
+            inventory = result[f"{side}_inventory"]
+            for archive in inventory["archives"]:
+                rows.append(
+                    {
+                        "pair_id": result["pair_id"],
+                        "category": result["category"],
+                        "side": side,
+                        "target_id": inventory["target_id"],
+                        **archive,
+                    }
+                )
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fieldnames, delimiter="\t")
+        writer.writeheader()
+        writer.writerows(rows)
+
+
+def make_report_archive(report_root: Path, output: Path) -> None:
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.unlink(missing_ok=True)
+    fd, temporary_name = tempfile.mkstemp(
+        prefix=f".{output.name}.", suffix=".tmp", dir=report_root.parent
+    )
+    os.close(fd)
+    temporary = Path(temporary_name)
+    temporary.unlink(missing_ok=True)
+    try:
+        result = subprocess.run(
+            [
+                "tar",
+                "-C",
+                str(report_root.parent),
+                "--zstd",
+                "-cf",
+                str(temporary),
+                report_root.name,
+            ],
+            check=False,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
+        )
+    except FileNotFoundError as exc:
+        temporary.unlink(missing_ok=True)
+        raise RestorationError(
+            "GNU tar with zstd support is required to build the upload report"
+        ) from exc
+    if result.returncode != 0:
+        error = result.stderr.decode("utf-8", errors="replace")[:4000]
+        temporary.unlink(missing_ok=True)
+        raise RestorationError(f"Could not build report archive:\n{error}")
+    os.replace(temporary, output)
+
+
+
+def logical_asset_stem(path: str) -> str:
+    value = safe_posix_path(path)
+    folded = value.casefold()
+    for suffix in (".elixir.gz", ".g1t", ".g1m", ".g1a", ".gz"):
+        if folded.endswith(suffix):
+            return value[: -len(suffix)]
+    return str(PurePosixPath(value).with_suffix(""))
+
+
+def load_candidate_rules(path: Path) -> list[dict[str, str]]:
+    rules: list[dict[str, str]] = []
+    for row in read_tsv(path):
+        if row.get("status") != "active":
+            continue
+        required = ("rule_id", "normalized_path_glob", "family", "priority")
+        missing = [name for name in required if not row.get(name)]
+        if missing:
+            raise RestorationError(
+                f"Candidate rule {row.get('rule_id', '<unnamed>')} is missing: {', '.join(missing)}"
+            )
+        rules.append(row)
+    if not rules:
+        raise RestorationError(f"No active restoration candidate rules: {path}")
+    return rules
+
+
+def candidate_rule_for_path(
+    normalized_path: str, rules: Sequence[dict[str, str]]
+) -> dict[str, str] | None:
+    folded = normalized_path.casefold()
+    for rule in rules:
+        if fnmatch.fnmatchcase(folded, rule["normalized_path_glob"].casefold()):
+            return rule
+    return None
+
+
+def candidate_character_id(token: str) -> str:
+    match = re.match(r"((?:pc|npc)\d+)_", token.casefold())
+    return match.group(1) if match else ""
+
+
+def split_csv_field(value: str) -> list[str]:
+    return [item.strip() for item in value.split(",") if item.strip()]
+
+
+def load_report_jsons(report_root: Path, suffix: str) -> list[dict[str, Any]]:
+    directory = report_root / suffix
+    if not directory.is_dir():
+        raise RestorationError(f"Missing generated report directory: {directory}")
+    files = sorted(directory.glob("*.json"), key=lambda item: item.name.casefold())
+    if not files:
+        raise RestorationError(f"No generated JSON reports found: {directory}")
+    return [load_json(path) for path in files]
+
+
+def build_candidate_families(
+    *,
+    differences: Sequence[dict[str, Any]],
+    target_inventories: Sequence[dict[str, Any]],
+    rules: Sequence[dict[str, str]],
+) -> list[dict[str, Any]]:
+    target_entries: list[dict[str, Any]] = []
+    for inventory in target_inventories:
+        pair_id = str(inventory.get("archive_group", ""))
+        for entry in inventory.get("files", []):
+            target_entries.append({**entry, "pair_id": pair_id})
+
+    by_basename: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for entry in target_entries:
+        base = Path(logical_asset_stem(str(entry["normalized_path"]))).name.casefold()
+        by_basename[base].append(entry)
+
+    grouped: dict[str, dict[str, Any]] = {}
+    for report in differences:
+        pair_id = str(report.get("source_archive_group", ""))
+        for entry in report.get("entries", []):
+            if entry.get("classification") != "new_in_target":
+                continue
+            if entry.get("scope_status", "in_scope") != "in_scope":
+                continue
+            target = entry.get("target") or {}
+            normalized = str(target.get("normalized_path", entry.get("normalized_path", "")))
+            rule = candidate_rule_for_path(normalized, rules)
+            if rule is None:
+                continue
+            stem = logical_asset_stem(normalized)
+            token = Path(stem).name
+            candidate_id = "restcand_" + sha256_text(rule["family"] + "|" + stem.casefold())[:18]
+            item = grouped.setdefault(
+                candidate_id,
+                {
+                    "candidate_id": candidate_id,
+                    "rule_id": rule["rule_id"],
+                    "family": rule["family"],
+                    "priority": rule["priority"],
+                    "pair_id": pair_id,
+                    "character_id": candidate_character_id(token),
+                    "token": token,
+                    "logical_stem": stem,
+                    "asset_files": [],
+                    "counterpart_tokens": [],
+                    "counterpart_asset_paths": [],
+                    "structural_basis": "quartet_only_asset_family",
+                    "review_status": "manual_confirmation_required",
+                    "note": rule.get("note", ""),
+                },
+            )
+            item["asset_files"].append(normalized)
+
+            character_id = item["character_id"]
+            for template in split_csv_field(rule.get("counterpart_templates", "")):
+                counterpart = template.replace("{character}", character_id)
+                if counterpart and counterpart not in item["counterpart_tokens"]:
+                    item["counterpart_tokens"].append(counterpart)
+
+    for item in grouped.values():
+        item["asset_files"] = sorted(set(item["asset_files"]), key=str.casefold)
+        alternatives: list[str] = []
+        for token in item["counterpart_tokens"]:
+            for entry in by_basename.get(token.casefold(), []):
+                path = str(entry["normalized_path"])
+                if path not in alternatives:
+                    alternatives.append(path)
+        item["counterpart_asset_paths"] = sorted(alternatives, key=str.casefold)
+
+    priority_order = {"critical": 0, "high": 1, "medium": 2, "low": 3}
+    return sorted(
+        grouped.values(),
+        key=lambda item: (
+            priority_order.get(str(item["priority"]), 9),
+            str(item["family"]),
+            str(item["logical_stem"]).casefold(),
+        ),
+    )
+
+
+def inventory_workspace_file(
+    workspace_root: Path,
+    side: str,
+    pair_id: str,
+    archive: str,
+    internal_path: str,
+) -> Path:
+    return (
+        workspace_root
+        / side
+        / pair_id
+        / archive_workspace_name(archive)
+        / safe_posix_path(internal_path)
+    )
+
+
+def is_zlib_header(value: bytes) -> bool:
+    if len(value) < 2:
+        return False
+    cmf, flg = value[0], value[1]
+    return (cmf & 0x0F) == 8 and (cmf >> 4) <= 7 and ((cmf << 8) + flg) % 31 == 0
+
+
+def bounded_zlib_decompress(
+    compressed: bytes,
+    maximum_bytes: int,
+    *,
+    source: Path,
+) -> bytes:
+    decoder = zlib.decompressobj()
+    output = bytearray()
+    pending = compressed
+    try:
+        while pending:
+            remaining = maximum_bytes - len(output)
+            chunk = decoder.decompress(pending, remaining + 1)
+            output.extend(chunk)
+            if len(output) > maximum_bytes:
+                raise RestorationError(
+                    f"decompressed payload exceeds scan limit: {source}"
+                )
+            pending = decoder.unconsumed_tail
+            if not pending:
+                break
+        remaining = maximum_bytes - len(output)
+        output.extend(decoder.flush(remaining + 1))
+    except zlib.error as exc:
+        raise RestorationError(f"invalid zlib payload: {source}: {exc}") from exc
+    if len(output) > maximum_bytes:
+        raise RestorationError(f"decompressed payload exceeds scan limit: {source}")
+    if not decoder.eof:
+        raise RestorationError(f"truncated zlib payload: {source}")
+    if decoder.unused_data:
+        raise RestorationError(f"unexpected trailing data in zlib payload: {source}")
+    return bytes(output)
+
+
+def looks_like_gust_chunked_zlib(prefix: bytes, file_size: int) -> bool:
+    if len(prefix) < 6 or file_size < 12:
+        return False
+    first_chunk_size = int.from_bytes(prefix[:4], "little")
+    return (
+        0 < first_chunk_size <= GUST_MAX_COMPRESSED_CHUNK
+        and 4 + first_chunk_size <= file_size
+        and is_zlib_header(prefix[4:6])
+    )
+
+
+def read_gust_chunked_zlib(path: Path, maximum_bytes: int) -> tuple[bytes, int]:
+    """Decode Gust's [u32 compressed size][zlib data]... [u32 zero] stream."""
+    output = bytearray()
+    chunk_count = 0
+    file_size = path.stat().st_size
+    with path.open("rb") as handle:
+        while True:
+            size_field_offset = handle.tell()
+            size_bytes = handle.read(4)
+            if len(size_bytes) != 4:
+                raise RestorationError(
+                    f"truncated Gust chunk-size field at 0x{size_field_offset:x}: {path}"
+                )
+            compressed_size = int.from_bytes(size_bytes, "little")
+            if compressed_size == 0:
+                if handle.read(1):
+                    raise RestorationError(
+                        f"unexpected trailing data after Gust terminator: {path}"
+                    )
+                return bytes(output), chunk_count
+            chunk_count += 1
+            if compressed_size > GUST_MAX_COMPRESSED_CHUNK:
+                raise RestorationError(
+                    f"Gust chunk {chunk_count} exceeds compressed-size safety limit "
+                    f"({compressed_size} bytes): {path}"
+                )
+            if handle.tell() + compressed_size > file_size:
+                raise RestorationError(
+                    f"truncated Gust chunk {chunk_count} ({compressed_size} bytes): {path}"
+                )
+            compressed = handle.read(compressed_size)
+            remaining = maximum_bytes - len(output)
+            decoded = bounded_zlib_decompress(
+                compressed, remaining, source=path
+            )
+            output.extend(decoded)
+
+
+def read_reference_payload(path: Path, maximum_bytes: int) -> tuple[bytes, str]:
+    if maximum_bytes <= 0:
+        raise RestorationError("Reference scan maximum size must be positive")
+
+    is_gz_named = path.name.casefold().endswith(".gz")
+    if is_gz_named:
+        file_size = path.stat().st_size
+        with path.open("rb") as handle:
+            prefix = handle.read(18)
+
+        if prefix.startswith(b"\x1f\x8b"):
+            try:
+                with gzip.open(path, "rb") as handle:
+                    data = handle.read(maximum_bytes + 1)
+                if len(data) > maximum_bytes:
+                    raise RestorationError(
+                        f"decompressed payload exceeds scan limit: {path}"
+                    )
+                return data, "gzip"
+            except (gzip.BadGzipFile, EOFError, OSError) as exc:
+                raise RestorationError(f"invalid gzip payload: {path}: {exc}") from exc
+
+        if looks_like_gust_chunked_zlib(prefix, file_size):
+            data, chunk_count = read_gust_chunked_zlib(path, maximum_bytes)
+            if chunk_count == 0:
+                raise RestorationError(f"empty Gust chunked-zlib container: {path}")
+            return data, "gust_chunked_zlib"
+
+        zlib_offset = next(
+            (
+                offset
+                for offset in (0, 4, 8, 12, 16)
+                if len(prefix) >= offset + 2 and is_zlib_header(prefix[offset : offset + 2])
+            ),
+            None,
+        )
+        if zlib_offset is not None:
+            with path.open("rb") as handle:
+                raw = handle.read(maximum_bytes + zlib_offset + 1)
+            if len(raw) > maximum_bytes + zlib_offset:
+                raise RestorationError(f"compressed payload exceeds scan limit: {path}")
+            data = bounded_zlib_decompress(
+                raw[zlib_offset:], maximum_bytes, source=path
+            )
+            container = "zlib" if zlib_offset == 0 else f"prefixed_zlib{zlib_offset}"
+            return data, container
+
+    with path.open("rb") as handle:
+        data = handle.read(maximum_bytes + 1)
+    if len(data) > maximum_bytes:
+        raise RestorationError(f"payload exceeds scan limit: {path}")
+    return data, "raw_unrecognized_gz" if is_gz_named else "raw"
+
+
+
+def iter_file_chunks(path: Path, *, offset: int = 0, chunk_size: int = STREAM_READ_SIZE) -> Iterable[bytes]:
+    with path.open("rb") as handle:
+        handle.seek(offset)
+        for chunk in iter(lambda: handle.read(chunk_size), b""):
+            yield chunk
+
+
+def iter_zlib_file_chunks(
+    path: Path,
+    *,
+    offset: int = 0,
+    chunk_size: int = STREAM_READ_SIZE,
+) -> Iterable[bytes]:
+    decoder = zlib.decompressobj()
+    with path.open("rb") as handle:
+        handle.seek(offset)
+        while True:
+            compressed = handle.read(chunk_size)
+            if not compressed:
+                break
+            try:
+                decoded = decoder.decompress(compressed)
+            except zlib.error as exc:
+                raise RestorationError(f"invalid zlib payload: {path}: {exc}") from exc
+            if decoded:
+                yield decoded
+        try:
+            final = decoder.flush()
+        except zlib.error as exc:
+            raise RestorationError(f"invalid zlib payload: {path}: {exc}") from exc
+        if final:
+            yield final
+    if not decoder.eof:
+        raise RestorationError(f"truncated zlib payload: {path}")
+    if decoder.unused_data:
+        raise RestorationError(f"unexpected trailing data in zlib payload: {path}")
+
+
+def iter_gust_chunked_zlib(path: Path) -> Iterable[bytes]:
+    """Stream Gust [u32 compressed size][zlib data]... [u32 zero] payloads."""
+    file_size = path.stat().st_size
+    chunk_count = 0
+    with path.open("rb") as handle:
+        while True:
+            size_field_offset = handle.tell()
+            size_bytes = handle.read(4)
+            if len(size_bytes) != 4:
+                raise RestorationError(
+                    f"truncated Gust chunk-size field at 0x{size_field_offset:x}: {path}"
+                )
+            compressed_size = int.from_bytes(size_bytes, "little")
+            if compressed_size == 0:
+                if handle.read(1):
+                    raise RestorationError(
+                        f"unexpected trailing data after Gust terminator: {path}"
+                    )
+                if chunk_count == 0:
+                    raise RestorationError(f"empty Gust chunked-zlib container: {path}")
+                return
+            chunk_count += 1
+            if compressed_size > GUST_MAX_COMPRESSED_CHUNK:
+                raise RestorationError(
+                    f"Gust chunk {chunk_count} exceeds compressed-size safety limit "
+                    f"({compressed_size} bytes): {path}"
+                )
+            if handle.tell() + compressed_size > file_size:
+                raise RestorationError(
+                    f"truncated Gust chunk {chunk_count} ({compressed_size} bytes): {path}"
+                )
+            compressed = handle.read(compressed_size)
+            decoder = zlib.decompressobj()
+            try:
+                decoded = decoder.decompress(compressed)
+                decoded += decoder.flush()
+            except zlib.error as exc:
+                raise RestorationError(
+                    f"invalid zlib payload in Gust chunk {chunk_count}: {path}: {exc}"
+                ) from exc
+            if not decoder.eof:
+                raise RestorationError(f"truncated zlib payload in Gust chunk {chunk_count}: {path}")
+            if decoder.unused_data or decoder.unconsumed_tail:
+                raise RestorationError(
+                    f"unexpected trailing data in Gust chunk {chunk_count}: {path}"
+                )
+            if decoded:
+                yield decoded
+
+
+def iter_gzip_chunks(path: Path, chunk_size: int = STREAM_READ_SIZE) -> Iterable[bytes]:
+    try:
+        with gzip.open(path, "rb") as handle:
+            for chunk in iter(lambda: handle.read(chunk_size), b""):
+                yield chunk
+    except (gzip.BadGzipFile, EOFError, OSError) as exc:
+        raise RestorationError(f"invalid gzip payload: {path}: {exc}") from exc
+
+
+def iter_reference_payload(
+    path: Path,
+    maximum_raw_bytes: int,
+) -> tuple[str, Iterable[bytes]]:
+    """Return a container label and a streaming decoded-payload iterator.
+
+    Recognized compressed containers are not limited by decompressed size.  The
+    legacy limit is retained only for raw/unrecognized inputs, preventing a
+    mistaken scan of a huge media file while allowing arbitrarily large Gust
+    field containers to be inspected with bounded memory.
+    """
+    if maximum_raw_bytes <= 0:
+        raise RestorationError("Reference scan raw-file maximum must be positive")
+    is_gz_named = path.name.casefold().endswith(".gz")
+    file_size = path.stat().st_size
+    with path.open("rb") as handle:
+        prefix = handle.read(18)
+
+    if is_gz_named and prefix.startswith(b"\x1f\x8b"):
+        return "gzip", iter_gzip_chunks(path)
+    if is_gz_named and looks_like_gust_chunked_zlib(prefix, file_size):
+        return "gust_chunked_zlib", iter_gust_chunked_zlib(path)
+    if is_gz_named:
+        zlib_offset = next(
+            (
+                offset
+                for offset in (0, 4, 8, 12, 16)
+                if len(prefix) >= offset + 2 and is_zlib_header(prefix[offset : offset + 2])
+            ),
+            None,
+        )
+        if zlib_offset is not None:
+            container = "zlib" if zlib_offset == 0 else f"prefixed_zlib{zlib_offset}"
+            return container, iter_zlib_file_chunks(path, offset=zlib_offset)
+
+    if file_size > maximum_raw_bytes:
+        raise RestorationError(f"raw payload exceeds scan limit: {path}")
+    return (
+        "raw_unrecognized_gz" if is_gz_named else "raw",
+        iter_file_chunks(path),
+    )
+
+
+def scan_token_stream(
+    chunks: Iterable[bytes],
+    patterns: dict[str, tuple[re.Pattern[bytes], dict[bytes, str]]],
+    maximum_offsets: int = 8,
+) -> tuple[dict[str, dict[str, tuple[int, list[int]]]], int]:
+    counts: dict[str, Counter[str]] = {name: Counter() for name in patterns}
+    offsets: dict[str, dict[str, list[int]]] = {
+        name: defaultdict(list) for name in patterns
+    }
+    maximum_needle = {
+        name: max((len(value) for value in encoded), default=1)
+        for name, (_pattern, encoded) in patterns.items()
+    }
+    tails: dict[str, bytes] = {name: b"" for name in patterns}
+    payload_offset = 0
+    for chunk in chunks:
+        if not chunk:
+            continue
+        for encoding, (pattern, encoded_tokens) in patterns.items():
+            tail = tails[encoding]
+            data = tail + chunk
+            base_offset = payload_offset - len(tail)
+            for match in pattern.finditer(data):
+                if match.end() <= len(tail):
+                    continue
+                token = encoded_tokens[match.group(0)]
+                counts[encoding][token] += 1
+                if len(offsets[encoding][token]) < maximum_offsets:
+                    offsets[encoding][token].append(base_offset + match.start())
+            keep = max(0, maximum_needle[encoding] - 1)
+            tails[encoding] = data[-keep:] if keep else b""
+        payload_offset += len(chunk)
+    result: dict[str, dict[str, tuple[int, list[int]]]] = {}
+    for encoding in patterns:
+        result[encoding] = {
+            token: (count, offsets[encoding][token])
+            for token, count in counts[encoding].items()
+        }
+    return result, payload_offset
+
+
+def scan_reference_file(
+    path: Path,
+    token_patterns: dict[str, tuple[re.Pattern[bytes], dict[bytes, str]]],
+    maximum_raw_bytes: int,
+) -> tuple[dict[str, dict[str, tuple[int, list[int]]]], int, str]:
+    container, chunks = iter_reference_payload(path, maximum_raw_bytes)
+    occurrences, payload_bytes = scan_token_stream(chunks, token_patterns)
+    return occurrences, payload_bytes, container
+
+def find_occurrences(data: bytes, needle: bytes, maximum_offsets: int = 8) -> tuple[int, list[int]]:
+    if not needle:
+        return 0, []
+    count = 0
+    offsets: list[int] = []
+    start = 0
+    while True:
+        offset = data.find(needle, start)
+        if offset < 0:
+            break
+        count += 1
+        if len(offsets) < maximum_offsets:
+            offsets.append(offset)
+        start = offset + max(1, len(needle))
+    return count, offsets
+
+
+def build_token_patterns(tokens: Sequence[str]) -> dict[str, tuple[re.Pattern[bytes], dict[bytes, str]]]:
+    encoders = {
+        "ascii": lambda value: value.encode("ascii"),
+        "utf16le": lambda value: value.encode("utf-16le"),
+        "utf16be": lambda value: value.encode("utf-16be"),
+    }
+    patterns: dict[str, tuple[re.Pattern[bytes], dict[bytes, str]]] = {}
+    for encoding, encoder in encoders.items():
+        encoded = {encoder(token): token for token in tokens}
+        alternatives = sorted(encoded, key=len, reverse=True)
+        pattern = re.compile(b"|".join(re.escape(value) for value in alternatives))
+        patterns[encoding] = (pattern, encoded)
+    return patterns
+
+
+def find_token_occurrences(
+    data: bytes,
+    pattern: re.Pattern[bytes],
+    encoded_tokens: dict[bytes, str],
+    maximum_offsets: int = 8,
+) -> dict[str, tuple[int, list[int]]]:
+    counts: Counter[str] = Counter()
+    offsets: dict[str, list[int]] = defaultdict(list)
+    for match in pattern.finditer(data):
+        token = encoded_tokens[match.group(0)]
+        counts[token] += 1
+        if len(offsets[token]) < maximum_offsets:
+            offsets[token].append(match.start())
+    return {token: (count, offsets[token]) for token, count in counts.items()}
+
+
+def should_scan_reference_entry(entry: dict[str, Any]) -> bool:
+    path = str(entry.get("normalized_path", "")).casefold()
+    extension = str(entry.get("extension", "")).casefold()
+    asset_type = str(entry.get("asset_type", ""))
+    if asset_type in {"audio", "video", "texture"}:
+        return False
+    if extension in {".wav", ".ogg", ".hca", ".awb", ".acb", ".mp4", ".wmv", ".usm"}:
+        return False
+    if path.endswith((".png", ".jpg", ".jpeg", ".dds", ".g1t")):
+        return False
+    return True
+
+
+def write_tsv(path: Path, fieldnames: Sequence[str], rows: Sequence[dict[str, Any]]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(
+            handle,
+            fieldnames=list(fieldnames),
+            delimiter="\t",
+            extrasaction="ignore",
+        )
+        writer.writeheader()
+        writer.writerows(rows)
+
+
+def collect_reference_evidence(
+    *,
+    project_root: Path,
+    workspace_root: Path,
+    report_root: Path,
+    candidate_rules_file: Path,
+    maximum_scan_bytes: int,
+) -> tuple[Path, dict[str, Any]]:
+    summary_path = report_root / "SUMMARY.json"
+    summary = load_json(summary_path)
+    if summary.get("type") != "br_quartet_restoration_research_summary":
+        raise RestorationError(f"Not a Quartet restoration report: {summary_path}")
+    if str(summary.get("tool_version", "")) not in {"0.0.3", "0.0.4", "0.0.5", "0.0.6", "0.0.7"}:
+        raise RestorationError(
+            "Reference evidence requires a corrected inventory from tool 0.0.3, 0.0.4, 0.0.5, 0.0.6 or 0.0.7"
+        )
+
+    differences = load_report_jsons(report_root, "differences")
+    inventories = load_report_jsons(report_root, "inventories")
+    target_inventories = [
+        inventory
+        for inventory in inventories
+        if inventory.get("normalization_side") == "target"
+    ]
+    rules = load_candidate_rules(candidate_rules_file)
+    candidates = build_candidate_families(
+        differences=differences,
+        target_inventories=target_inventories,
+        rules=rules,
+    )
+    if not candidates:
+        raise RestorationError("No Quartet-only restoration candidate families were detected")
+
+    candidate_by_token = {str(item["token"]): item for item in candidates}
+    token_patterns = build_token_patterns(list(candidate_by_token))
+    own_asset_paths = {
+        path.casefold(): str(item["candidate_id"])
+        for item in candidates
+        for path in item["asset_files"]
+    }
+    reference_rows: list[dict[str, Any]] = []
+    skipped_rows: list[dict[str, Any]] = []
+    scanned_files = 0
+    scanned_bytes = 0
+    source_file_bytes = 0
+    container_file_counts: Counter[str] = Counter()
+    container_payload_bytes: Counter[str] = Counter()
+    considered_files = sum(
+        1
+        for inventory in target_inventories
+        for entry in inventory.get("files", [])
+        if should_scan_reference_entry(entry)
+    )
+    processed_files = 0
+    print(
+        f"[reference-scan] candidate tokens: {len(candidate_by_token)}; "
+        f"files to inspect: {considered_files}"
+    )
+
+    for inventory in target_inventories:
+        pair_id = str(inventory.get("archive_group", ""))
+        for entry in inventory.get("files", []):
+            if not should_scan_reference_entry(entry):
+                continue
+            processed_files += 1
+            if processed_files == 1 or processed_files % 500 == 0 or processed_files == considered_files:
+                print(f"[reference-scan] {processed_files}/{considered_files}")
+            archive = str(entry["archive"])
+            internal_path = str(entry["path"])
+            normalized_path = str(entry["normalized_path"])
+            local_path = inventory_workspace_file(
+                workspace_root, "target", pair_id, archive, internal_path
+            )
+            if not local_path.is_file():
+                skipped_rows.append(
+                    {
+                        "pair_id": pair_id,
+                        "archive": archive,
+                        "path": internal_path,
+                        "normalized_path": normalized_path,
+                        "reason": "workspace_file_missing",
+                    }
+                )
+                continue
+            try:
+                occurrences_by_encoding, payload_bytes, container = scan_reference_file(
+                    local_path, token_patterns, maximum_scan_bytes
+                )
+            except RestorationError as exc:
+                skipped_rows.append(
+                    {
+                        "pair_id": pair_id,
+                        "archive": archive,
+                        "path": internal_path,
+                        "normalized_path": normalized_path,
+                        "reason": str(exc),
+                    }
+                )
+                continue
+            scanned_files += 1
+            scanned_bytes += payload_bytes
+            source_file_bytes += local_path.stat().st_size
+            container_file_counts[container] += 1
+            container_payload_bytes[container] += payload_bytes
+            for encoding, occurrences in occurrences_by_encoding.items():
+                for token, (count, offsets) in occurrences.items():
+                    candidate = candidate_by_token[token]
+                    self_reference = (
+                        own_asset_paths.get(normalized_path.casefold())
+                        == candidate["candidate_id"]
+                    )
+                    reference_rows.append(
+                        {
+                            "candidate_id": candidate["candidate_id"],
+                            "family": candidate["family"],
+                            "priority": candidate["priority"],
+                            "character_id": candidate["character_id"],
+                            "token": token,
+                            "pair_id": pair_id,
+                            "archive": archive,
+                            "path": internal_path,
+                            "normalized_path": normalized_path,
+                            "asset_type": entry.get("asset_type", ""),
+                            "container": container,
+                            "encoding": encoding,
+                            "occurrence_count": count,
+                            "first_offsets": ",".join(str(value) for value in offsets),
+                            "self_reference": "yes" if self_reference else "no",
+                            "event_reference": (
+                                "yes"
+                                if normalized_path.casefold().startswith("event/")
+                                or Path(normalized_path).suffix.casefold() in {".ebd", ".ebm"}
+                                else "no"
+                            ),
+                        }
+                    )
+
+    reference_rows.sort(
+        key=lambda row: (
+            row["candidate_id"],
+            row["self_reference"],
+            row["event_reference"] != "yes",
+            str(row["normalized_path"]).casefold(),
+            row["encoding"],
+        )
+    )
+    skipped_rows.sort(
+        key=lambda row: (
+            str(row["pair_id"]),
+            str(row["normalized_path"]).casefold(),
+        )
+    )
+
+    hits_by_candidate: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for row in reference_rows:
+        hits_by_candidate[str(row["candidate_id"])].append(row)
+
+    candidate_rows: list[dict[str, Any]] = []
+    event_groups: dict[tuple[str, str, str], dict[str, Any]] = {}
+    for candidate in candidates:
+        hits = hits_by_candidate.get(str(candidate["candidate_id"]), [])
+        external = [row for row in hits if row["self_reference"] == "no"]
+        event_hits = [row for row in external if row["event_reference"] == "yes"]
+        external_files = {
+            (str(row["pair_id"]), str(row["archive"]), str(row["path"]))
+            for row in external
+        }
+        event_files = {
+            (str(row["pair_id"]), str(row["archive"]), str(row["path"]))
+            for row in event_hits
+        }
+        candidate_rows.append(
+            {
+                "candidate_id": candidate["candidate_id"],
+                "priority": candidate["priority"],
+                "family": candidate["family"],
+                "character_id": candidate["character_id"],
+                "token": candidate["token"],
+                "logical_stem": candidate["logical_stem"],
+                "asset_file_count": len(candidate["asset_files"]),
+                "asset_files": ";".join(candidate["asset_files"]),
+                "counterpart_tokens": ",".join(candidate["counterpart_tokens"]),
+                "counterpart_asset_paths": ";".join(candidate["counterpart_asset_paths"]),
+                "external_reference_files": len(external_files),
+                "event_reference_files": len(event_files),
+                "direct_occurrences": sum(int(row["occurrence_count"]) for row in external),
+                "structural_basis": candidate["structural_basis"],
+                "review_status": candidate["review_status"],
+                "note": candidate["note"],
+            }
+        )
+        for row in event_hits:
+            key = (str(row["pair_id"]), str(row["archive"]), str(row["path"]))
+            grouped = event_groups.setdefault(
+                key,
+                {
+                    "pair_id": row["pair_id"],
+                    "archive": row["archive"],
+                    "path": row["path"],
+                    "normalized_path": row["normalized_path"],
+                    "candidate_ids": set(),
+                    "families": set(),
+                    "tokens": set(),
+                    "occurrence_count": 0,
+                    "review_status": "manual_event_review_required",
+                },
+            )
+            grouped["candidate_ids"].add(row["candidate_id"])
+            grouped["families"].add(row["family"])
+            grouped["tokens"].add(row["token"])
+            grouped["occurrence_count"] += int(row["occurrence_count"])
+
+    event_rows: list[dict[str, Any]] = []
+    for item in event_groups.values():
+        event_rows.append(
+            {
+                **item,
+                "candidate_ids": ",".join(sorted(item["candidate_ids"])),
+                "families": ",".join(sorted(item["families"])),
+                "tokens": ",".join(sorted(item["tokens"])),
+            }
+        )
+    event_rows.sort(
+        key=lambda row: (
+            -int(row["occurrence_count"]),
+            str(row["normalized_path"]).casefold(),
+        )
+    )
+
+    evidence_root = report_root / REFERENCE_EVIDENCE_DIR
+    if evidence_root.exists():
+        shutil.rmtree(evidence_root)
+    evidence_root.mkdir(parents=True, exist_ok=True)
+    write_tsv(
+        evidence_root / "CANDIDATE_ASSET_FAMILIES.tsv",
+        [
+            "candidate_id",
+            "priority",
+            "family",
+            "character_id",
+            "token",
+            "logical_stem",
+            "asset_file_count",
+            "asset_files",
+            "counterpart_tokens",
+            "counterpart_asset_paths",
+            "external_reference_files",
+            "event_reference_files",
+            "direct_occurrences",
+            "structural_basis",
+            "review_status",
+            "note",
+        ],
+        candidate_rows,
+    )
+    write_tsv(
+        evidence_root / "REFERENCE_HITS.tsv",
+        [
+            "candidate_id",
+            "family",
+            "priority",
+            "character_id",
+            "token",
+            "pair_id",
+            "archive",
+            "path",
+            "normalized_path",
+            "asset_type",
+            "container",
+            "encoding",
+            "occurrence_count",
+            "first_offsets",
+            "self_reference",
+            "event_reference",
+        ],
+        reference_rows,
+    )
+    write_tsv(
+        evidence_root / "EVENT_REFERENCE_CANDIDATES.tsv",
+        [
+            "pair_id",
+            "archive",
+            "path",
+            "normalized_path",
+            "candidate_ids",
+            "families",
+            "tokens",
+            "occurrence_count",
+            "review_status",
+        ],
+        event_rows,
+    )
+    write_tsv(
+        evidence_root / "REFERENCE_SCAN_SKIPPED.tsv",
+        ["pair_id", "archive", "path", "normalized_path", "reason"],
+        skipped_rows,
+    )
+    container_rows = [
+        {
+            "container": container,
+            "file_count": container_file_counts[container],
+            "payload_bytes_scanned": container_payload_bytes[container],
+        }
+        for container in sorted(container_file_counts)
+    ]
+    write_tsv(
+        evidence_root / "REFERENCE_SCAN_CONTAINERS.tsv",
+        ["container", "file_count", "payload_bytes_scanned"],
+        container_rows,
+    )
+    external_hit_rows = sum(
+        1 for row in reference_rows if row["self_reference"] == "no"
+    )
+    reference_summary = {
+        "type": "br_quartet_restoration_reference_evidence_summary",
+        "format_version": FORMAT_VERSION,
+        "tool_version": TOOL_VERSION,
+        "source_inventory_tool_version": summary.get("tool_version"),
+        "status": "streaming_full_reference_scan_complete_manual_confirmation_required",
+        "candidate_families": len(candidate_rows),
+        "candidate_asset_files": sum(int(row["asset_file_count"]) for row in candidate_rows),
+        "families": dict(sorted(Counter(row["family"] for row in candidate_rows).items())),
+        "reference_hit_rows": len(reference_rows),
+        "external_reference_hit_rows": external_hit_rows,
+        "event_reference_files": len(event_rows),
+        "considered_files": considered_files,
+        "scanned_files": scanned_files,
+        "source_file_bytes_read": source_file_bytes,
+        "scanned_payload_bytes": scanned_bytes,
+        "container_file_counts": dict(sorted(container_file_counts.items())),
+        "container_payload_bytes": dict(sorted(container_payload_bytes.items())),
+        "decoded_gust_zlib_files": sum(
+            count
+            for container, count in container_file_counts.items()
+            if container.startswith("gust_")
+        ),
+        "decoded_gust_chunked_files": container_file_counts.get(
+            "gust_chunked_zlib", 0
+        ),
+        "raw_unrecognized_gz_files": container_file_counts.get(
+            "raw_unrecognized_gz", 0
+        ),
+        "skipped_files": len(skipped_rows),
+        "maximum_raw_scan_bytes_per_file": maximum_scan_bytes,
+        "streaming_decompressed_scan": True,
+        "recognized_container_decompressed_limit": None,
+        "policy": {
+            "installed_games_modified": False,
+            "proprietary_payloads_in_report": False,
+            "surrounding_binary_or_text_content_exported": False,
+            "automatic_censorship_claims": False,
+            "legacy_dlc_in_scope": False,
+        },
+        "correction": (
+            "Tools 0.0.4 and 0.0.5 did not scan complete Gust Elixir payloads. "
+            "Tool 0.0.6 decoded all chunks but skipped 59 field containers whose decompressed payload exceeded 128 MiB. "
+            "Tool 0.0.7 scans recognized containers as streams with bounded memory; only the 0.0.7 result can close direct-name lookup."
+        ),
+        "next_action": (
+            "Upload the streaming reference evidence archive. Review direct bindings when present; "
+            "run scene/effect/material evidence before unresolved candidates proceed to KTID/hash analysis."
+            if external_hit_rows
+            else "Upload the streaming reference evidence archive and the scene/effect/material evidence archive. "
+            "If both remain unresolved, proceed to KTID/hash-level differential analysis."
+        ),
+    }
+    atomic_json(evidence_root / "SUMMARY.json", reference_summary)
+    output = report_root / REFERENCE_REPORT_NAME
+    make_report_archive(evidence_root, output)
+    return output, reference_summary
+
+
+
+TECHNICAL_IDENTIFIER_RE = re.compile(rb"[A-Za-z][A-Za-z0-9_./:\\-]{3,159}")
+DEFAULT_EFFECT_KEYWORDS = (
+    "steam",
+    "vapor",
+    "mist",
+    "fog",
+    "smoke",
+    "water",
+    "wet",
+    "alpha",
+    "blend",
+    "trans",
+    "opacity",
+    "reflect",
+    "refract",
+    "caustic",
+    "shower",
+    "bath",
+    "pool",
+    "particle",
+    "spray",
+    "droplet",
+)
+
+
+def analyze_streamed_payload(
+    path: Path,
+    *,
+    maximum_raw_bytes: int,
+    technical_keywords: Sequence[str],
+    block_size: int = SIGNATURE_BLOCK_SIZE,
+) -> dict[str, Any]:
+    if block_size <= 0:
+        raise RestorationError("Signature block size must be positive")
+    container, chunks = iter_reference_payload(path, maximum_raw_bytes)
+    digest = hashlib.sha256()
+    block_hashes: list[str] = []
+    block_buffer = bytearray()
+    token_counts: Counter[str] = Counter()
+    token_tail = b""
+    payload_bytes = 0
+    folded_keywords = tuple(
+        keyword.casefold() for keyword in technical_keywords if keyword.strip()
+    )
+
+    for chunk in chunks:
+        if not chunk:
+            continue
+        digest.update(chunk)
+        payload_bytes += len(chunk)
+        block_buffer.extend(chunk)
+        while len(block_buffer) >= block_size:
+            block = bytes(block_buffer[:block_size])
+            del block_buffer[:block_size]
+            block_hashes.append(hashlib.sha256(block).hexdigest())
+
+        token_data = token_tail + chunk
+        tail_size = len(token_tail)
+        for match in TECHNICAL_IDENTIFIER_RE.finditer(token_data):
+            if match.end() <= tail_size:
+                continue
+            token = match.group(0).decode("ascii", errors="strict")
+            folded = token.casefold()
+            if "steamdeck" in folded:
+                continue
+            if folded_keywords and not any(keyword in folded for keyword in folded_keywords):
+                continue
+            token_counts[token] += 1
+        token_tail = token_data[-159:]
+
+    if block_buffer:
+        block_hashes.append(hashlib.sha256(bytes(block_buffer)).hexdigest())
+    return {
+        "container": container,
+        "payload_bytes": payload_bytes,
+        "payload_sha256": digest.hexdigest(),
+        "block_size": block_size,
+        "block_hashes": block_hashes,
+        "technical_tokens": dict(sorted(token_counts.items(), key=lambda item: item[0].casefold())),
+    }
+
+
+def compare_stream_signatures(
+    source: dict[str, Any] | None,
+    target: dict[str, Any] | None,
+) -> dict[str, Any]:
+    source_blocks = list(source.get("block_hashes", [])) if source else []
+    target_blocks = list(target.get("block_hashes", [])) if target else []
+    paired = min(len(source_blocks), len(target_blocks))
+    identical = sum(
+        1 for index in range(paired) if source_blocks[index] == target_blocks[index]
+    )
+    changed_indexes = [
+        index for index in range(paired) if source_blocks[index] != target_blocks[index]
+    ]
+    added = max(0, len(target_blocks) - len(source_blocks))
+    removed = max(0, len(source_blocks) - len(target_blocks))
+    return {
+        "source_block_count": len(source_blocks),
+        "target_block_count": len(target_blocks),
+        "identical_aligned_blocks": identical,
+        "changed_aligned_blocks": len(changed_indexes),
+        "added_target_blocks": added,
+        "removed_source_blocks": removed,
+        "first_changed_block_offsets": ",".join(
+            str(index * SIGNATURE_BLOCK_SIZE) for index in changed_indexes[:12]
+        ),
+    }
+
+
+def load_effect_material_rules(path: Path) -> list[dict[str, str]]:
+    rules: list[dict[str, str]] = []
+    for row in read_tsv(path):
+        if row.get("status") != "active":
+            continue
+        required = (
+            "rule_id",
+            "normalized_path_glob",
+            "domain",
+            "priority",
+            "evidence_kind",
+        )
+        missing = [name for name in required if not row.get(name)]
+        if missing:
+            raise RestorationError(
+                f"Effect/material rule {row.get('rule_id', '<unnamed>')} is missing: "
+                + ", ".join(missing)
+            )
+        rules.append(row)
+    if not rules:
+        raise RestorationError(f"No active effect/material rules: {path}")
+    return rules
+
+
+def effect_material_rule_for_path(
+    normalized_path: str,
+    rules: Sequence[dict[str, str]],
+) -> dict[str, str] | None:
+    folded = normalized_path.casefold()
+    for rule in rules:
+        if fnmatch.fnmatchcase(folded, rule["normalized_path_glob"].casefold()):
+            return rule
+    return None
+
+
+def build_effect_material_candidates(
+    differences: Sequence[dict[str, Any]],
+    rules: Sequence[dict[str, str]],
+) -> list[dict[str, Any]]:
+    candidates: list[dict[str, Any]] = []
+    accepted = {"changed", "new_in_target", "removed_in_target", "probably_moved"}
+    for report in differences:
+        pair_id = str(report.get("source_archive_group", ""))
+        for entry in report.get("entries", []):
+            if entry.get("classification") not in accepted:
+                continue
+            scope_status = entry.get("scope_status", "in_scope")
+            if scope_status not in {"in_scope", "expected_target_addition"}:
+                continue
+            normalized_path = str(entry.get("normalized_path", ""))
+            rule = effect_material_rule_for_path(normalized_path, rules)
+            if rule is None:
+                continue
+            candidate_id = "effectcand_" + sha256_text(
+                rule["rule_id"] + "|" + normalized_path.casefold()
+            )[:18]
+            candidates.append(
+                {
+                    "candidate_id": candidate_id,
+                    "rule_id": rule["rule_id"],
+                    "pair_id": pair_id,
+                    "normalized_path": normalized_path,
+                    "classification": entry["classification"],
+                    "scope_status": scope_status,
+                    "domain": rule["domain"],
+                    "priority": rule["priority"],
+                    "evidence_kind": rule["evidence_kind"],
+                    "keywords": split_csv_field(rule.get("keywords", ""))
+                    or list(DEFAULT_EFFECT_KEYWORDS),
+                    "note": rule.get("note", ""),
+                    "source": entry.get("source"),
+                    "target": entry.get("target"),
+                    "binary_similarity": entry.get("binary_similarity", 0.0),
+                    "size_ratio": entry.get("size_ratio", 0.0),
+                    "review_status": "manual_scene_effect_review_required",
+                }
+            )
+    priority_order = {"critical": 0, "high": 1, "medium": 2, "low": 3}
+    return sorted(
+        candidates,
+        key=lambda item: (
+            priority_order.get(str(item["priority"]), 9),
+            str(item["domain"]),
+            str(item["normalized_path"]).casefold(),
+        ),
+    )
+
+
+def collect_scene_effect_evidence(
+    *,
+    project_root: Path,
+    workspace_root: Path,
+    report_root: Path,
+    rules_file: Path,
+    maximum_raw_bytes: int,
+) -> tuple[Path, dict[str, Any]]:
+    summary_path = report_root / "SUMMARY.json"
+    inventory_summary = load_json(summary_path)
+    if inventory_summary.get("type") != "br_quartet_restoration_research_summary":
+        raise RestorationError(f"Not a Quartet restoration report: {summary_path}")
+    differences = load_report_jsons(report_root, "differences")
+    rules = load_effect_material_rules(rules_file)
+    candidates = build_effect_material_candidates(differences, rules)
+    if not candidates:
+        raise RestorationError("No scene/effect/material candidates matched the corrected inventory")
+
+    candidate_rows: list[dict[str, Any]] = []
+    signature_rows: list[dict[str, Any]] = []
+    token_rows: list[dict[str, Any]] = []
+    skipped_rows: list[dict[str, Any]] = []
+    analyzed_payload_bytes = 0
+
+    print(f"[scene-effect] candidates: {len(candidates)}")
+    for index, candidate in enumerate(candidates, start=1):
+        print(f"[scene-effect] {index}/{len(candidates)} {candidate['normalized_path']}")
+        analyses: dict[str, dict[str, Any] | None] = {"source": None, "target": None}
+        refs: dict[str, dict[str, Any] | None] = {
+            "source": candidate.get("source"),
+            "target": candidate.get("target"),
+        }
+        for side in ("source", "target"):
+            ref = refs[side]
+            if not ref:
+                continue
+            archive = str(ref.get("archive", ""))
+            internal_path = str(ref.get("path", ""))
+            local_path = inventory_workspace_file(
+                workspace_root,
+                side,
+                str(candidate["pair_id"]),
+                archive,
+                internal_path,
+            )
+            if not local_path.is_file():
+                skipped_rows.append(
+                    {
+                        "candidate_id": candidate["candidate_id"],
+                        "side": side,
+                        "pair_id": candidate["pair_id"],
+                        "archive": archive,
+                        "path": internal_path,
+                        "normalized_path": candidate["normalized_path"],
+                        "reason": "workspace_file_missing",
+                    }
+                )
+                continue
+            try:
+                analysis = analyze_streamed_payload(
+                    local_path,
+                    maximum_raw_bytes=maximum_raw_bytes,
+                    technical_keywords=candidate["keywords"],
+                )
+            except RestorationError as exc:
+                skipped_rows.append(
+                    {
+                        "candidate_id": candidate["candidate_id"],
+                        "side": side,
+                        "pair_id": candidate["pair_id"],
+                        "archive": archive,
+                        "path": internal_path,
+                        "normalized_path": candidate["normalized_path"],
+                        "reason": str(exc),
+                    }
+                )
+                continue
+            analyses[side] = analysis
+            analyzed_payload_bytes += int(analysis["payload_bytes"])
+
+        source_analysis = analyses["source"]
+        target_analysis = analyses["target"]
+        comparison = compare_stream_signatures(source_analysis, target_analysis)
+        candidate_rows.append(
+            {
+                "candidate_id": candidate["candidate_id"],
+                "rule_id": candidate["rule_id"],
+                "priority": candidate["priority"],
+                "domain": candidate["domain"],
+                "evidence_kind": candidate["evidence_kind"],
+                "classification": candidate["classification"],
+                "scope_status": candidate["scope_status"],
+                "pair_id": candidate["pair_id"],
+                "normalized_path": candidate["normalized_path"],
+                "source_archive": (candidate.get("source") or {}).get("archive", ""),
+                "target_archive": (candidate.get("target") or {}).get("archive", ""),
+                "source_size": (candidate.get("source") or {}).get("size", ""),
+                "target_size": (candidate.get("target") or {}).get("size", ""),
+                "binary_similarity": candidate["binary_similarity"],
+                "size_ratio": candidate["size_ratio"],
+                "analysis_complete": "yes"
+                if all(
+                    analyses[side] is not None
+                    for side in ("source", "target")
+                    if refs[side] is not None
+                )
+                else "no",
+                "review_status": candidate["review_status"],
+                "note": candidate["note"],
+            }
+        )
+        signature_rows.append(
+            {
+                "candidate_id": candidate["candidate_id"],
+                "domain": candidate["domain"],
+                "normalized_path": candidate["normalized_path"],
+                "source_container": source_analysis.get("container", "") if source_analysis else "",
+                "target_container": target_analysis.get("container", "") if target_analysis else "",
+                "source_payload_bytes": source_analysis.get("payload_bytes", "") if source_analysis else "",
+                "target_payload_bytes": target_analysis.get("payload_bytes", "") if target_analysis else "",
+                "source_payload_sha256": source_analysis.get("payload_sha256", "") if source_analysis else "",
+                "target_payload_sha256": target_analysis.get("payload_sha256", "") if target_analysis else "",
+                "signature_block_size": SIGNATURE_BLOCK_SIZE,
+                **comparison,
+            }
+        )
+
+        source_tokens = Counter(source_analysis.get("technical_tokens", {})) if source_analysis else Counter()
+        target_tokens = Counter(target_analysis.get("technical_tokens", {})) if target_analysis else Counter()
+        for token in sorted(set(source_tokens) | set(target_tokens), key=str.casefold):
+            source_count = source_tokens[token]
+            target_count = target_tokens[token]
+            if source_count == target_count:
+                continue
+            if source_count == 0:
+                delta = "added_in_target"
+            elif target_count == 0:
+                delta = "removed_in_target"
+            else:
+                delta = "count_changed"
+            token_rows.append(
+                {
+                    "candidate_id": candidate["candidate_id"],
+                    "domain": candidate["domain"],
+                    "normalized_path": candidate["normalized_path"],
+                    "token": token,
+                    "source_count": source_count,
+                    "target_count": target_count,
+                    "delta": delta,
+                    "review_status": "technical_identifier_only_not_censorship_proof",
+                }
+            )
+
+    evidence_root = report_root / SCENE_EFFECT_EVIDENCE_DIR
+    if evidence_root.exists():
+        shutil.rmtree(evidence_root)
+    evidence_root.mkdir(parents=True, exist_ok=True)
+    write_tsv(
+        evidence_root / "SCENE_EFFECT_CANDIDATES.tsv",
+        [
+            "candidate_id",
+            "rule_id",
+            "priority",
+            "domain",
+            "evidence_kind",
+            "classification",
+            "scope_status",
+            "pair_id",
+            "normalized_path",
+            "source_archive",
+            "target_archive",
+            "source_size",
+            "target_size",
+            "binary_similarity",
+            "size_ratio",
+            "analysis_complete",
+            "review_status",
+            "note",
+        ],
+        candidate_rows,
+    )
+    write_tsv(
+        evidence_root / "DECOMPRESSED_PAIR_SIGNATURES.tsv",
+        [
+            "candidate_id",
+            "domain",
+            "normalized_path",
+            "source_container",
+            "target_container",
+            "source_payload_bytes",
+            "target_payload_bytes",
+            "source_payload_sha256",
+            "target_payload_sha256",
+            "signature_block_size",
+            "source_block_count",
+            "target_block_count",
+            "identical_aligned_blocks",
+            "changed_aligned_blocks",
+            "added_target_blocks",
+            "removed_source_blocks",
+            "first_changed_block_offsets",
+        ],
+        signature_rows,
+    )
+    write_tsv(
+        evidence_root / "TECHNICAL_TOKEN_DIFF.tsv",
+        [
+            "candidate_id",
+            "domain",
+            "normalized_path",
+            "token",
+            "source_count",
+            "target_count",
+            "delta",
+            "review_status",
+        ],
+        sorted(
+            token_rows,
+            key=lambda row: (
+                str(row["domain"]),
+                str(row["normalized_path"]).casefold(),
+                str(row["token"]).casefold(),
+            ),
+        ),
+    )
+    write_tsv(
+        evidence_root / "SCENE_EFFECT_SCAN_SKIPPED.tsv",
+        [
+            "candidate_id",
+            "side",
+            "pair_id",
+            "archive",
+            "path",
+            "normalized_path",
+            "reason",
+        ],
+        skipped_rows,
+    )
+    domains = Counter(str(row["domain"]) for row in candidate_rows)
+    summary = {
+        "type": "br_quartet_restoration_scene_effect_evidence_summary",
+        "format_version": FORMAT_VERSION,
+        "tool_version": TOOL_VERSION,
+        "source_inventory_tool_version": inventory_summary.get("tool_version"),
+        "status": "scene_effect_material_triage_complete_manual_review_required",
+        "candidate_files": len(candidate_rows),
+        "domains": dict(sorted(domains.items())),
+        "technical_token_differences": len(token_rows),
+        "skipped_sides": len(skipped_rows),
+        "analyzed_payload_bytes": analyzed_payload_bytes,
+        "signature_block_size": SIGNATURE_BLOCK_SIZE,
+        "censorship_dimensions": [
+            "costume_and_coverage_variants",
+            "steam_or_vapor_occlusion",
+            "water_visibility_and_transparency",
+            "wet_fabric_translucency_or_material_response",
+        ],
+        "policy": {
+            "installed_games_modified": False,
+            "proprietary_payloads_in_report": False,
+            "surrounding_binary_or_dialogue_content_exported": False,
+            "technical_identifiers_only": True,
+            "automatic_censorship_claims": False,
+            "legacy_dlc_in_scope": False,
+        },
+        "next_action": (
+            "Upload this archive together with the 0.0.7 streaming reference-evidence archive. "
+            "Use technical token deltas and changed block locations to select scene containers, shaders, "
+            "post-effects or wet-material descriptors for format-specific parsing."
+        ),
+    }
+    atomic_json(evidence_root / "SUMMARY.json", summary)
+    output = report_root / SCENE_EFFECT_REPORT_NAME
+    make_report_archive(evidence_root, output)
+    return output, summary
+
+
+
+
+def decode_earc_filename(raw: bytes) -> str:
+    value = raw.split(b"\x00", 1)[0]
+    if not value:
+        return ""
+    try:
+        return value.decode("utf-8")
+    except UnicodeDecodeError:
+        return value.decode("cp932", errors="replace")
+
+
+def parse_earc_payload(
+    payload: bytes,
+    *,
+    label: str = "<memory>",
+    include_member_payloads: bool = False,
+) -> dict[str, Any]:
+    """Parse an uncompressed Gust EARC/Elixir payload without extracting it."""
+    if len(payload) < EARC_HEADER_SIZE:
+        raise RestorationError(f"EARC payload is too small: {label}")
+    magic, filename_size, payload_size, header_size, table_size, file_count, flags = struct.unpack_from(
+        "<7I", payload, 0
+    )
+    if magic != EARC_MAGIC:
+        raise RestorationError(f"not an EARC payload (bad magic): {label}")
+    if header_size != EARC_HEADER_SIZE:
+        raise RestorationError(
+            f"unexpected EARC header size 0x{header_size:x}: {label}"
+        )
+    if filename_size > 0x100:
+        raise RestorationError(f"EARC filename_size is unsafe: {label}")
+    entry_size = 8 + 0x20 + filename_size * 0x10
+    if table_size != file_count * entry_size:
+        raise RestorationError(f"EARC table-size mismatch: {label}")
+    expected_size = header_size + table_size + payload_size
+    if expected_size != len(payload):
+        raise RestorationError(
+            f"EARC file-size mismatch ({expected_size} != {len(payload)}): {label}"
+        )
+
+    members: list[dict[str, Any]] = []
+    name_bytes = entry_size - 8
+    duplicate_counts: Counter[str] = Counter()
+    for index in range(file_count):
+        table_offset = header_size + index * entry_size
+        member_offset, member_size = struct.unpack_from("<2I", payload, table_offset)
+        if member_offset + member_size > len(payload):
+            raise RestorationError(
+                f"EARC member {index} exceeds payload bounds: {label}"
+            )
+        name = decode_earc_filename(
+            payload[table_offset + 8 : table_offset + 8 + name_bytes]
+        )
+        folded = name.casefold()
+        occurrence = duplicate_counts[folded]
+        duplicate_counts[folded] += 1
+        member_payload = payload[member_offset : member_offset + member_size]
+        row: dict[str, Any] = {
+            "index": index,
+            "occurrence": occurrence,
+            "name": name,
+            "comparison_key": f"{folded}#{occurrence}",
+            "offset": member_offset,
+            "size": member_size,
+            "sha256": hashlib.sha256(member_payload).hexdigest(),
+            "extension": Path(name).suffix.casefold(),
+        }
+        if include_member_payloads:
+            row["payload"] = member_payload
+        members.append(row)
+    return {
+        "magic": magic,
+        "filename_size": filename_size,
+        "payload_size": payload_size,
+        "header_size": header_size,
+        "table_size": table_size,
+        "file_count": file_count,
+        "flags": flags,
+        "members": members,
+    }
+
+
+def read_earc_archive(
+    path: Path,
+    *,
+    maximum_bytes: int = DEFAULT_MAX_EARC_BYTES,
+    include_member_payloads: bool = False,
+) -> dict[str, Any]:
+    payload, container = read_reference_payload(path, maximum_bytes)
+    archive = parse_earc_payload(
+        payload,
+        label=str(path),
+        include_member_payloads=include_member_payloads,
+    )
+    archive["container"] = container
+    archive["decoded_bytes"] = len(payload)
+    archive["decoded_sha256"] = hashlib.sha256(payload).hexdigest()
+    return archive
+
+
+def keyword_hits(value: str, keywords: Sequence[str]) -> str:
+    folded = value.casefold()
+    return ",".join(sorted({item for item in keywords if item.casefold() in folded}, key=str.casefold))
+
+
+def compare_earc_members(
+    source: dict[str, Any] | None,
+    target: dict[str, Any] | None,
+    *,
+    keywords: Sequence[str] = (),
+) -> tuple[list[dict[str, Any]], Counter[str]]:
+    source_members = {
+        str(item["comparison_key"]): item for item in (source or {}).get("members", [])
+    }
+    target_members = {
+        str(item["comparison_key"]): item for item in (target or {}).get("members", [])
+    }
+    rows: list[dict[str, Any]] = []
+    counts: Counter[str] = Counter()
+    for key in sorted(set(source_members) | set(target_members), key=str.casefold):
+        left = source_members.get(key)
+        right = target_members.get(key)
+        if left and right:
+            classification = (
+                "identical" if left["sha256"] == right["sha256"] else "changed"
+            )
+        elif left:
+            classification = "removed_in_target"
+        else:
+            classification = "added_in_target"
+        counts[classification] += 1
+        if classification == "identical":
+            continue
+        display_name = str((right or left or {}).get("name", ""))
+        rows.append(
+            {
+                "member_key": key,
+                "source_member_name": (left or {}).get("name", ""),
+                "target_member_name": (right or {}).get("name", ""),
+                "source_member_index": (left or {}).get("index", ""),
+                "target_member_index": (right or {}).get("index", ""),
+                "source_size": (left or {}).get("size", ""),
+                "target_size": (right or {}).get("size", ""),
+                "source_sha256": (left or {}).get("sha256", ""),
+                "target_sha256": (right or {}).get("sha256", ""),
+                "classification": classification,
+                "keyword_hits": keyword_hits(display_name, keywords),
+                "review_status": "member_metadata_only_not_censorship_proof",
+            }
+        )
+    return rows, counts
+
+
+def normalized_variant_member_key(name: str, token: str) -> str:
+    if not token:
+        return name.casefold()
+    return re.sub(re.escape(token), "{variant}", name, flags=re.IGNORECASE).casefold()
+
+
+def compare_variant_members(
+    candidate_archive: dict[str, Any],
+    counterpart_archive: dict[str, Any],
+    *,
+    candidate_token: str,
+    counterpart_token: str,
+) -> tuple[list[dict[str, Any]], Counter[str]]:
+    def keyed(archive: dict[str, Any], token: str) -> dict[str, dict[str, Any]]:
+        result: dict[str, dict[str, Any]] = {}
+        duplicates: Counter[str] = Counter()
+        for member in archive.get("members", []):
+            base = normalized_variant_member_key(str(member["name"]), token)
+            occurrence = duplicates[base]
+            duplicates[base] += 1
+            result[f"{base}#{occurrence}"] = member
+        return result
+
+    left_members = keyed(candidate_archive, candidate_token)
+    right_members = keyed(counterpart_archive, counterpart_token)
+    rows: list[dict[str, Any]] = []
+    counts: Counter[str] = Counter()
+    for key in sorted(set(left_members) | set(right_members), key=str.casefold):
+        left = left_members.get(key)
+        right = right_members.get(key)
+        if left and right:
+            classification = (
+                "identical_payload" if left["sha256"] == right["sha256"] else "changed_payload"
+            )
+        elif left:
+            classification = "candidate_only_member"
+        else:
+            classification = "counterpart_only_member"
+        counts[classification] += 1
+        rows.append(
+            {
+                "normalized_member_key": key,
+                "candidate_member_name": (left or {}).get("name", ""),
+                "counterpart_member_name": (right or {}).get("name", ""),
+                "candidate_size": (left or {}).get("size", ""),
+                "counterpart_size": (right or {}).get("size", ""),
+                "candidate_sha256": (left or {}).get("sha256", ""),
+                "counterpart_sha256": (right or {}).get("sha256", ""),
+                "classification": classification,
+                "review_status": "variant_structure_only_not_censorship_proof",
+            }
+        )
+    return rows, counts
+
+
+ASCII_IDENTIFIER_RE = re.compile(rb"[A-Za-z0-9_./:\\-]{4,160}")
+
+
+def normalized_identifier(value: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "", value.casefold())
+
+
+def derive_candidate_identifiers(
+    archive: dict[str, Any],
+    *,
+    candidate_id: str,
+    family: str,
+    priority: str,
+    token: str,
+    normalized_path: str,
+) -> list[dict[str, Any]]:
+    token_key = normalized_identifier(token)
+    if not token_key:
+        return []
+    found: dict[str, dict[str, Any]] = {}
+    for member in archive.get("members", []):
+        sources: list[tuple[str, str]] = [("member_name", str(member.get("name", "")))]
+        payload = member.get("payload", b"")
+        if isinstance(payload, bytes):
+            for match in ASCII_IDENTIFIER_RE.finditer(payload):
+                sources.append(("member_payload", match.group(0).decode("ascii")))
+        for source_kind, identifier in sources:
+            if not identifier or token_key not in normalized_identifier(identifier):
+                continue
+            if len(identifier) > 160:
+                continue
+            key = identifier
+            found.setdefault(
+                key,
+                {
+                    "seed_id": "structseed_" + sha256_text(candidate_id + "|" + identifier)[:18],
+                    "candidate_id": candidate_id,
+                    "family": family,
+                    "priority": priority,
+                    "candidate_token": token,
+                    "candidate_path": normalized_path,
+                    "identifier": identifier,
+                    "identifier_casefold": identifier.casefold(),
+                    "source_kind": source_kind,
+                    "source_member_name": member.get("name", ""),
+                    "review_status": "derived_technical_identifier_not_binding_proof",
+                },
+            )
+    return sorted(found.values(), key=lambda row: str(row["identifier"]).casefold())
+
+
+def inventory_maps(
+    inventories: Sequence[dict[str, Any]],
+) -> tuple[dict[str, list[dict[str, Any]]], list[dict[str, Any]]]:
+    by_path: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    entries: list[dict[str, Any]] = []
+    for inventory in inventories:
+        pair_id = str(inventory.get("archive_group", ""))
+        for entry in inventory.get("files", []):
+            enriched = {**entry, "pair_id": pair_id}
+            by_path[str(entry.get("normalized_path", "")).casefold()].append(enriched)
+            entries.append(enriched)
+    return by_path, entries
+
+
+def collect_structural_evidence(
+    *,
+    project_root: Path,
+    workspace_root: Path,
+    report_root: Path,
+    candidate_rules_file: Path,
+    effect_rules_file: Path,
+    maximum_raw_bytes: int,
+    maximum_earc_bytes: int,
+) -> tuple[Path, dict[str, Any]]:
+    summary_path = report_root / "SUMMARY.json"
+    inventory_summary = load_json(summary_path)
+    if inventory_summary.get("type") != "br_quartet_restoration_research_summary":
+        raise RestorationError(f"Not a Quartet restoration report: {summary_path}")
+
+    differences = load_report_jsons(report_root, "differences")
+    inventories = load_report_jsons(report_root, "inventories")
+    source_inventories = [
+        item for item in inventories if item.get("normalization_side") == "source"
+    ]
+    target_inventories = [
+        item for item in inventories if item.get("normalization_side") == "target"
+    ]
+    candidate_rules = load_candidate_rules(candidate_rules_file)
+    effect_rules = load_effect_material_rules(effect_rules_file)
+    candidates = build_candidate_families(
+        differences=differences,
+        target_inventories=target_inventories,
+        rules=candidate_rules,
+    )
+    effects = build_effect_material_candidates(differences, effect_rules)
+    _source_by_path, _source_entries = inventory_maps(source_inventories)
+    target_by_path, target_entries = inventory_maps(target_inventories)
+
+    archive_rows: list[dict[str, Any]] = []
+    member_rows: list[dict[str, Any]] = []
+    variant_rows: list[dict[str, Any]] = []
+    seed_rows: list[dict[str, Any]] = []
+    hit_rows: list[dict[str, Any]] = []
+    binding_rows: list[dict[str, Any]] = []
+    skipped_rows: list[dict[str, Any]] = []
+    cache: dict[tuple[str, str, str, str], dict[str, Any]] = {}
+    recorded_archive_contexts: set[tuple[str, str, str, str, str, str]] = set()
+
+    def parse_ref(
+        *,
+        side: str,
+        pair_id: str,
+        ref: dict[str, Any],
+        context_type: str,
+        context_id: str,
+        normalized_path: str,
+        include_payloads: bool = False,
+    ) -> dict[str, Any] | None:
+        archive_name = str(ref.get("archive", ""))
+        internal_path = str(ref.get("path", ""))
+        key = (side, pair_id, archive_name, internal_path)
+        context_key = (context_type, context_id, side, pair_id, archive_name, internal_path)
+
+        def record_archive(parsed: dict[str, Any]) -> None:
+            if context_key in recorded_archive_contexts:
+                return
+            recorded_archive_contexts.add(context_key)
+            archive_rows.append(
+                {
+                    "context_type": context_type,
+                    "context_id": context_id,
+                    "side": side,
+                    "pair_id": pair_id,
+                    "archive": archive_name,
+                    "path": internal_path,
+                    "normalized_path": normalized_path,
+                    "container": parsed["container"],
+                    "decoded_bytes": parsed["decoded_bytes"],
+                    "decoded_sha256": parsed["decoded_sha256"],
+                    "member_count": parsed["file_count"],
+                    "filename_size_units": parsed["filename_size"],
+                    "flags": parsed["flags"],
+                    "review_status": "earc_table_metadata_only",
+                }
+            )
+
+        cached = cache.get(key)
+        if cached is not None and (not include_payloads or cached.get("member_payloads_included")):
+            record_archive(cached)
+            return cached
+        local_path = inventory_workspace_file(
+            workspace_root, side, pair_id, archive_name, internal_path
+        )
+        if not local_path.is_file():
+            skipped_rows.append(
+                {
+                    "context_type": context_type,
+                    "context_id": context_id,
+                    "side": side,
+                    "pair_id": pair_id,
+                    "archive": archive_name,
+                    "path": internal_path,
+                    "normalized_path": normalized_path,
+                    "reason": "workspace_file_missing",
+                }
+            )
+            return None
+        try:
+            parsed = read_earc_archive(
+                local_path,
+                maximum_bytes=maximum_earc_bytes,
+                include_member_payloads=include_payloads,
+            )
+        except RestorationError as exc:
+            skipped_rows.append(
+                {
+                    "context_type": context_type,
+                    "context_id": context_id,
+                    "side": side,
+                    "pair_id": pair_id,
+                    "archive": archive_name,
+                    "path": internal_path,
+                    "normalized_path": normalized_path,
+                    "reason": str(exc),
+                }
+            )
+            return None
+        parsed["member_payloads_included"] = include_payloads
+        cache[key] = parsed
+        record_archive(parsed)
+        return parsed
+
+    print(f"[structural] scene/effect candidates: {len(effects)}")
+    for index, effect in enumerate(effects, start=1):
+        normalized_path = str(effect["normalized_path"])
+        if not normalized_path.casefold().endswith((".elixir", ".elixir.gz")):
+            continue
+        print(f"[structural] effect {index}/{len(effects)} {normalized_path}")
+        parsed: dict[str, dict[str, Any] | None] = {"source": None, "target": None}
+        for side in ("source", "target"):
+            ref = effect.get(side)
+            if not ref:
+                continue
+            parsed[side] = parse_ref(
+                side=side,
+                pair_id=str(effect["pair_id"]),
+                ref=ref,
+                context_type="scene_effect",
+                context_id=str(effect["candidate_id"]),
+                normalized_path=normalized_path,
+            )
+        diff_rows, counts = compare_earc_members(
+            parsed["source"], parsed["target"], keywords=effect.get("keywords", [])
+        )
+        for row in diff_rows:
+            member_rows.append(
+                {
+                    "candidate_id": effect["candidate_id"],
+                    "rule_id": effect["rule_id"],
+                    "domain": effect["domain"],
+                    "priority": effect["priority"],
+                    "normalized_path": normalized_path,
+                    **row,
+                }
+            )
+        effect["member_classifications"] = dict(counts)
+
+    print(f"[structural] Quartet-only candidate families: {len(candidates)}")
+    candidate_origin_paths: set[str] = set()
+    for index, candidate in enumerate(candidates, start=1):
+        descriptor_paths = [
+            path
+            for path in candidate.get("asset_files", [])
+            if str(path).casefold().endswith((".elixir", ".elixir.gz"))
+        ]
+        for descriptor_path in descriptor_paths:
+            matching = target_by_path.get(str(descriptor_path).casefold(), [])
+            if not matching:
+                skipped_rows.append(
+                    {
+                        "context_type": "candidate_variant",
+                        "context_id": candidate["candidate_id"],
+                        "side": "target",
+                        "pair_id": candidate["pair_id"],
+                        "archive": "",
+                        "path": "",
+                        "normalized_path": descriptor_path,
+                        "reason": "target_inventory_entry_missing",
+                    }
+                )
+                continue
+            candidate_entry = matching[0]
+            candidate_origin_paths.add(str(descriptor_path).casefold())
+            print(
+                f"[structural] candidate {index}/{len(candidates)} {descriptor_path}"
+            )
+            candidate_archive = parse_ref(
+                side="target",
+                pair_id=str(candidate_entry["pair_id"]),
+                ref=candidate_entry,
+                context_type="candidate_variant",
+                context_id=str(candidate["candidate_id"]),
+                normalized_path=str(descriptor_path),
+                include_payloads=True,
+            )
+            if candidate_archive is None:
+                continue
+            seed_rows.extend(
+                derive_candidate_identifiers(
+                    candidate_archive,
+                    candidate_id=str(candidate["candidate_id"]),
+                    family=str(candidate["family"]),
+                    priority=str(candidate["priority"]),
+                    token=str(candidate["token"]),
+                    normalized_path=str(descriptor_path),
+                )
+            )
+            for counterpart_path in candidate.get("counterpart_asset_paths", []):
+                if not str(counterpart_path).casefold().endswith((".elixir", ".elixir.gz")):
+                    continue
+                counterpart_matches = target_by_path.get(str(counterpart_path).casefold(), [])
+                if not counterpart_matches:
+                    continue
+                counterpart_entry = counterpart_matches[0]
+                counterpart_archive = parse_ref(
+                    side="target",
+                    pair_id=str(counterpart_entry["pair_id"]),
+                    ref=counterpart_entry,
+                    context_type="counterpart_variant",
+                    context_id=str(candidate["candidate_id"]),
+                    normalized_path=str(counterpart_path),
+                )
+                if counterpart_archive is None:
+                    continue
+                counterpart_token = Path(logical_asset_stem(str(counterpart_path))).name
+                compared, _counts = compare_variant_members(
+                    candidate_archive,
+                    counterpart_archive,
+                    candidate_token=str(candidate["token"]),
+                    counterpart_token=counterpart_token,
+                )
+                for row in compared:
+                    variant_rows.append(
+                        {
+                            "candidate_id": candidate["candidate_id"],
+                            "family": candidate["family"],
+                            "priority": candidate["priority"],
+                            "candidate_token": candidate["token"],
+                            "counterpart_token": counterpart_token,
+                            "candidate_path": descriptor_path,
+                            "counterpart_path": counterpart_path,
+                            **row,
+                        }
+                    )
+
+    # Deduplicate identical technical seeds while retaining all candidate owners.
+    seed_groups: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for row in seed_rows:
+        seed_groups[str(row["identifier"])].append(row)
+    unique_tokens = sorted(seed_groups, key=lambda value: (-len(value), value.casefold()))
+    token_patterns = build_token_patterns(unique_tokens) if unique_tokens else {}
+    scanned_files = 0
+    scanned_payload_bytes = 0
+    scan_skipped = 0
+    if unique_tokens:
+        scan_entries = [
+            item
+            for item in target_entries
+            if should_scan_reference_entry(item)
+            and str(item.get("normalized_path", "")).casefold() not in candidate_origin_paths
+        ]
+        print(
+            f"[structural] derived identifiers: {len(unique_tokens)}; target files: {len(scan_entries)}"
+        )
+        for index, entry in enumerate(scan_entries, start=1):
+            if index == 1 or index % 500 == 0:
+                print(f"[structural] binding scan {index}/{len(scan_entries)}")
+            pair_id = str(entry["pair_id"])
+            archive_name = str(entry.get("archive", ""))
+            internal_path = str(entry.get("path", ""))
+            normalized_path = str(entry.get("normalized_path", ""))
+            local_path = inventory_workspace_file(
+                workspace_root,
+                "target",
+                pair_id,
+                archive_name,
+                internal_path,
+            )
+            if not local_path.is_file():
+                skipped_rows.append(
+                    {
+                        "context_type": "derived_identifier_scan",
+                        "context_id": "",
+                        "side": "target",
+                        "pair_id": pair_id,
+                        "archive": archive_name,
+                        "path": internal_path,
+                        "normalized_path": normalized_path,
+                        "reason": "workspace_file_missing",
+                    }
+                )
+                scan_skipped += 1
+                continue
+            try:
+                occurrences_by_encoding, payload_bytes, container = scan_reference_file(
+                    local_path, token_patterns, maximum_raw_bytes
+                )
+            except RestorationError as exc:
+                skipped_rows.append(
+                    {
+                        "context_type": "derived_identifier_scan",
+                        "context_id": "",
+                        "side": "target",
+                        "pair_id": pair_id,
+                        "archive": archive_name,
+                        "path": internal_path,
+                        "normalized_path": normalized_path,
+                        "reason": str(exc),
+                    }
+                )
+                scan_skipped += 1
+                continue
+            scanned_files += 1
+            scanned_payload_bytes += payload_bytes
+            for encoding, occurrences in occurrences_by_encoding.items():
+                for identifier, (count, offsets) in occurrences.items():
+                    owners = seed_groups[identifier]
+                    candidate_ids = sorted({str(row["candidate_id"]) for row in owners})
+                    families = sorted({str(row["family"]) for row in owners})
+                    priorities = sorted({str(row["priority"]) for row in owners})
+                    hit_rows.append(
+                        {
+                            "candidate_ids": ",".join(candidate_ids),
+                            "families": ",".join(families),
+                            "priorities": ",".join(priorities),
+                            "identifier": identifier,
+                            "pair_id": pair_id,
+                            "archive": archive_name,
+                            "path": internal_path,
+                            "normalized_path": normalized_path,
+                            "asset_type": entry.get("asset_type", ""),
+                            "container": container,
+                            "encoding": encoding,
+                            "occurrence_count": count,
+                            "first_offsets": ",".join(str(value) for value in offsets),
+                            "event_reference": (
+                                "yes"
+                                if normalized_path.casefold().startswith("event/")
+                                or Path(normalized_path).suffix.casefold() in {".ebd", ".ebm"}
+                                else "no"
+                            ),
+                            "review_status": "derived_identifier_external_hit_manual_review",
+                        }
+                    )
+
+    grouped_bindings: dict[tuple[str, str, str], dict[str, Any]] = {}
+    for row in hit_rows:
+        key = (str(row["pair_id"]), str(row["archive"]), str(row["normalized_path"]))
+        item = grouped_bindings.setdefault(
+            key,
+            {
+                "pair_id": row["pair_id"],
+                "archive": row["archive"],
+                "normalized_path": row["normalized_path"],
+                "candidate_ids": set(),
+                "families": set(),
+                "identifiers": set(),
+                "occurrence_count": 0,
+                "event_reference": "no",
+                "review_status": "potential_structural_binding_manual_review",
+            },
+        )
+        item["candidate_ids"].update(split_csv_field(str(row["candidate_ids"])))
+        item["families"].update(split_csv_field(str(row["families"])))
+        item["identifiers"].add(str(row["identifier"]))
+        item["occurrence_count"] += int(row["occurrence_count"])
+        if row["event_reference"] == "yes":
+            item["event_reference"] = "yes"
+    for item in grouped_bindings.values():
+        binding_rows.append(
+            {
+                **item,
+                "candidate_ids": ",".join(sorted(item["candidate_ids"])),
+                "families": ",".join(sorted(item["families"])),
+                "identifiers": ";".join(sorted(item["identifiers"], key=str.casefold)),
+            }
+        )
+
+    evidence_root = report_root / STRUCTURAL_EVIDENCE_DIR
+    if evidence_root.exists():
+        shutil.rmtree(evidence_root)
+    evidence_root.mkdir(parents=True, exist_ok=True)
+    write_tsv(
+        evidence_root / "ELIXIR_ARCHIVES.tsv",
+        [
+            "context_type", "context_id", "side", "pair_id", "archive", "path",
+            "normalized_path", "container", "decoded_bytes", "decoded_sha256",
+            "member_count", "filename_size_units", "flags", "review_status",
+        ],
+        sorted(
+            archive_rows,
+            key=lambda row: (
+                str(row["context_type"]), str(row["context_id"]),
+                str(row["side"]), str(row["normalized_path"]).casefold(),
+            ),
+        ),
+    )
+    write_tsv(
+        evidence_root / "SCENE_EFFECT_MEMBER_DIFF.tsv",
+        [
+            "candidate_id", "rule_id", "domain", "priority", "normalized_path",
+            "member_key", "source_member_name", "target_member_name",
+            "source_member_index", "target_member_index", "source_size",
+            "target_size", "source_sha256", "target_sha256", "classification",
+            "keyword_hits", "review_status",
+        ],
+        sorted(
+            member_rows,
+            key=lambda row: (
+                str(row["domain"]), str(row["normalized_path"]).casefold(),
+                str(row["classification"]), str(row["member_key"]).casefold(),
+            ),
+        ),
+    )
+    write_tsv(
+        evidence_root / "VARIANT_MEMBER_COMPARISON.tsv",
+        [
+            "candidate_id", "family", "priority", "candidate_token",
+            "counterpart_token", "candidate_path", "counterpart_path",
+            "normalized_member_key", "candidate_member_name",
+            "counterpart_member_name", "candidate_size", "counterpart_size",
+            "candidate_sha256", "counterpart_sha256", "classification",
+            "review_status",
+        ],
+        sorted(
+            variant_rows,
+            key=lambda row: (
+                str(row["candidate_id"]), str(row["counterpart_token"]),
+                str(row["normalized_member_key"]).casefold(),
+            ),
+        ),
+    )
+    write_tsv(
+        evidence_root / "DERIVED_IDENTIFIER_SEEDS.tsv",
+        [
+            "seed_id", "candidate_id", "family", "priority", "candidate_token",
+            "candidate_path", "identifier", "identifier_casefold", "source_kind",
+            "source_member_name", "review_status",
+        ],
+        sorted(
+            seed_rows,
+            key=lambda row: (
+                str(row["candidate_id"]), str(row["identifier"]).casefold(),
+            ),
+        ),
+    )
+    write_tsv(
+        evidence_root / "DERIVED_IDENTIFIER_HITS.tsv",
+        [
+            "candidate_ids", "families", "priorities", "identifier", "pair_id",
+            "archive", "path", "normalized_path", "asset_type", "container",
+            "encoding", "occurrence_count", "first_offsets", "event_reference",
+            "review_status",
+        ],
+        sorted(
+            hit_rows,
+            key=lambda row: (
+                str(row["candidate_ids"]), row["event_reference"] != "yes",
+                str(row["normalized_path"]).casefold(), str(row["identifier"]).casefold(),
+            ),
+        ),
+    )
+    write_tsv(
+        evidence_root / "STRUCTURAL_BINDING_CANDIDATES.tsv",
+        [
+            "pair_id", "archive", "normalized_path", "candidate_ids", "families",
+            "identifiers", "occurrence_count", "event_reference", "review_status",
+        ],
+        sorted(
+            binding_rows,
+            key=lambda row: (
+                row["event_reference"] != "yes", str(row["normalized_path"]).casefold(),
+            ),
+        ),
+    )
+    write_tsv(
+        evidence_root / "STRUCTURAL_SCAN_SKIPPED.tsv",
+        [
+            "context_type", "context_id", "side", "pair_id", "archive", "path",
+            "normalized_path", "reason",
+        ],
+        skipped_rows,
+    )
+
+    scene_member_counts = Counter(str(row["classification"]) for row in member_rows)
+    variant_member_counts = Counter(str(row["classification"]) for row in variant_rows)
+    summary = {
+        "type": "br_quartet_restoration_structural_evidence_summary",
+        "format_version": FORMAT_VERSION,
+        "tool_version": TOOL_VERSION,
+        "source_inventory_tool_version": inventory_summary.get("tool_version"),
+        "status": "earc_member_and_case_preserving_identifier_analysis_complete_manual_review_required",
+        "parsed_earc_archives": len(
+            {
+                (str(row["side"]), str(row["pair_id"]), str(row["archive"]), str(row["path"]))
+                for row in archive_rows
+            }
+        ),
+        "parsed_earc_context_rows": len(archive_rows),
+        "scene_effect_member_differences": len(member_rows),
+        "scene_effect_member_classifications": dict(sorted(scene_member_counts.items())),
+        "variant_member_rows": len(variant_rows),
+        "variant_member_classifications": dict(sorted(variant_member_counts.items())),
+        "derived_identifier_seed_rows": len(seed_rows),
+        "unique_derived_identifiers": len(unique_tokens),
+        "derived_identifier_hit_rows": len(hit_rows),
+        "structural_binding_candidate_files": len(binding_rows),
+        "event_binding_candidate_files": sum(
+            1 for row in binding_rows if row["event_reference"] == "yes"
+        ),
+        "target_files_scanned_for_derived_identifiers": scanned_files,
+        "target_payload_bytes_scanned": scanned_payload_bytes,
+        "skipped_rows": len(skipped_rows),
+        "scan_skipped_files": scan_skipped,
+        "analysis_scope": [
+            "earc_member_tables_for_focused_scene_effect_containers",
+            "quartet_only_costume_and_wet_material_descriptors",
+            "retained_counterpart_descriptor_structures",
+            "case_preserving_internal_identifiers_derived_from_candidate_payloads",
+        ],
+        "policy": {
+            "installed_games_modified": False,
+            "proprietary_payloads_in_report": False,
+            "member_names_and_hashes_only": True,
+            "surrounding_binary_or_dialogue_content_exported": False,
+            "automatic_censorship_claims": False,
+            "legacy_dlc_in_scope": False,
+        },
+        "next_action": (
+            "Upload the structural-evidence archive. Use member-level additions/removals, "
+            "variant comparisons and exact internal-identifier hits to choose the first "
+            "restoration prototype or the narrower KTID parser still required."
+        ),
+    }
+    atomic_json(evidence_root / "SUMMARY.json", summary)
+    output = report_root / STRUCTURAL_REPORT_NAME
+    make_report_archive(evidence_root, output)
+    return output, summary
+
+
+
+G1M_HEADER_SIZE = 0x18
+G1MG_HEADER_SIZE = 0x30
+G1MG_SHADER_PARAMS_SECTION = 0x00010003
+G1M_PARAMETER_KEYWORDS = (
+    "alpha", "blend", "fog", "mist", "opacity", "reflect", "refract",
+    "smoke", "steam", "trans", "translucency", "transparency", "vapor",
+    "water", "wet",
+)
+
+
+def g1m_endian_from_magic(magic: bytes, *, label: str) -> str:
+    if magic == b"_M1G":
+        return "<"
+    if magic == b"G1M_":
+        return ">"
+    raise RestorationError(f"not a G1M payload (bad magic): {label}")
+
+
+def _format_float(value: float) -> str:
+    if math.isnan(value):
+        return "nan"
+    if math.isinf(value):
+        return "inf" if value > 0 else "-inf"
+    return format(value, ".9g")
+
+
+def _decode_g1m_name(raw: bytes) -> str:
+    value = raw.replace(b"\x00", b"")
+    try:
+        return value.decode("utf-8")
+    except UnicodeDecodeError:
+        return value.decode("cp932", errors="replace")
+
+
+def parse_g1m_material_parameters(payload: bytes, *, label: str = "<memory>") -> dict[str, Any]:
+    """Parse G1M chunk metadata and G1MG shader parameter values read-only.
+
+    The parser intentionally implements only the stable container header and the
+    G1MG 0x00010003 SHADER_PARAMS section. Geometry buffers are never exported.
+    """
+    if len(payload) < G1M_HEADER_SIZE:
+        raise RestorationError(f"G1M payload is too small: {label}")
+    endian = g1m_endian_from_magic(payload[:4], label=label)
+    file_version, file_size, chunk_offset, reserved, chunk_count = struct.unpack_from(
+        endian + "5I", payload, 4
+    )
+    if file_size and file_size > len(payload):
+        raise RestorationError(
+            f"G1M declared size exceeds payload ({file_size} > {len(payload)}): {label}"
+        )
+    if chunk_offset < G1M_HEADER_SIZE or chunk_offset > len(payload):
+        raise RestorationError(f"unsafe G1M chunk offset 0x{chunk_offset:x}: {label}")
+    if chunk_count > 0x1000:
+        raise RestorationError(f"unsafe G1M chunk count {chunk_count}: {label}")
+
+    chunk_rows: list[dict[str, Any]] = []
+    parameter_rows: list[dict[str, Any]] = []
+    offset = chunk_offset
+    for chunk_index in range(chunk_count):
+        if offset + 12 > len(payload):
+            raise RestorationError(f"truncated G1M chunk header {chunk_index}: {label}")
+        raw_magic = payload[offset : offset + 4]
+        chunk_magic = _decode_g1m_name(raw_magic)
+        chunk_version, chunk_size = struct.unpack_from(endian + "2I", payload, offset + 4)
+        if chunk_size < 12 or offset + chunk_size > len(payload):
+            raise RestorationError(
+                f"unsafe G1M chunk size {chunk_size} at index {chunk_index}: {label}"
+            )
+        chunk = payload[offset : offset + chunk_size]
+        chunk_rows.append(
+            {
+                "chunk_index": chunk_index,
+                "chunk_magic": chunk_magic,
+                "chunk_version": f"0x{chunk_version:08x}",
+                "chunk_offset": offset,
+                "chunk_size": chunk_size,
+                "chunk_sha256": hashlib.sha256(chunk).hexdigest(),
+            }
+        )
+        if chunk_magic in {"G1MG", "GM1G"}:
+            if len(chunk) < G1MG_HEADER_SIZE:
+                raise RestorationError(f"G1MG chunk is too small: {label}")
+            g1mg_version, declared_chunk_size = struct.unpack_from(endian + "2I", chunk, 4)
+            if declared_chunk_size != len(chunk):
+                raise RestorationError(
+                    f"G1MG size mismatch ({declared_chunk_size} != {len(chunk)}): {label}"
+                )
+            platform = _decode_g1m_name(chunk[12:16])
+            section_count = struct.unpack_from(endian + "I", chunk, 44)[0]
+            if section_count > 0x1000:
+                raise RestorationError(f"unsafe G1MG section count {section_count}: {label}")
+            section_offset = G1MG_HEADER_SIZE
+            for section_index in range(section_count):
+                if section_offset + 12 > len(chunk):
+                    raise RestorationError(
+                        f"truncated G1MG section header {section_index}: {label}"
+                    )
+                section_type, section_size, section_entries = struct.unpack_from(
+                    endian + "3I", chunk, section_offset
+                )
+                if section_size < 12 or section_offset + section_size > len(chunk):
+                    raise RestorationError(
+                        f"unsafe G1MG section size {section_size} at index {section_index}: {label}"
+                    )
+                if section_type == G1MG_SHADER_PARAMS_SECTION:
+                    cursor = section_offset + 12
+                    section_end = section_offset + section_size
+                    for block_index in range(section_entries):
+                        if cursor + 4 > section_end:
+                            raise RestorationError(
+                                f"truncated G1MG shader block {block_index}: {label}"
+                            )
+                        parameter_count = struct.unpack_from(endian + "I", chunk, cursor)[0]
+                        cursor += 4
+                        if parameter_count > 0x10000:
+                            raise RestorationError(
+                                f"unsafe G1MG shader parameter count {parameter_count}: {label}"
+                            )
+                        duplicate_names: Counter[str] = Counter()
+                        for parameter_index in range(parameter_count):
+                            parameter_start = cursor
+                            if cursor + 16 > section_end:
+                                raise RestorationError(
+                                    f"truncated G1MG shader parameter {parameter_index}: {label}"
+                                )
+                            parameter_size, name_size, unknown, buffer_type, buffer_count = struct.unpack_from(
+                                endian + "3I2H", chunk, cursor
+                            )
+                            cursor += 16
+                            widths = {1: 4, 2: 8, 3: 12, 4: 16, 5: 4}
+                            width = widths.get(buffer_type)
+                            if width is None:
+                                raise RestorationError(
+                                    f"unsupported G1MG shader buffer type {buffer_type}: {label}"
+                                )
+                            required = 16 + name_size + width * buffer_count
+                            if parameter_size < required:
+                                raise RestorationError(
+                                    f"undersized G1MG shader parameter {parameter_index}: {label}"
+                                )
+                            parameter_end = parameter_start + parameter_size
+                            if parameter_end > section_end:
+                                raise RestorationError(
+                                    f"G1MG shader parameter exceeds section: {label}"
+                                )
+                            name = _decode_g1m_name(chunk[cursor : cursor + name_size])
+                            cursor += name_size
+                            value_start = cursor
+                            values: list[Any] = []
+                            for _ in range(buffer_count):
+                                if buffer_type == 1:
+                                    values.append(struct.unpack_from(endian + "f", chunk, cursor)[0])
+                                elif buffer_type == 2:
+                                    values.append(struct.unpack_from(endian + "2f", chunk, cursor))
+                                elif buffer_type == 3:
+                                    values.append(struct.unpack_from(endian + "3f", chunk, cursor))
+                                elif buffer_type == 4:
+                                    values.append(struct.unpack_from(endian + "4f", chunk, cursor))
+                                else:
+                                    values.append(struct.unpack_from(endian + "i", chunk, cursor)[0])
+                                cursor += width
+                            raw_values = chunk[value_start : value_start + width * buffer_count]
+                            rendered: list[str] = []
+                            for value in values:
+                                if isinstance(value, tuple):
+                                    rendered.append(",".join(_format_float(float(item)) for item in value))
+                                elif buffer_type == 5:
+                                    rendered.append(str(int(value)))
+                                else:
+                                    rendered.append(_format_float(float(value)))
+                            folded = name.casefold()
+                            occurrence = duplicate_names[folded]
+                            duplicate_names[folded] += 1
+                            parameter_rows.append(
+                                {
+                                    "chunk_index": chunk_index,
+                                    "chunk_magic": chunk_magic,
+                                    "g1mg_version": f"0x{g1mg_version:08x}",
+                                    "platform": platform,
+                                    "section_index": section_index,
+                                    "shader_block_index": block_index,
+                                    "parameter_index": parameter_index,
+                                    "parameter_name": name,
+                                    "parameter_occurrence": occurrence,
+                                    "parameter_key": f"{block_index}|{folded}|{occurrence}",
+                                    "buffer_type": buffer_type,
+                                    "buffer_count": buffer_count,
+                                    "unknown": unknown,
+                                    "value_text": "|".join(rendered),
+                                    "value_hex": raw_values.hex(),
+                                    "keyword_hits": keyword_hits(name, G1M_PARAMETER_KEYWORDS),
+                                }
+                            )
+                            cursor = parameter_end
+                section_offset += section_size
+        offset += chunk_size
+    return {
+        "magic": _decode_g1m_name(payload[:4]),
+        "endian": "little" if endian == "<" else "big",
+        "file_version": f"0x{file_version:08x}",
+        "file_size": file_size,
+        "reserved": reserved,
+        "chunk_offset": chunk_offset,
+        "chunk_count": chunk_count,
+        "chunks": chunk_rows,
+        "parameters": parameter_rows,
+    }
+
+
+def compare_g1m_material_parameters(
+    source: dict[str, Any] | None,
+    target: dict[str, Any] | None,
+) -> tuple[list[dict[str, Any]], Counter[str]]:
+    left = {str(row["parameter_key"]): row for row in (source or {}).get("parameters", [])}
+    right = {str(row["parameter_key"]): row for row in (target or {}).get("parameters", [])}
+    rows: list[dict[str, Any]] = []
+    counts: Counter[str] = Counter()
+    for key in sorted(set(left) | set(right), key=str.casefold):
+        before = left.get(key)
+        after = right.get(key)
+        if before and after:
+            classification = (
+                "identical"
+                if before["buffer_type"] == after["buffer_type"]
+                and before["buffer_count"] == after["buffer_count"]
+                and before["value_hex"] == after["value_hex"]
+                else "changed"
+            )
+        elif before:
+            classification = "removed_in_target"
+        else:
+            classification = "added_in_target"
+        counts[classification] += 1
+        if classification == "identical":
+            continue
+        name = str((after or before or {}).get("parameter_name", ""))
+        hits = sorted(
+            set(split_csv_field(str((before or {}).get("keyword_hits", ""))))
+            | set(split_csv_field(str((after or {}).get("keyword_hits", "")))),
+            key=str.casefold,
+        )
+        rows.append(
+            {
+                "parameter_key": key,
+                "parameter_name": name,
+                "shader_block_index": (after or before or {}).get("shader_block_index", ""),
+                "parameter_occurrence": (after or before or {}).get("parameter_occurrence", ""),
+                "source_buffer_type": (before or {}).get("buffer_type", ""),
+                "target_buffer_type": (after or {}).get("buffer_type", ""),
+                "source_buffer_count": (before or {}).get("buffer_count", ""),
+                "target_buffer_count": (after or {}).get("buffer_count", ""),
+                "source_value_text": (before or {}).get("value_text", ""),
+                "target_value_text": (after or {}).get("value_text", ""),
+                "source_value_hex": (before or {}).get("value_hex", ""),
+                "target_value_hex": (after or {}).get("value_hex", ""),
+                "classification": classification,
+                "keyword_hits": ",".join(hits),
+                "review_status": "material_parameter_difference_not_automatic_censorship_proof",
+            }
+        )
+    return rows, counts
+
+
+def _variant_member_map(archive: dict[str, Any], token: str) -> dict[str, dict[str, Any]]:
+    result: dict[str, dict[str, Any]] = {}
+    duplicates: Counter[str] = Counter()
+    for member in archive.get("members", []):
+        base = normalized_variant_member_key(str(member.get("name", "")), token)
+        occurrence = duplicates[base]
+        duplicates[base] += 1
+        result[f"{base}#{occurrence}"] = member
+    return result
+
+
+def collect_material_parameter_evidence(
+    *,
+    project_root: Path,
+    workspace_root: Path,
+    report_root: Path,
+    candidate_rules_file: Path,
+    effect_rules_file: Path,
+    maximum_earc_bytes: int,
+) -> tuple[Path, dict[str, Any]]:
+    summary_path = report_root / "SUMMARY.json"
+    inventory_summary = load_json(summary_path)
+    if inventory_summary.get("type") != "br_quartet_restoration_research_summary":
+        raise RestorationError(f"Not a Quartet restoration report: {summary_path}")
+
+    differences = load_report_jsons(report_root, "differences")
+    inventories = load_report_jsons(report_root, "inventories")
+    target_inventories = [
+        item for item in inventories if item.get("normalization_side") == "target"
+    ]
+    candidates = build_candidate_families(
+        differences=differences,
+        target_inventories=target_inventories,
+        rules=load_candidate_rules(candidate_rules_file),
+    )
+    effects = build_effect_material_candidates(
+        differences, load_effect_material_rules(effect_rules_file)
+    )
+    target_by_path, _target_entries = inventory_maps(target_inventories)
+
+    chunk_rows: list[dict[str, Any]] = []
+    parameter_rows: list[dict[str, Any]] = []
+    difference_rows: list[dict[str, Any]] = []
+    skipped_rows: list[dict[str, Any]] = []
+    earc_cache: dict[tuple[str, str, str, str], dict[str, Any]] = {}
+    g1m_cache: dict[tuple[str, str, str, str, str], dict[str, Any] | None] = {}
+
+    def load_archive(side: str, pair_id: str, ref: dict[str, Any], context: str) -> dict[str, Any] | None:
+        archive_name = str(ref.get("archive", ""))
+        internal_path = str(ref.get("path", ""))
+        key = (side, pair_id, archive_name, internal_path)
+        cached = earc_cache.get(key)
+        if cached is not None:
+            return cached
+        local_path = inventory_workspace_file(
+            workspace_root, side, pair_id, archive_name, internal_path
+        )
+        if not local_path.is_file():
+            skipped_rows.append(
+                {
+                    "context": context,
+                    "side": side,
+                    "pair_id": pair_id,
+                    "archive": archive_name,
+                    "path": internal_path,
+                    "member_name": "",
+                    "reason": "workspace_file_missing",
+                }
+            )
+            return None
+        try:
+            parsed = read_earc_archive(
+                local_path,
+                maximum_bytes=maximum_earc_bytes,
+                include_member_payloads=True,
+            )
+        except RestorationError as exc:
+            skipped_rows.append(
+                {
+                    "context": context,
+                    "side": side,
+                    "pair_id": pair_id,
+                    "archive": archive_name,
+                    "path": internal_path,
+                    "member_name": "",
+                    "reason": str(exc),
+                }
+            )
+            return None
+        earc_cache[key] = parsed
+        return parsed
+
+    def parse_member(
+        *,
+        context_type: str,
+        context_id: str,
+        domain: str,
+        priority: str,
+        side: str,
+        pair_id: str,
+        archive_path: str,
+        member_key: str,
+        member: dict[str, Any] | None,
+    ) -> dict[str, Any] | None:
+        if member is None or str(member.get("extension", "")).casefold() != ".g1m":
+            return None
+        cache_key = (side, pair_id, archive_path, member_key, str(member.get("sha256", "")))
+        if cache_key in g1m_cache:
+            return g1m_cache[cache_key]
+        payload = member.get("payload")
+        if not isinstance(payload, bytes):
+            return None
+        try:
+            parsed = parse_g1m_material_parameters(
+                payload,
+                label=f"{archive_path}:{member.get('name', '')}",
+            )
+        except RestorationError as exc:
+            skipped_rows.append(
+                {
+                    "context": f"{context_type}:{context_id}",
+                    "side": side,
+                    "pair_id": pair_id,
+                    "archive": "",
+                    "path": archive_path,
+                    "member_name": member.get("name", ""),
+                    "reason": str(exc),
+                }
+            )
+            g1m_cache[cache_key] = None
+            return None
+        g1m_cache[cache_key] = parsed
+        common = {
+            "context_type": context_type,
+            "context_id": context_id,
+            "domain": domain,
+            "priority": priority,
+            "side": side,
+            "pair_id": pair_id,
+            "archive_path": archive_path,
+            "member_key": member_key,
+            "member_name": member.get("name", ""),
+            "member_size": member.get("size", ""),
+            "member_sha256": member.get("sha256", ""),
+        }
+        for row in parsed["chunks"]:
+            chunk_rows.append(
+                {
+                    **common,
+                    **row,
+                    "review_status": "g1m_chunk_metadata_only",
+                }
+            )
+        for row in parsed["parameters"]:
+            parameter_rows.append(
+                {
+                    **common,
+                    **row,
+                    "review_status": "technical_material_parameter_value",
+                }
+            )
+        return parsed
+
+    print(f"[material] focused scene/effect archives: {len(effects)}")
+    for effect in effects:
+        normalized_path = str(effect["normalized_path"])
+        if not normalized_path.casefold().endswith((".elixir", ".elixir.gz")):
+            continue
+        parsed_sides: dict[str, dict[str, Any] | None] = {"source": None, "target": None}
+        for side in ("source", "target"):
+            ref = effect.get(side)
+            if ref:
+                parsed_sides[side] = load_archive(
+                    side, str(effect["pair_id"]), ref, f"scene_effect:{effect['candidate_id']}"
+                )
+        left_members = {
+            str(row["comparison_key"]): row
+            for row in (parsed_sides["source"] or {}).get("members", [])
+        }
+        right_members = {
+            str(row["comparison_key"]): row
+            for row in (parsed_sides["target"] or {}).get("members", [])
+        }
+        for member_key in sorted(set(left_members) | set(right_members), key=str.casefold):
+            left_member = left_members.get(member_key)
+            right_member = right_members.get(member_key)
+            if not any(
+                str(item.get("extension", "")).casefold() == ".g1m"
+                for item in (left_member, right_member)
+                if item is not None
+            ):
+                continue
+            if left_member and right_member and left_member.get("sha256") == right_member.get("sha256"):
+                continue
+            left_g1m = parse_member(
+                context_type="scene_effect",
+                context_id=str(effect["candidate_id"]),
+                domain=str(effect["domain"]),
+                priority=str(effect["priority"]),
+                side="source",
+                pair_id=str(effect["pair_id"]),
+                archive_path=normalized_path,
+                member_key=member_key,
+                member=left_member,
+            )
+            right_g1m = parse_member(
+                context_type="scene_effect",
+                context_id=str(effect["candidate_id"]),
+                domain=str(effect["domain"]),
+                priority=str(effect["priority"]),
+                side="target",
+                pair_id=str(effect["pair_id"]),
+                archive_path=normalized_path,
+                member_key=member_key,
+                member=right_member,
+            )
+            compared, _counts = compare_g1m_material_parameters(left_g1m, right_g1m)
+            for row in compared:
+                difference_rows.append(
+                    {
+                        "context_type": "scene_effect",
+                        "context_id": effect["candidate_id"],
+                        "domain": effect["domain"],
+                        "priority": effect["priority"],
+                        "pair_id": effect["pair_id"],
+                        "candidate_token": "",
+                        "counterpart_token": "",
+                        "candidate_archive_path": "",
+                        "counterpart_archive_path": "",
+                        "focused_archive_path": normalized_path,
+                        "candidate_member_name": (right_member or {}).get("name", ""),
+                        "counterpart_member_name": (left_member or {}).get("name", ""),
+                        **row,
+                    }
+                )
+
+    print(f"[material] Quartet-only variant families: {len(candidates)}")
+    for candidate in candidates:
+        descriptor_paths = [
+            value for value in candidate.get("asset_files", [])
+            if str(value).casefold().endswith((".elixir", ".elixir.gz"))
+        ]
+        for descriptor_path in descriptor_paths:
+            candidate_matches = target_by_path.get(str(descriptor_path).casefold(), [])
+            if not candidate_matches:
+                continue
+            candidate_entry = candidate_matches[0]
+            candidate_archive = load_archive(
+                "target",
+                str(candidate_entry["pair_id"]),
+                candidate_entry,
+                f"candidate_variant:{candidate['candidate_id']}",
+            )
+            if candidate_archive is None:
+                continue
+            for counterpart_path in candidate.get("counterpart_asset_paths", []):
+                if not str(counterpart_path).casefold().endswith((".elixir", ".elixir.gz")):
+                    continue
+                counterpart_matches = target_by_path.get(str(counterpart_path).casefold(), [])
+                if not counterpart_matches:
+                    continue
+                counterpart_entry = counterpart_matches[0]
+                counterpart_archive = load_archive(
+                    "target",
+                    str(counterpart_entry["pair_id"]),
+                    counterpart_entry,
+                    f"counterpart_variant:{candidate['candidate_id']}",
+                )
+                if counterpart_archive is None:
+                    continue
+                counterpart_token = Path(logical_asset_stem(str(counterpart_path))).name
+                left_members = _variant_member_map(counterpart_archive, counterpart_token)
+                right_members = _variant_member_map(candidate_archive, str(candidate["token"]))
+                for member_key in sorted(set(left_members) | set(right_members), key=str.casefold):
+                    left_member = left_members.get(member_key)
+                    right_member = right_members.get(member_key)
+                    if not any(
+                        str(item.get("extension", "")).casefold() == ".g1m"
+                        for item in (left_member, right_member)
+                        if item is not None
+                    ):
+                        continue
+                    if left_member and right_member and left_member.get("sha256") == right_member.get("sha256"):
+                        continue
+                    left_g1m = parse_member(
+                        context_type="counterpart_variant",
+                        context_id=str(candidate["candidate_id"]),
+                        domain=str(candidate["family"]),
+                        priority=str(candidate["priority"]),
+                        side="target",
+                        pair_id=str(counterpart_entry["pair_id"]),
+                        archive_path=str(counterpart_path),
+                        member_key=member_key,
+                        member=left_member,
+                    )
+                    right_g1m = parse_member(
+                        context_type="candidate_variant",
+                        context_id=str(candidate["candidate_id"]),
+                        domain=str(candidate["family"]),
+                        priority=str(candidate["priority"]),
+                        side="target",
+                        pair_id=str(candidate_entry["pair_id"]),
+                        archive_path=str(descriptor_path),
+                        member_key=member_key,
+                        member=right_member,
+                    )
+                    compared, _counts = compare_g1m_material_parameters(left_g1m, right_g1m)
+                    for row in compared:
+                        difference_rows.append(
+                            {
+                                "context_type": "candidate_variant",
+                                "context_id": candidate["candidate_id"],
+                                "domain": candidate["family"],
+                                "priority": candidate["priority"],
+                                "pair_id": candidate_entry["pair_id"],
+                                "candidate_token": candidate["token"],
+                                "counterpart_token": counterpart_token,
+                                "candidate_archive_path": descriptor_path,
+                                "counterpart_archive_path": counterpart_path,
+                                "focused_archive_path": "",
+                                "candidate_member_name": (right_member or {}).get("name", ""),
+                                "counterpart_member_name": (left_member or {}).get("name", ""),
+                                **row,
+                            }
+                        )
+
+    evidence_root = report_root / MATERIAL_PARAMETER_EVIDENCE_DIR
+    if evidence_root.exists():
+        shutil.rmtree(evidence_root)
+    evidence_root.mkdir(parents=True, exist_ok=True)
+    write_tsv(
+        evidence_root / "G1M_CHUNKS.tsv",
+        [
+            "context_type", "context_id", "domain", "priority", "side", "pair_id",
+            "archive_path", "member_key", "member_name", "member_size", "member_sha256",
+            "chunk_index", "chunk_magic", "chunk_version", "chunk_offset", "chunk_size",
+            "chunk_sha256", "review_status",
+        ],
+        sorted(
+            chunk_rows,
+            key=lambda row: (
+                str(row["context_type"]), str(row["context_id"]), str(row["archive_path"]).casefold(),
+                str(row["member_name"]).casefold(), int(row["chunk_index"]),
+            ),
+        ),
+    )
+    write_tsv(
+        evidence_root / "G1M_SHADER_PARAMETERS.tsv",
+        [
+            "context_type", "context_id", "domain", "priority", "side", "pair_id",
+            "archive_path", "member_key", "member_name", "member_size", "member_sha256",
+            "chunk_index", "chunk_magic", "g1mg_version", "platform", "section_index",
+            "shader_block_index", "parameter_index", "parameter_name", "parameter_occurrence",
+            "parameter_key", "buffer_type", "buffer_count", "unknown", "value_text",
+            "value_hex", "keyword_hits", "review_status",
+        ],
+        sorted(
+            parameter_rows,
+            key=lambda row: (
+                str(row["context_type"]), str(row["context_id"]), str(row["archive_path"]).casefold(),
+                str(row["member_name"]).casefold(), int(row["shader_block_index"]),
+                str(row["parameter_name"]).casefold(), int(row["parameter_occurrence"]),
+            ),
+        ),
+    )
+    write_tsv(
+        evidence_root / "G1M_SHADER_PARAMETER_DIFF.tsv",
+        [
+            "context_type", "context_id", "domain", "priority", "pair_id",
+            "candidate_token", "counterpart_token", "candidate_archive_path",
+            "counterpart_archive_path", "focused_archive_path", "candidate_member_name",
+            "counterpart_member_name", "parameter_key", "parameter_name",
+            "shader_block_index", "parameter_occurrence", "source_buffer_type",
+            "target_buffer_type", "source_buffer_count", "target_buffer_count",
+            "source_value_text", "target_value_text", "source_value_hex", "target_value_hex",
+            "classification", "keyword_hits", "review_status",
+        ],
+        sorted(
+            difference_rows,
+            key=lambda row: (
+                0 if str(row["keyword_hits"]) else 1,
+                str(row["domain"]), str(row["context_id"]),
+                str(row["candidate_member_name"] or row["counterpart_member_name"]).casefold(),
+                str(row["parameter_name"]).casefold(),
+            ),
+        ),
+    )
+    write_tsv(
+        evidence_root / "MATERIAL_PARAMETER_SCAN_SKIPPED.tsv",
+        ["context", "side", "pair_id", "archive", "path", "member_name", "reason"],
+        skipped_rows,
+    )
+
+    diff_counts = Counter(str(row["classification"]) for row in difference_rows)
+    technical_rows = [row for row in difference_rows if str(row["keyword_hits"])]
+    technical_names = sorted(
+        {str(row["parameter_name"]) for row in technical_rows if row["parameter_name"]},
+        key=str.casefold,
+    )
+    summary = {
+        "type": "br_quartet_restoration_material_parameter_evidence_summary",
+        "format_version": FORMAT_VERSION,
+        "tool_version": TOOL_VERSION,
+        "source_inventory_tool_version": inventory_summary.get("tool_version"),
+        "status": "g1m_material_parameter_analysis_complete_manual_review_required",
+        "parsed_g1m_payloads": sum(1 for value in g1m_cache.values() if value is not None),
+        "g1m_chunk_rows": len(chunk_rows),
+        "g1m_shader_parameter_rows": len(parameter_rows),
+        "g1m_shader_parameter_differences": len(difference_rows),
+        "g1m_shader_parameter_classifications": dict(sorted(diff_counts.items())),
+        "technical_parameter_differences": len(technical_rows),
+        "technical_parameter_names": technical_names[:80],
+        "scene_effect_parameter_differences": sum(
+            1 for row in difference_rows if row["context_type"] == "scene_effect"
+        ),
+        "variant_parameter_differences": sum(
+            1 for row in difference_rows if row["context_type"] == "candidate_variant"
+        ),
+        "skipped_rows": len(skipped_rows),
+        "analysis_scope": [
+            "G1M_top_level_chunk_tables",
+            "G1MG_0x00010003_shader_parameter_names_types_and_values",
+            "Quartet_only_costume_and_wet_variant_comparison_against_retained_counterparts",
+            "changed_G1M_members_inside_focused_pool_shower_bath_effect_and_posteffect_archives",
+        ],
+        "policy": {
+            "installed_games_modified": False,
+            "proprietary_geometry_or_texture_payloads_in_report": False,
+            "technical_parameter_names_and_numeric_values_only": True,
+            "automatic_censorship_claims": False,
+            "legacy_dlc_in_scope": False,
+        },
+        "next_action": (
+            "Upload the material-parameter evidence archive. Review exact wet-material, alpha, "
+            "transparency, water and fog parameter deltas before selecting a replacement prototype "
+            "or proceeding to numeric event-binding analysis for variants that remain unbound."
+        ),
+    }
+    atomic_json(evidence_root / "SUMMARY.json", summary)
+    output = report_root / MATERIAL_PARAMETER_REPORT_NAME
+    make_report_archive(evidence_root, output)
+    return output, summary
+
+
+
+MATERIAL_HIGH_VALUE_PARAMETERS = {
+    "frpalphathres",
+    "frrrefractiveindex",
+    "frrtransparency",
+    "ftranslucency",
+}
+
+
+def _parameter_signature(row: dict[str, Any]) -> tuple[str, int, int]:
+    return (
+        str(row.get("parameter_name", "")).casefold(),
+        int(row.get("buffer_type", 0) or 0),
+        int(row.get("buffer_count", 0) or 0),
+    )
+
+
+def _parameter_numeric_vector(row: dict[str, Any]) -> tuple[float, ...] | None:
+    rendered = str(row.get("value_text", ""))
+    if not rendered:
+        return tuple()
+    values: list[float] = []
+    for group in rendered.split("|"):
+        for item in group.split(","):
+            try:
+                values.append(float(item))
+            except ValueError:
+                return None
+    return tuple(values)
+
+
+def _parameter_distance(source: dict[str, Any], target: dict[str, Any]) -> float:
+    if str(source.get("value_hex", "")) == str(target.get("value_hex", "")):
+        return 0.0
+    left = _parameter_numeric_vector(source)
+    right = _parameter_numeric_vector(target)
+    if left is None or right is None or len(left) != len(right):
+        return float("inf")
+    if not left:
+        return 0.0
+    scale = max(1.0, *(abs(value) for value in left), *(abs(value) for value in right))
+    return sum(abs(a - b) for a, b in zip(left, right)) / (len(left) * scale)
+
+
+def compare_g1m_material_parameters_semantic(
+    source: dict[str, Any] | None,
+    target: dict[str, Any] | None,
+) -> tuple[list[dict[str, Any]], Counter[str]]:
+    """Compare named parameter multisets without relying on shader-block indices.
+
+    G1M revisions may insert or reorder shader blocks.  The older comparison key
+    included the block index, which turned relocated values into false
+    add/remove pairs.  This comparison first cancels exact values within each
+    name/type/count signature and then pairs the remaining values by nearest
+    normalized numeric distance.
+    """
+    left_groups: dict[tuple[str, int, int], list[dict[str, Any]]] = defaultdict(list)
+    right_groups: dict[tuple[str, int, int], list[dict[str, Any]]] = defaultdict(list)
+    for row in (source or {}).get("parameters", []):
+        left_groups[_parameter_signature(row)].append(row)
+    for row in (target or {}).get("parameters", []):
+        right_groups[_parameter_signature(row)].append(row)
+
+    rows: list[dict[str, Any]] = []
+    counts: Counter[str] = Counter()
+    for signature in sorted(set(left_groups) | set(right_groups)):
+        left = list(left_groups.get(signature, []))
+        right = list(right_groups.get(signature, []))
+        used_left: set[int] = set()
+        used_right: set[int] = set()
+
+        right_by_value: dict[str, list[int]] = defaultdict(list)
+        for index, row in enumerate(right):
+            right_by_value[str(row.get("value_hex", ""))].append(index)
+        for left_index, source_row in enumerate(left):
+            matches = right_by_value.get(str(source_row.get("value_hex", "")), [])
+            while matches and matches[0] in used_right:
+                matches.pop(0)
+            if not matches:
+                continue
+            right_index = matches.pop(0)
+            used_left.add(left_index)
+            used_right.add(right_index)
+            target_row = right[right_index]
+            if (
+                int(source_row.get("shader_block_index", 0))
+                != int(target_row.get("shader_block_index", 0))
+                or int(source_row.get("parameter_index", 0))
+                != int(target_row.get("parameter_index", 0))
+            ):
+                counts["identical_relocated"] += 1
+            else:
+                counts["identical_same_position"] += 1
+
+        candidates: list[tuple[float, int, int]] = []
+        for left_index, source_row in enumerate(left):
+            if left_index in used_left:
+                continue
+            for right_index, target_row in enumerate(right):
+                if right_index in used_right:
+                    continue
+                candidates.append(
+                    (_parameter_distance(source_row, target_row), left_index, right_index)
+                )
+        candidates.sort(key=lambda item: (item[0], item[1], item[2]))
+        for distance, left_index, right_index in candidates:
+            if left_index in used_left or right_index in used_right:
+                continue
+            used_left.add(left_index)
+            used_right.add(right_index)
+            source_row = left[left_index]
+            target_row = right[right_index]
+            counts["changed"] += 1
+            hits = sorted(
+                set(split_csv_field(str(source_row.get("keyword_hits", ""))))
+                | set(split_csv_field(str(target_row.get("keyword_hits", "")))),
+                key=str.casefold,
+            )
+            rows.append(
+                {
+                    "parameter_name": target_row.get("parameter_name") or source_row.get("parameter_name", ""),
+                    "buffer_type": signature[1],
+                    "buffer_count": signature[2],
+                    "source_shader_block_index": source_row.get("shader_block_index", ""),
+                    "target_shader_block_index": target_row.get("shader_block_index", ""),
+                    "source_parameter_index": source_row.get("parameter_index", ""),
+                    "target_parameter_index": target_row.get("parameter_index", ""),
+                    "source_value_text": source_row.get("value_text", ""),
+                    "target_value_text": target_row.get("value_text", ""),
+                    "source_value_hex": source_row.get("value_hex", ""),
+                    "target_value_hex": target_row.get("value_hex", ""),
+                    "classification": "changed",
+                    "matching_basis": "nearest_numeric_value",
+                    "normalized_distance": _format_float(distance),
+                    "keyword_hits": ",".join(hits),
+                    "review_status": "semantic_parameter_difference_not_automatic_censorship_proof",
+                }
+            )
+
+        for left_index, source_row in enumerate(left):
+            if left_index in used_left:
+                continue
+            counts["removed_in_target"] += 1
+            rows.append(
+                {
+                    "parameter_name": source_row.get("parameter_name", ""),
+                    "buffer_type": signature[1],
+                    "buffer_count": signature[2],
+                    "source_shader_block_index": source_row.get("shader_block_index", ""),
+                    "target_shader_block_index": "",
+                    "source_parameter_index": source_row.get("parameter_index", ""),
+                    "target_parameter_index": "",
+                    "source_value_text": source_row.get("value_text", ""),
+                    "target_value_text": "",
+                    "source_value_hex": source_row.get("value_hex", ""),
+                    "target_value_hex": "",
+                    "classification": "removed_in_target",
+                    "matching_basis": "unmatched_semantic_parameter",
+                    "normalized_distance": "",
+                    "keyword_hits": source_row.get("keyword_hits", ""),
+                    "review_status": "semantic_parameter_difference_not_automatic_censorship_proof",
+                }
+            )
+        for right_index, target_row in enumerate(right):
+            if right_index in used_right:
+                continue
+            counts["added_in_target"] += 1
+            rows.append(
+                {
+                    "parameter_name": target_row.get("parameter_name", ""),
+                    "buffer_type": signature[1],
+                    "buffer_count": signature[2],
+                    "source_shader_block_index": "",
+                    "target_shader_block_index": target_row.get("shader_block_index", ""),
+                    "source_parameter_index": "",
+                    "target_parameter_index": target_row.get("parameter_index", ""),
+                    "source_value_text": "",
+                    "target_value_text": target_row.get("value_text", ""),
+                    "source_value_hex": "",
+                    "target_value_hex": target_row.get("value_hex", ""),
+                    "classification": "added_in_target",
+                    "matching_basis": "unmatched_semantic_parameter",
+                    "normalized_distance": "",
+                    "keyword_hits": target_row.get("keyword_hits", ""),
+                    "review_status": "semantic_parameter_difference_not_automatic_censorship_proof",
+                }
+            )
+    return rows, counts
+
+
+def _parameter_multisets(parsed: dict[str, Any] | None) -> dict[tuple[str, int, int], list[dict[str, Any]]]:
+    grouped: dict[tuple[str, int, int], list[dict[str, Any]]] = defaultdict(list)
+    for row in (parsed or {}).get("parameters", []):
+        grouped[_parameter_signature(row)].append(row)
+    for values in grouped.values():
+        values.sort(
+            key=lambda row: (
+                str(row.get("value_hex", "")),
+                int(row.get("shader_block_index", 0)),
+                int(row.get("parameter_index", 0)),
+            )
+        )
+    return grouped
+
+
+def compare_three_way_parameter_multisets(
+    original_base: dict[str, Any] | None,
+    quartet_base: dict[str, Any] | None,
+    quartet_variant: dict[str, Any] | None,
+) -> list[dict[str, Any]]:
+    original = _parameter_multisets(original_base)
+    base = _parameter_multisets(quartet_base)
+    variant = _parameter_multisets(quartet_variant)
+    rows: list[dict[str, Any]] = []
+    for signature in sorted(set(original) | set(base) | set(variant)):
+        original_rows = original.get(signature, [])
+        base_rows = base.get(signature, [])
+        variant_rows = variant.get(signature, [])
+        original_hex = tuple(str(row.get("value_hex", "")) for row in original_rows)
+        base_hex = tuple(str(row.get("value_hex", "")) for row in base_rows)
+        variant_hex = tuple(str(row.get("value_hex", "")) for row in variant_rows)
+        if original_hex == base_hex == variant_hex:
+            continue
+        if original_hex == base_hex and base_hex != variant_hex:
+            classification = "variant_specific_change"
+        elif original_hex != base_hex and base_hex == variant_hex:
+            classification = "shared_quartet_change"
+        elif original_hex == variant_hex and original_hex != base_hex:
+            classification = "variant_matches_original"
+        elif not original_hex and not base_hex and variant_hex:
+            classification = "variant_only_parameter"
+        elif original_hex and base_hex and not variant_hex:
+            classification = "variant_removes_parameter"
+        elif not original_hex and base_hex == variant_hex:
+            classification = "quartet_added_shared_parameter"
+        else:
+            classification = "three_way_divergence"
+        sample = (variant_rows or base_rows or original_rows)[0]
+        hits = sorted(
+            {
+                hit
+                for row in (*original_rows, *base_rows, *variant_rows)
+                for hit in split_csv_field(str(row.get("keyword_hits", "")))
+            },
+            key=str.casefold,
+        )
+        rows.append(
+            {
+                "parameter_name": sample.get("parameter_name", ""),
+                "buffer_type": signature[1],
+                "buffer_count": signature[2],
+                "original_base_count": len(original_rows),
+                "quartet_base_count": len(base_rows),
+                "quartet_variant_count": len(variant_rows),
+                "original_base_values": " || ".join(str(row.get("value_text", "")) for row in original_rows),
+                "quartet_base_values": " || ".join(str(row.get("value_text", "")) for row in base_rows),
+                "quartet_variant_values": " || ".join(str(row.get("value_text", "")) for row in variant_rows),
+                "original_base_value_hex": " || ".join(original_hex),
+                "quartet_base_value_hex": " || ".join(base_hex),
+                "quartet_variant_value_hex": " || ".join(variant_hex),
+                "classification": classification,
+                "keyword_hits": ",".join(hits),
+                "review_status": "three_way_material_evidence_not_automatic_censorship_proof",
+            }
+        )
+    return rows
+
+
+def _material_review_priority(row: dict[str, Any]) -> tuple[str, str]:
+    folded = str(row.get("parameter_name", "")).casefold()
+    classification = str(row.get("classification", ""))
+    domain = str(row.get("domain", ""))
+    if folded in MATERIAL_HIGH_VALUE_PARAMETERS and classification in {
+        "variant_specific_change", "variant_only_parameter", "changed",
+        "added_in_target", "removed_in_target",
+    }:
+        return "critical", "direct_alpha_transparency_or_refraction_parameter"
+    if str(row.get("keyword_hits", "")):
+        return "high", "named_steam_water_alpha_transparency_or_wet_parameter"
+    if folded == "parameterformeshblend":
+        return "low", "generic_mesh_blend_supporting_change"
+    if domain in {
+        "water_visibility", "steam_and_water_visibility", "steam_and_wet_clothing",
+        "steam_or_vapor_occlusion", "wet_fabric_material_response",
+    }:
+        return "medium", "focused_scene_or_wet_material_parameter"
+    return "low", "nontechnical_material_difference"
+
+
+def collect_material_delta_evidence(
+    *,
+    project_root: Path,
+    workspace_root: Path,
+    report_root: Path,
+    candidate_rules_file: Path,
+    effect_rules_file: Path,
+    maximum_earc_bytes: int,
+) -> tuple[Path, dict[str, Any]]:
+    material_summary_path = report_root / MATERIAL_PARAMETER_EVIDENCE_DIR / "SUMMARY.json"
+    material_summary = load_json(material_summary_path)
+    if material_summary.get("type") != "br_quartet_restoration_material_parameter_evidence_summary":
+        raise RestorationError(f"Not a material-parameter evidence report: {material_summary_path}")
+
+    differences = load_report_jsons(report_root, "differences")
+    inventories = load_report_jsons(report_root, "inventories")
+    source_inventories = [item for item in inventories if item.get("normalization_side") == "source"]
+    target_inventories = [item for item in inventories if item.get("normalization_side") == "target"]
+    source_by_path, _source_entries = inventory_maps(source_inventories)
+    target_by_path, _target_entries = inventory_maps(target_inventories)
+    candidates = build_candidate_families(
+        differences=differences,
+        target_inventories=target_inventories,
+        rules=load_candidate_rules(candidate_rules_file),
+    )
+    effects = build_effect_material_candidates(
+        differences, load_effect_material_rules(effect_rules_file)
+    )
+
+    semantic_rows: list[dict[str, Any]] = []
+    three_way_rows: list[dict[str, Any]] = []
+    skipped_rows: list[dict[str, Any]] = []
+    earc_cache: dict[tuple[str, str, str, str], dict[str, Any] | None] = {}
+    g1m_cache: dict[tuple[str, str, str, str, str], dict[str, Any] | None] = {}
+
+    def load_archive(side: str, ref: dict[str, Any], context: str) -> dict[str, Any] | None:
+        pair_id = str(ref.get("pair_id", ""))
+        archive_name = str(ref.get("archive", ""))
+        internal_path = str(ref.get("path", ""))
+        key = (side, pair_id, archive_name, internal_path)
+        if key in earc_cache:
+            return earc_cache[key]
+        local_path = inventory_workspace_file(
+            workspace_root, side, pair_id, archive_name, internal_path
+        )
+        if not local_path.is_file():
+            skipped_rows.append(
+                {
+                    "context": context,
+                    "side": side,
+                    "pair_id": pair_id,
+                    "archive": archive_name,
+                    "path": internal_path,
+                    "member_name": "",
+                    "reason": "workspace_file_missing",
+                }
+            )
+            earc_cache[key] = None
+            return None
+        try:
+            parsed = read_earc_archive(
+                local_path,
+                maximum_bytes=maximum_earc_bytes,
+                include_member_payloads=True,
+            )
+        except RestorationError as exc:
+            skipped_rows.append(
+                {
+                    "context": context,
+                    "side": side,
+                    "pair_id": pair_id,
+                    "archive": archive_name,
+                    "path": internal_path,
+                    "member_name": "",
+                    "reason": str(exc),
+                }
+            )
+            earc_cache[key] = None
+            return None
+        earc_cache[key] = parsed
+        return parsed
+
+    def parse_member(
+        side: str,
+        ref: dict[str, Any],
+        member_key: str,
+        member: dict[str, Any] | None,
+        context: str,
+    ) -> dict[str, Any] | None:
+        if member is None or str(member.get("extension", "")).casefold() != ".g1m":
+            return None
+        key = (
+            side,
+            str(ref.get("pair_id", "")),
+            str(ref.get("normalized_path", ref.get("path", ""))),
+            member_key,
+            str(member.get("sha256", "")),
+        )
+        if key in g1m_cache:
+            return g1m_cache[key]
+        payload = member.get("payload")
+        if not isinstance(payload, bytes):
+            return None
+        try:
+            parsed = parse_g1m_material_parameters(
+                payload,
+                label=f"{ref.get('normalized_path', ref.get('path', ''))}:{member.get('name', '')}",
+            )
+        except RestorationError as exc:
+            skipped_rows.append(
+                {
+                    "context": context,
+                    "side": side,
+                    "pair_id": ref.get("pair_id", ""),
+                    "archive": ref.get("archive", ""),
+                    "path": ref.get("normalized_path", ref.get("path", "")),
+                    "member_name": member.get("name", ""),
+                    "reason": str(exc),
+                }
+            )
+            g1m_cache[key] = None
+            return None
+        g1m_cache[key] = parsed
+        return parsed
+
+    semantic_counts: Counter[str] = Counter()
+    for effect in effects:
+        normalized_path = str(effect["normalized_path"])
+        if not normalized_path.casefold().endswith((".elixir", ".elixir.gz")):
+            continue
+        source_ref = effect.get("source")
+        target_ref = effect.get("target")
+        if not source_ref or not target_ref:
+            continue
+        source_ref = {**source_ref, "pair_id": effect["pair_id"]}
+        target_ref = {**target_ref, "pair_id": effect["pair_id"]}
+        source_archive = load_archive("source", source_ref, f"scene:{effect['candidate_id']}")
+        target_archive = load_archive("target", target_ref, f"scene:{effect['candidate_id']}")
+        left_members = {
+            str(row["comparison_key"]): row for row in (source_archive or {}).get("members", [])
+        }
+        right_members = {
+            str(row["comparison_key"]): row for row in (target_archive or {}).get("members", [])
+        }
+        for member_key in sorted(set(left_members) | set(right_members), key=str.casefold):
+            left_member = left_members.get(member_key)
+            right_member = right_members.get(member_key)
+            if not any(
+                str(item.get("extension", "")).casefold() == ".g1m"
+                for item in (left_member, right_member)
+                if item is not None
+            ):
+                continue
+            if left_member and right_member and left_member.get("sha256") == right_member.get("sha256"):
+                continue
+            left_g1m = parse_member(
+                "source", source_ref, member_key, left_member, f"scene:{effect['candidate_id']}"
+            )
+            right_g1m = parse_member(
+                "target", target_ref, member_key, right_member, f"scene:{effect['candidate_id']}"
+            )
+            compared, counts = compare_g1m_material_parameters_semantic(left_g1m, right_g1m)
+            semantic_counts.update(counts)
+            for row in compared:
+                semantic_rows.append(
+                    {
+                        "relation": "original_scene_vs_quartet_scene",
+                        "context_id": effect["candidate_id"],
+                        "domain": effect["domain"],
+                        "priority": effect["priority"],
+                        "pair_id": effect["pair_id"],
+                        "candidate_token": "",
+                        "counterpart_token": "",
+                        "source_archive_path": normalized_path,
+                        "target_archive_path": normalized_path,
+                        "source_member_name": (left_member or {}).get("name", ""),
+                        "target_member_name": (right_member or {}).get("name", ""),
+                        **row,
+                    }
+                )
+
+    for candidate in candidates:
+        descriptor_paths = [
+            path for path in candidate.get("asset_files", [])
+            if str(path).casefold().endswith((".elixir", ".elixir.gz"))
+        ]
+        for descriptor_path in descriptor_paths:
+            candidate_refs = target_by_path.get(str(descriptor_path).casefold(), [])
+            if not candidate_refs:
+                continue
+            candidate_ref = candidate_refs[0]
+            candidate_archive = load_archive(
+                "target", candidate_ref, f"candidate:{candidate['candidate_id']}"
+            )
+            if candidate_archive is None:
+                continue
+            candidate_members = _variant_member_map(candidate_archive, str(candidate["token"]))
+            for counterpart_path in candidate.get("counterpart_asset_paths", []):
+                if not str(counterpart_path).casefold().endswith((".elixir", ".elixir.gz")):
+                    continue
+                target_refs = target_by_path.get(str(counterpart_path).casefold(), [])
+                source_refs = source_by_path.get(str(counterpart_path).casefold(), [])
+                if not target_refs:
+                    continue
+                target_base_ref = target_refs[0]
+                source_base_ref = source_refs[0] if source_refs else None
+                target_base_archive = load_archive(
+                    "target", target_base_ref, f"target_base:{candidate['candidate_id']}"
+                )
+                source_base_archive = (
+                    load_archive("source", source_base_ref, f"source_base:{candidate['candidate_id']}")
+                    if source_base_ref else None
+                )
+                counterpart_token = Path(logical_asset_stem(str(counterpart_path))).name
+                target_base_members = _variant_member_map(
+                    target_base_archive or {"members": []}, counterpart_token
+                )
+                source_base_members = _variant_member_map(
+                    source_base_archive or {"members": []}, counterpart_token
+                )
+                for member_key in sorted(
+                    set(candidate_members) | set(target_base_members) | set(source_base_members),
+                    key=str.casefold,
+                ):
+                    candidate_member = candidate_members.get(member_key)
+                    target_base_member = target_base_members.get(member_key)
+                    source_base_member = source_base_members.get(member_key)
+                    if not any(
+                        str(item.get("extension", "")).casefold() == ".g1m"
+                        for item in (candidate_member, target_base_member, source_base_member)
+                        if item is not None
+                    ):
+                        continue
+                    candidate_g1m = parse_member(
+                        "target", candidate_ref, member_key, candidate_member,
+                        f"candidate:{candidate['candidate_id']}",
+                    )
+                    target_base_g1m = parse_member(
+                        "target", target_base_ref, member_key, target_base_member,
+                        f"target_base:{candidate['candidate_id']}",
+                    )
+                    source_base_g1m = (
+                        parse_member(
+                            "source", source_base_ref, member_key, source_base_member,
+                            f"source_base:{candidate['candidate_id']}",
+                        )
+                        if source_base_ref else None
+                    )
+                    relations = (
+                        (
+                            "original_base_vs_quartet_base", source_base_g1m, target_base_g1m,
+                            source_base_ref, target_base_ref, source_base_member, target_base_member,
+                        ),
+                        (
+                            "quartet_base_vs_quartet_variant", target_base_g1m, candidate_g1m,
+                            target_base_ref, candidate_ref, target_base_member, candidate_member,
+                        ),
+                    )
+                    for relation, left_g1m, right_g1m, left_ref, right_ref, left_member, right_member in relations:
+                        compared, counts = compare_g1m_material_parameters_semantic(left_g1m, right_g1m)
+                        semantic_counts.update(counts)
+                        for row in compared:
+                            semantic_rows.append(
+                                {
+                                    "relation": relation,
+                                    "context_id": candidate["candidate_id"],
+                                    "domain": candidate["family"],
+                                    "priority": candidate["priority"],
+                                    "pair_id": candidate_ref["pair_id"],
+                                    "candidate_token": candidate["token"],
+                                    "counterpart_token": counterpart_token,
+                                    "source_archive_path": (left_ref or {}).get("normalized_path", ""),
+                                    "target_archive_path": (right_ref or {}).get("normalized_path", ""),
+                                    "source_member_name": (left_member or {}).get("name", ""),
+                                    "target_member_name": (right_member or {}).get("name", ""),
+                                    **row,
+                                }
+                            )
+                    for row in compare_three_way_parameter_multisets(
+                        source_base_g1m, target_base_g1m, candidate_g1m
+                    ):
+                        three_way_rows.append(
+                            {
+                                "context_id": candidate["candidate_id"],
+                                "domain": candidate["family"],
+                                "priority": candidate["priority"],
+                                "pair_id": candidate_ref["pair_id"],
+                                "candidate_token": candidate["token"],
+                                "counterpart_token": counterpart_token,
+                                "original_base_archive_path": (source_base_ref or {}).get("normalized_path", ""),
+                                "quartet_base_archive_path": target_base_ref.get("normalized_path", ""),
+                                "quartet_variant_archive_path": candidate_ref.get("normalized_path", ""),
+                                "original_base_member_name": (source_base_member or {}).get("name", ""),
+                                "quartet_base_member_name": (target_base_member or {}).get("name", ""),
+                                "quartet_variant_member_name": (candidate_member or {}).get("name", ""),
+                                **row,
+                            }
+                        )
+
+    focused_rows: list[dict[str, Any]] = []
+    for evidence_kind, source_rows in (
+        ("semantic_pair", semantic_rows),
+        ("three_way_variant", three_way_rows),
+    ):
+        for row in source_rows:
+            review_priority, basis = _material_review_priority(row)
+            if review_priority == "low" and not str(row.get("keyword_hits", "")):
+                continue
+            focused_rows.append(
+                {
+                    "evidence_kind": evidence_kind,
+                    "review_priority": review_priority,
+                    "review_basis": basis,
+                    **row,
+                }
+            )
+
+    evidence_root = report_root / MATERIAL_DELTA_EVIDENCE_DIR
+    if evidence_root.exists():
+        shutil.rmtree(evidence_root)
+    evidence_root.mkdir(parents=True, exist_ok=True)
+    semantic_fields = [
+        "relation", "context_id", "domain", "priority", "pair_id", "candidate_token",
+        "counterpart_token", "source_archive_path", "target_archive_path",
+        "source_member_name", "target_member_name", "parameter_name", "buffer_type",
+        "buffer_count", "source_shader_block_index", "target_shader_block_index",
+        "source_parameter_index", "target_parameter_index", "source_value_text",
+        "target_value_text", "source_value_hex", "target_value_hex", "classification",
+        "matching_basis", "normalized_distance", "keyword_hits", "review_status",
+    ]
+    three_way_fields = [
+        "context_id", "domain", "priority", "pair_id", "candidate_token",
+        "counterpart_token", "original_base_archive_path", "quartet_base_archive_path",
+        "quartet_variant_archive_path", "original_base_member_name",
+        "quartet_base_member_name", "quartet_variant_member_name", "parameter_name",
+        "buffer_type", "buffer_count", "original_base_count", "quartet_base_count",
+        "quartet_variant_count", "original_base_values", "quartet_base_values",
+        "quartet_variant_values", "original_base_value_hex", "quartet_base_value_hex",
+        "quartet_variant_value_hex", "classification", "keyword_hits", "review_status",
+    ]
+    write_tsv(
+        evidence_root / "SEMANTIC_PARAMETER_DIFF.tsv",
+        semantic_fields,
+        sorted(
+            semantic_rows,
+            key=lambda row: (
+                str(row["relation"]), str(row["domain"]), str(row["context_id"]),
+                str(row["target_member_name"] or row["source_member_name"]).casefold(),
+                str(row["parameter_name"]).casefold(), str(row["source_value_text"]),
+            ),
+        ),
+    )
+    write_tsv(
+        evidence_root / "THREE_WAY_VARIANT_PARAMETERS.tsv",
+        three_way_fields,
+        sorted(
+            three_way_rows,
+            key=lambda row: (
+                0 if row["classification"] in {"variant_specific_change", "variant_only_parameter"} else 1,
+                str(row["domain"]), str(row["candidate_token"]).casefold(),
+                str(row["quartet_variant_member_name"]).casefold(),
+                str(row["parameter_name"]).casefold(),
+            ),
+        ),
+    )
+    focused_fields = list(dict.fromkeys(
+        ["evidence_kind", "review_priority", "review_basis"]
+        + semantic_fields + three_way_fields
+    ))
+    write_tsv(
+        evidence_root / "FOCUSED_MATERIAL_REVIEW.tsv",
+        focused_fields,
+        sorted(
+            focused_rows,
+            key=lambda row: (
+                {"critical": 0, "high": 1, "medium": 2, "low": 3}.get(str(row["review_priority"]), 9),
+                str(row.get("domain", "")), str(row.get("candidate_token", "")).casefold(),
+                str(row.get("parameter_name", "")).casefold(),
+            ),
+        ),
+    )
+    write_tsv(
+        evidence_root / "MATERIAL_DELTA_SCAN_SKIPPED.tsv",
+        ["context", "side", "pair_id", "archive", "path", "member_name", "reason"],
+        skipped_rows,
+    )
+
+    three_way_counts = Counter(str(row["classification"]) for row in three_way_rows)
+    focused_counts = Counter(str(row["review_priority"]) for row in focused_rows)
+    high_value_rows = [
+        row for row in focused_rows
+        if str(row.get("parameter_name", "")).casefold() in MATERIAL_HIGH_VALUE_PARAMETERS
+    ]
+    summary = {
+        "type": "br_quartet_restoration_material_delta_evidence_summary",
+        "format_version": FORMAT_VERSION,
+        "tool_version": TOOL_VERSION,
+        "source_material_report_tool_version": material_summary.get("tool_version"),
+        "status": "semantic_and_three_way_material_review_complete_manual_confirmation_required",
+        "semantic_parameter_difference_rows": len(semantic_rows),
+        "semantic_parameter_classifications": dict(sorted(semantic_counts.items())),
+        "three_way_variant_rows": len(three_way_rows),
+        "three_way_variant_classifications": dict(sorted(three_way_counts.items())),
+        "focused_review_rows": len(focused_rows),
+        "focused_review_priorities": dict(sorted(focused_counts.items())),
+        "high_value_alpha_transparency_refraction_rows": len(high_value_rows),
+        "skipped_rows": len(skipped_rows),
+        "analysis_scope": [
+            "semantic_parameter_matching_independent_of_shader_block_index",
+            "Original_base_vs_Quartet_base_parameter_comparison",
+            "Quartet_base_vs_Quartet_only_variant_parameter_comparison",
+            "three_way_Original_base_Quartet_base_Quartet_variant_multiset_classification",
+            "steam_water_wet_fabric_alpha_transparency_and_refraction_review_queue",
+        ],
+        "policy": {
+            "installed_games_modified": False,
+            "proprietary_geometry_or_texture_payloads_in_report": False,
+            "technical_parameter_names_and_numeric_values_only": True,
+            "automatic_censorship_claims": False,
+            "legacy_dlc_in_scope": False,
+        },
+        "next_action": (
+            "Upload the material-delta evidence archive. Use variant-specific and Original-to-Quartet "
+            "parameter classifications to select controlled wet-material prototypes; unresolved steam "
+            "and water behavior should proceed to the changed G1S/effect/post-effect formats rather than "
+            "being inferred from generic G1M mesh-blend additions."
+        ),
+    }
+    atomic_json(evidence_root / "SUMMARY.json", summary)
+    output = report_root / MATERIAL_DELTA_REPORT_NAME
+    make_report_archive(evidence_root, output)
+    return output, summary
+
+
+
+RENDER_IDENTIFIER_RE = re.compile(rb"[A-Za-z_][A-Za-z0-9_./:\\-]{3,127}")
+RENDER_MEMBER_EXTENSIONS = {".g1e", ".g1em", ".g1s", ".kps", ".opl2", ".bin"}
+RENDER_FOCUS_KEYWORDS = (
+    "steam", "vapor", "mist", "fog", "smoke", "water", "wet", "alpha",
+    "opacity", "trans", "blend", "reflect", "refract", "caustic", "depth",
+    "density", "particle", "spray", "droplet", "distort", "mask",
+)
+DXBC_STAGE_NAMES = {
+    0: "pixel",
+    1: "vertex",
+    2: "geometry",
+    3: "hull",
+    4: "domain",
+    5: "compute",
+}
+
+
+def _decode_ascii_identifier(raw: bytes) -> str:
+    return raw.decode("ascii", errors="replace")
+
+
+def extract_render_identifiers(
+    payload: bytes,
+    *,
+    keywords: Sequence[str],
+    maximum_identifiers: int = 4096,
+) -> list[dict[str, Any]]:
+    """Return focused ASCII identifiers without exporting surrounding payload bytes."""
+    wanted = tuple(sorted({item.casefold() for item in (*keywords, *RENDER_FOCUS_KEYWORDS)}))
+    rows: list[dict[str, Any]] = []
+    for match in RENDER_IDENTIFIER_RE.finditer(payload):
+        token = _decode_ascii_identifier(match.group(0))
+        folded = token.casefold()
+        hits = [item for item in wanted if item in folded]
+        if not hits:
+            continue
+        rows.append(
+            {
+                "token": token,
+                "token_key": folded,
+                "offset": match.start(),
+                "keyword_hits": ",".join(hits),
+            }
+        )
+        if len(rows) >= maximum_identifiers:
+            break
+    return rows
+
+
+def nearby_float_candidates(
+    payload: bytes,
+    *,
+    start: int,
+    end: int,
+    window: int = 64,
+    maximum_values: int = 24,
+) -> list[str]:
+    """Collect bounded float32 candidates near an identifier; these are not decoded fields."""
+    lower = max(0, start - window)
+    upper = min(len(payload), end + window)
+    lower -= lower % 4
+    values: list[str] = []
+    seen: set[str] = set()
+    for offset in range(lower, max(lower, upper - 3), 4):
+        if offset < end and offset + 4 > start:
+            continue
+        value = struct.unpack_from("<f", payload, offset)[0]
+        if not math.isfinite(value) or abs(value) > 10000:
+            continue
+        if value != 0.0 and abs(value) < 1e-6:
+            continue
+        formatted = _format_float(value)
+        if formatted in seen:
+            continue
+        seen.add(formatted)
+        values.append(formatted)
+        if len(values) >= maximum_values:
+            break
+    return values
+
+
+def summarize_render_tokens(
+    payload: bytes,
+    *,
+    keywords: Sequence[str],
+) -> dict[str, dict[str, Any]]:
+    grouped: dict[str, dict[str, Any]] = {}
+    for row in extract_render_identifiers(payload, keywords=keywords):
+        key = str(row["token_key"])
+        item = grouped.setdefault(
+            key,
+            {
+                "token": row["token"],
+                "count": 0,
+                "offsets": [],
+                "keyword_hits": set(),
+                "nearby_float_values": set(),
+            },
+        )
+        item["count"] += 1
+        if len(item["offsets"]) < 8:
+            item["offsets"].append(row["offset"])
+        item["keyword_hits"].update(split_csv_field(str(row["keyword_hits"])))
+        match_start = int(row["offset"])
+        match_end = match_start + len(str(row["token"]).encode("ascii", errors="ignore"))
+        item["nearby_float_values"].update(
+            nearby_float_candidates(payload, start=match_start, end=match_end)
+        )
+    for item in grouped.values():
+        item["keyword_hits"] = ",".join(sorted(item["keyword_hits"], key=str.casefold))
+        item["nearby_float_values"] = " || ".join(
+            sorted(item["nearby_float_values"], key=lambda value: (len(value), value))[:24]
+        )
+        item["offsets"] = ",".join(str(value) for value in item["offsets"])
+    return grouped
+
+
+def parse_dxbc_program(payload: bytes, offset: int, *, label: str = "<memory>") -> dict[str, Any] | None:
+    """Parse one embedded Direct3D bytecode container conservatively by its DXBC envelope."""
+    if offset < 0 or offset + 32 > len(payload) or payload[offset : offset + 4] != b"DXBC":
+        return None
+    try:
+        unknown, total_size, chunk_count = struct.unpack_from("<3I", payload, offset + 20)
+    except struct.error:
+        return None
+    if total_size < 32 or chunk_count > 4096:
+        return None
+    table_end = offset + 32 + chunk_count * 4
+    blob_end = offset + total_size
+    if table_end > blob_end or blob_end > len(payload):
+        return None
+    chunk_offsets = struct.unpack_from(f"<{chunk_count}I", payload, offset + 32) if chunk_count else ()
+    chunks: list[dict[str, Any]] = []
+    stage = "unknown"
+    shader_model = ""
+    resource_tokens: set[str] = set()
+    for index, relative in enumerate(chunk_offsets):
+        chunk_start = offset + relative
+        if relative + 8 > total_size or chunk_start + 8 > blob_end:
+            return None
+        fourcc_raw = payload[chunk_start : chunk_start + 4]
+        fourcc = fourcc_raw.decode("ascii", errors="replace")
+        chunk_size = struct.unpack_from("<I", payload, chunk_start + 4)[0]
+        chunk_end = chunk_start + 8 + chunk_size
+        if chunk_end > blob_end:
+            return None
+        chunk_payload = payload[chunk_start + 8 : chunk_end]
+        if fourcc in {"SHDR", "SHEX"} and len(chunk_payload) >= 4:
+            version = struct.unpack_from("<I", chunk_payload, 0)[0]
+            stage_code = (version >> 16) & 0xFFFF
+            major = (version >> 4) & 0xF
+            minor = version & 0xF
+            stage = DXBC_STAGE_NAMES.get(stage_code, f"type_{stage_code}")
+            shader_model = f"{major}_{minor}"
+        if fourcc in {"RDEF", "ISGN", "OSGN", "OSG5", "PCSG", "PSG1"}:
+            for match in RENDER_IDENTIFIER_RE.finditer(chunk_payload):
+                token = _decode_ascii_identifier(match.group(0))
+                if len(token) <= 96:
+                    resource_tokens.add(token)
+        chunks.append(
+            {
+                "index": index,
+                "fourcc": fourcc,
+                "size": chunk_size,
+                "sha256": hashlib.sha256(chunk_payload).hexdigest(),
+            }
+        )
+    blob = payload[offset:blob_end]
+    return {
+        "label": label,
+        "offset": offset,
+        "size": total_size,
+        "unknown": unknown,
+        "chunk_count": chunk_count,
+        "chunk_fourccs": ",".join(str(row["fourcc"]) for row in chunks),
+        "chunk_sizes": ",".join(str(row["size"]) for row in chunks),
+        "stage": stage,
+        "shader_model": shader_model,
+        "resource_tokens": " || ".join(sorted(resource_tokens, key=str.casefold)[:128]),
+        "sha256": hashlib.sha256(blob).hexdigest(),
+        "chunks": chunks,
+    }
+
+
+def find_dxbc_programs(payload: bytes, *, label: str = "<memory>") -> list[dict[str, Any]]:
+    programs: list[dict[str, Any]] = []
+    cursor = 0
+    while True:
+        offset = payload.find(b"DXBC", cursor)
+        if offset < 0:
+            break
+        parsed = parse_dxbc_program(payload, offset, label=label)
+        if parsed is None:
+            cursor = offset + 4
+            continue
+        parsed["program_index"] = len(programs)
+        programs.append(parsed)
+        cursor = max(offset + 4, offset + int(parsed["size"]))
+    return programs
+
+
+def compare_dxbc_programs(
+    source: Sequence[dict[str, Any]],
+    target: Sequence[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    used_source: set[int] = set()
+    used_target: set[int] = set()
+
+    target_by_hash: dict[str, list[int]] = defaultdict(list)
+    for index, row in enumerate(target):
+        target_by_hash[str(row.get("sha256", ""))].append(index)
+    for source_index, source_row in enumerate(source):
+        matches = target_by_hash.get(str(source_row.get("sha256", "")), [])
+        target_index = next((value for value in matches if value not in used_target), None)
+        if target_index is None:
+            continue
+        used_source.add(source_index)
+        used_target.add(target_index)
+
+    source_groups: dict[tuple[str, str], list[int]] = defaultdict(list)
+    target_groups: dict[tuple[str, str], list[int]] = defaultdict(list)
+    for index, row in enumerate(source):
+        if index not in used_source:
+            source_groups[(str(row.get("stage", "")), str(row.get("chunk_fourccs", "")))].append(index)
+    for index, row in enumerate(target):
+        if index not in used_target:
+            target_groups[(str(row.get("stage", "")), str(row.get("chunk_fourccs", "")))].append(index)
+
+    for signature in sorted(set(source_groups) | set(target_groups)):
+        left = sorted(source_groups.get(signature, []), key=lambda i: int(source[i].get("size", 0)))
+        right = sorted(target_groups.get(signature, []), key=lambda i: int(target[i].get("size", 0)))
+        while left and right:
+            source_index = left.pop(0)
+            source_size = int(source[source_index].get("size", 0))
+            best_position = min(
+                range(len(right)),
+                key=lambda pos: abs(int(target[right[pos]].get("size", 0)) - source_size),
+            )
+            target_index = right.pop(best_position)
+            used_source.add(source_index)
+            used_target.add(target_index)
+            rows.append(
+                {
+                    "source_program_index": source[source_index].get("program_index", source_index),
+                    "target_program_index": target[target_index].get("program_index", target_index),
+                    "source_stage": source[source_index].get("stage", ""),
+                    "target_stage": target[target_index].get("stage", ""),
+                    "source_shader_model": source[source_index].get("shader_model", ""),
+                    "target_shader_model": target[target_index].get("shader_model", ""),
+                    "source_size": source[source_index].get("size", ""),
+                    "target_size": target[target_index].get("size", ""),
+                    "source_sha256": source[source_index].get("sha256", ""),
+                    "target_sha256": target[target_index].get("sha256", ""),
+                    "source_chunk_fourccs": source[source_index].get("chunk_fourccs", ""),
+                    "target_chunk_fourccs": target[target_index].get("chunk_fourccs", ""),
+                    "source_resource_tokens": source[source_index].get("resource_tokens", ""),
+                    "target_resource_tokens": target[target_index].get("resource_tokens", ""),
+                    "classification": "changed_same_stage_and_chunk_layout",
+                    "matching_basis": "stage_chunk_layout_nearest_size",
+                }
+            )
+
+    for index, row in enumerate(source):
+        if index in used_source:
+            continue
+        rows.append(
+            {
+                "source_program_index": row.get("program_index", index),
+                "target_program_index": "",
+                "source_stage": row.get("stage", ""),
+                "target_stage": "",
+                "source_shader_model": row.get("shader_model", ""),
+                "target_shader_model": "",
+                "source_size": row.get("size", ""),
+                "target_size": "",
+                "source_sha256": row.get("sha256", ""),
+                "target_sha256": "",
+                "source_chunk_fourccs": row.get("chunk_fourccs", ""),
+                "target_chunk_fourccs": "",
+                "source_resource_tokens": row.get("resource_tokens", ""),
+                "target_resource_tokens": "",
+                "classification": "removed_in_target",
+                "matching_basis": "unmatched_program",
+            }
+        )
+    for index, row in enumerate(target):
+        if index in used_target:
+            continue
+        rows.append(
+            {
+                "source_program_index": "",
+                "target_program_index": row.get("program_index", index),
+                "source_stage": "",
+                "target_stage": row.get("stage", ""),
+                "source_shader_model": "",
+                "target_shader_model": row.get("shader_model", ""),
+                "source_size": "",
+                "target_size": row.get("size", ""),
+                "source_sha256": "",
+                "target_sha256": row.get("sha256", ""),
+                "source_chunk_fourccs": "",
+                "target_chunk_fourccs": row.get("chunk_fourccs", ""),
+                "source_resource_tokens": "",
+                "target_resource_tokens": row.get("resource_tokens", ""),
+                "classification": "added_in_target",
+                "matching_basis": "unmatched_program",
+            }
+        )
+    return rows
+
+
+def analyze_render_payload(payload: bytes, *, label: str, keywords: Sequence[str]) -> dict[str, Any]:
+    tokens = summarize_render_tokens(payload, keywords=keywords)
+    programs = find_dxbc_programs(payload, label=label)
+    return {
+        "size": len(payload),
+        "sha256": hashlib.sha256(payload).hexdigest(),
+        "magic_hex": payload[:16].hex(),
+        "technical_tokens": tokens,
+        "dxbc_programs": programs,
+    }
+
+
+def compare_render_tokens(
+    source: dict[str, dict[str, Any]],
+    target: dict[str, dict[str, Any]],
+) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for key in sorted(set(source) | set(target), key=str.casefold):
+        left = source.get(key)
+        right = target.get(key)
+        if left and right:
+            if int(left["count"]) != int(right["count"]):
+                classification = "count_changed"
+            elif str(left["nearby_float_values"]) != str(right["nearby_float_values"]):
+                classification = "nearby_float_candidates_changed"
+            else:
+                continue
+        elif left:
+            classification = "removed_in_target"
+        else:
+            classification = "added_in_target"
+        rows.append(
+            {
+                "token_key": key,
+                "source_token": (left or {}).get("token", ""),
+                "target_token": (right or {}).get("token", ""),
+                "source_count": (left or {}).get("count", 0),
+                "target_count": (right or {}).get("count", 0),
+                "source_offsets": (left or {}).get("offsets", ""),
+                "target_offsets": (right or {}).get("offsets", ""),
+                "source_nearby_float_candidates": (left or {}).get("nearby_float_values", ""),
+                "target_nearby_float_candidates": (right or {}).get("nearby_float_values", ""),
+                "keyword_hits": ",".join(
+                    sorted(
+                        set(split_csv_field(str((left or {}).get("keyword_hits", ""))))
+                        | set(split_csv_field(str((right or {}).get("keyword_hits", "")))),
+                        key=str.casefold,
+                    )
+                ),
+                "classification": classification,
+                "review_status": "binary_identifier_and_nearby_float_candidates_not_decoded_parameters",
+            }
+        )
+    return rows
+
+
+def _shader_effect_priority(row: dict[str, Any]) -> tuple[str, str]:
+    domain = str(row.get("domain", ""))
+    evidence_kind = str(row.get("evidence_kind", ""))
+    token = str(row.get("target_token") or row.get("source_token") or "").casefold()
+    direct = any(item in token for item in ("alpha", "opacity", "trans", "refract", "water", "steam", "fog", "wet"))
+    if evidence_kind == "shader" and domain in {"water_visibility", "steam_or_vapor_occlusion"}:
+        return "critical", "changed_focused_G1S_shader"
+    if direct:
+        return "critical", "direct_render_behavior_identifier"
+    if str(row.get("classification", "")) in {"added_in_target", "removed_in_target"}:
+        return "high", "added_or_removed_effect_program_or_identifier"
+    return "high", "changed_effect_or_posteffect_structure"
+
+
+def collect_shader_effect_evidence(
+    *,
+    project_root: Path,
+    workspace_root: Path,
+    report_root: Path,
+    rules_file: Path,
+    maximum_earc_bytes: int,
+    maximum_payload_bytes: int,
+) -> tuple[Path, dict[str, Any]]:
+    material_summary_path = report_root / MATERIAL_DELTA_EVIDENCE_DIR / "SUMMARY.json"
+    material_summary = load_json(material_summary_path)
+    if material_summary.get("type") != "br_quartet_restoration_material_delta_evidence_summary":
+        raise RestorationError(f"Not a material-delta evidence report: {material_summary_path}")
+
+    differences = load_report_jsons(report_root, "differences")
+    effects = build_effect_material_candidates(
+        differences, load_effect_material_rules(rules_file)
+    )
+    if not effects:
+        raise RestorationError("No focused scene/effect/shader candidates matched the inventory")
+
+    payload_rows: list[dict[str, Any]] = []
+    dxbc_rows: list[dict[str, Any]] = []
+    dxbc_diff_rows: list[dict[str, Any]] = []
+    token_diff_rows: list[dict[str, Any]] = []
+    focused_rows: list[dict[str, Any]] = []
+    skipped_rows: list[dict[str, Any]] = []
+    classification_counts: Counter[str] = Counter()
+    extension_counts: Counter[str] = Counter()
+    total_payload_bytes = 0
+
+    def record_pair(
+        *,
+        effect: dict[str, Any],
+        member_key: str,
+        source_name: str,
+        target_name: str,
+        source_payload: bytes | None,
+        target_payload: bytes | None,
+    ) -> None:
+        nonlocal total_payload_bytes
+        analyses: dict[str, dict[str, Any] | None] = {"source": None, "target": None}
+        for side, payload, member_name in (
+            ("source", source_payload, source_name),
+            ("target", target_payload, target_name),
+        ):
+            if payload is None:
+                continue
+            if len(payload) > maximum_payload_bytes:
+                skipped_rows.append(
+                    {
+                        "candidate_id": effect["candidate_id"],
+                        "side": side,
+                        "normalized_path": effect["normalized_path"],
+                        "member_key": member_key,
+                        "member_name": member_name,
+                        "reason": f"payload_exceeds_limit:{len(payload)}>{maximum_payload_bytes}",
+                    }
+                )
+                continue
+            analysis = analyze_render_payload(
+                payload,
+                label=f"{effect['normalized_path']}::{member_name or Path(str(effect['normalized_path'])).name}",
+                keywords=effect.get("keywords", []),
+            )
+            analyses[side] = analysis
+            total_payload_bytes += len(payload)
+            payload_rows.append(
+                {
+                    "candidate_id": effect["candidate_id"],
+                    "rule_id": effect["rule_id"],
+                    "domain": effect["domain"],
+                    "priority": effect["priority"],
+                    "evidence_kind": effect["evidence_kind"],
+                    "side": side,
+                    "normalized_path": effect["normalized_path"],
+                    "member_key": member_key,
+                    "member_name": member_name,
+                    "extension": Path(member_name or str(effect["normalized_path"])).suffix.casefold(),
+                    "payload_size": analysis["size"],
+                    "payload_sha256": analysis["sha256"],
+                    "magic_hex": analysis["magic_hex"],
+                    "technical_token_count": len(analysis["technical_tokens"]),
+                    "dxbc_program_count": len(analysis["dxbc_programs"]),
+                    "review_status": "focused_render_payload_metadata_only",
+                }
+            )
+            for program in analysis["dxbc_programs"]:
+                dxbc_rows.append(
+                    {
+                        "candidate_id": effect["candidate_id"],
+                        "domain": effect["domain"],
+                        "priority": effect["priority"],
+                        "evidence_kind": effect["evidence_kind"],
+                        "side": side,
+                        "normalized_path": effect["normalized_path"],
+                        "member_key": member_key,
+                        "member_name": member_name,
+                        "program_index": program["program_index"],
+                        "offset": program["offset"],
+                        "size": program["size"],
+                        "stage": program["stage"],
+                        "shader_model": program["shader_model"],
+                        "chunk_fourccs": program["chunk_fourccs"],
+                        "chunk_sizes": program["chunk_sizes"],
+                        "resource_tokens": program["resource_tokens"],
+                        "sha256": program["sha256"],
+                        "review_status": "embedded_DXBC_metadata_only",
+                    }
+                )
+
+        source_analysis = analyses["source"] or {"technical_tokens": {}, "dxbc_programs": []}
+        target_analysis = analyses["target"] or {"technical_tokens": {}, "dxbc_programs": []}
+        token_rows = compare_render_tokens(
+            source_analysis["technical_tokens"], target_analysis["technical_tokens"]
+        )
+        for row in token_rows:
+            full = {
+                "candidate_id": effect["candidate_id"],
+                "rule_id": effect["rule_id"],
+                "domain": effect["domain"],
+                "priority": effect["priority"],
+                "evidence_kind": effect["evidence_kind"],
+                "normalized_path": effect["normalized_path"],
+                "member_key": member_key,
+                "source_member_name": source_name,
+                "target_member_name": target_name,
+                **row,
+            }
+            token_diff_rows.append(full)
+            review_priority, basis = _shader_effect_priority(full)
+            focused_rows.append(
+                {
+                    "evidence_type": "technical_token_delta",
+                    "review_priority": review_priority,
+                    "review_basis": basis,
+                    **full,
+                }
+            )
+
+        program_rows = compare_dxbc_programs(
+            source_analysis["dxbc_programs"], target_analysis["dxbc_programs"]
+        )
+        for row in program_rows:
+            full = {
+                "candidate_id": effect["candidate_id"],
+                "rule_id": effect["rule_id"],
+                "domain": effect["domain"],
+                "priority": effect["priority"],
+                "evidence_kind": effect["evidence_kind"],
+                "normalized_path": effect["normalized_path"],
+                "member_key": member_key,
+                "source_member_name": source_name,
+                "target_member_name": target_name,
+                **row,
+                "review_status": "shader_program_difference_not_automatic_censorship_proof",
+            }
+            dxbc_diff_rows.append(full)
+            review_priority, basis = _shader_effect_priority(full)
+            focused_rows.append(
+                {
+                    "evidence_type": "DXBC_program_delta",
+                    "review_priority": review_priority,
+                    "review_basis": basis,
+                    **full,
+                }
+            )
+
+        if source_payload is None:
+            classification = "added_in_target"
+        elif target_payload is None:
+            classification = "removed_in_target"
+        elif hashlib.sha256(source_payload).digest() == hashlib.sha256(target_payload).digest():
+            classification = "identical"
+        else:
+            classification = "changed"
+        classification_counts[classification] += 1
+        extension_counts[Path(target_name or source_name or str(effect["normalized_path"])).suffix.casefold()] += 1
+        if classification != "identical" and not token_rows and not program_rows:
+            base = {
+                "candidate_id": effect["candidate_id"],
+                "rule_id": effect["rule_id"],
+                "domain": effect["domain"],
+                "priority": effect["priority"],
+                "evidence_kind": effect["evidence_kind"],
+                "normalized_path": effect["normalized_path"],
+                "member_key": member_key,
+                "source_member_name": source_name,
+                "target_member_name": target_name,
+                "classification": classification,
+                "review_status": "changed_render_payload_without_decoded_identifier_or_DXBC_delta",
+            }
+            review_priority, basis = _shader_effect_priority(base)
+            focused_rows.append(
+                {
+                    "evidence_type": "opaque_render_payload_delta",
+                    "review_priority": review_priority,
+                    "review_basis": basis,
+                    **base,
+                }
+            )
+
+    print(f"[shader-effect] focused candidates: {len(effects)}")
+    for index, effect in enumerate(effects, start=1):
+        normalized_path = str(effect["normalized_path"])
+        print(f"[shader-effect] {index}/{len(effects)} {normalized_path}")
+        refs = {"source": effect.get("source"), "target": effect.get("target")}
+        if normalized_path.casefold().endswith(".g1s"):
+            payloads: dict[str, bytes | None] = {"source": None, "target": None}
+            for side in ("source", "target"):
+                ref = refs[side]
+                if not ref:
+                    continue
+                local_path = inventory_workspace_file(
+                    workspace_root,
+                    side,
+                    str(effect["pair_id"]),
+                    str(ref.get("archive", "")),
+                    str(ref.get("path", "")),
+                )
+                if not local_path.is_file():
+                    skipped_rows.append(
+                        {
+                            "candidate_id": effect["candidate_id"],
+                            "side": side,
+                            "normalized_path": normalized_path,
+                            "member_key": "<direct>",
+                            "member_name": Path(normalized_path).name,
+                            "reason": "workspace_file_missing",
+                        }
+                    )
+                    continue
+                payloads[side] = local_path.read_bytes()
+            record_pair(
+                effect=effect,
+                member_key="<direct>",
+                source_name=Path(normalized_path).name if payloads["source"] is not None else "",
+                target_name=Path(normalized_path).name if payloads["target"] is not None else "",
+                source_payload=payloads["source"],
+                target_payload=payloads["target"],
+            )
+            continue
+        if not normalized_path.casefold().endswith((".elixir", ".elixir.gz")):
+            continue
+
+        archives: dict[str, dict[str, Any] | None] = {"source": None, "target": None}
+        for side in ("source", "target"):
+            ref = refs[side]
+            if not ref:
+                continue
+            local_path = inventory_workspace_file(
+                workspace_root,
+                side,
+                str(effect["pair_id"]),
+                str(ref.get("archive", "")),
+                str(ref.get("path", "")),
+            )
+            if not local_path.is_file():
+                skipped_rows.append(
+                    {
+                        "candidate_id": effect["candidate_id"],
+                        "side": side,
+                        "normalized_path": normalized_path,
+                        "member_key": "<archive>",
+                        "member_name": "",
+                        "reason": "workspace_file_missing",
+                    }
+                )
+                continue
+            try:
+                archives[side] = read_earc_archive(
+                    local_path,
+                    maximum_bytes=maximum_earc_bytes,
+                    include_member_payloads=True,
+                )
+            except RestorationError as exc:
+                skipped_rows.append(
+                    {
+                        "candidate_id": effect["candidate_id"],
+                        "side": side,
+                        "normalized_path": normalized_path,
+                        "member_key": "<archive>",
+                        "member_name": "",
+                        "reason": str(exc),
+                    }
+                )
+        source_members = {
+            str(row["comparison_key"]): row for row in (archives["source"] or {}).get("members", [])
+        }
+        target_members = {
+            str(row["comparison_key"]): row for row in (archives["target"] or {}).get("members", [])
+        }
+        for member_key in sorted(set(source_members) | set(target_members), key=str.casefold):
+            left = source_members.get(member_key)
+            right = target_members.get(member_key)
+            extension = str((right or left or {}).get("extension", ""))
+            if extension not in RENDER_MEMBER_EXTENSIONS:
+                continue
+            if left and right and str(left.get("sha256", "")) == str(right.get("sha256", "")):
+                continue
+            record_pair(
+                effect=effect,
+                member_key=member_key,
+                source_name=str((left or {}).get("name", "")),
+                target_name=str((right or {}).get("name", "")),
+                source_payload=(left or {}).get("payload"),
+                target_payload=(right or {}).get("payload"),
+            )
+
+    evidence_root = report_root / SHADER_EFFECT_EVIDENCE_DIR
+    if evidence_root.exists():
+        shutil.rmtree(evidence_root)
+    evidence_root.mkdir(parents=True, exist_ok=True)
+
+    payload_fields = [
+        "candidate_id", "rule_id", "domain", "priority", "evidence_kind", "side",
+        "normalized_path", "member_key", "member_name", "extension", "payload_size",
+        "payload_sha256", "magic_hex", "technical_token_count", "dxbc_program_count",
+        "review_status",
+    ]
+    dxbc_fields = [
+        "candidate_id", "domain", "priority", "evidence_kind", "side", "normalized_path",
+        "member_key", "member_name", "program_index", "offset", "size", "stage",
+        "shader_model", "chunk_fourccs", "chunk_sizes", "resource_tokens", "sha256",
+        "review_status",
+    ]
+    common_diff_fields = [
+        "candidate_id", "rule_id", "domain", "priority", "evidence_kind", "normalized_path",
+        "member_key", "source_member_name", "target_member_name",
+    ]
+    token_fields = common_diff_fields + [
+        "token_key", "source_token", "target_token", "source_count", "target_count",
+        "source_offsets", "target_offsets", "source_nearby_float_candidates",
+        "target_nearby_float_candidates", "keyword_hits", "classification", "review_status",
+    ]
+    program_diff_fields = common_diff_fields + [
+        "source_program_index", "target_program_index", "source_stage", "target_stage",
+        "source_shader_model", "target_shader_model", "source_size", "target_size",
+        "source_sha256", "target_sha256", "source_chunk_fourccs", "target_chunk_fourccs",
+        "source_resource_tokens", "target_resource_tokens", "classification",
+        "matching_basis", "review_status",
+    ]
+    focused_fields = list(dict.fromkeys(
+        ["evidence_type", "review_priority", "review_basis"]
+        + token_fields + program_diff_fields + ["classification"]
+    ))
+    write_tsv(
+        evidence_root / "RENDER_PAYLOADS.tsv",
+        payload_fields,
+        sorted(payload_rows, key=lambda row: (
+            str(row["domain"]), str(row["normalized_path"]).casefold(),
+            str(row["member_name"]).casefold(), str(row["side"]),
+        )),
+    )
+    write_tsv(
+        evidence_root / "EMBEDDED_DXBC_PROGRAMS.tsv",
+        dxbc_fields,
+        sorted(dxbc_rows, key=lambda row: (
+            str(row["domain"]), str(row["normalized_path"]).casefold(),
+            str(row["member_name"]).casefold(), str(row["side"]), int(row["program_index"]),
+        )),
+    )
+    write_tsv(
+        evidence_root / "DXBC_PROGRAM_DIFF.tsv",
+        program_diff_fields,
+        sorted(dxbc_diff_rows, key=lambda row: (
+            str(row["domain"]), str(row["normalized_path"]).casefold(),
+            str(row["target_member_name"] or row["source_member_name"]).casefold(),
+            str(row["classification"]),
+        )),
+    )
+    write_tsv(
+        evidence_root / "RENDER_TECHNICAL_TOKEN_DIFF.tsv",
+        token_fields,
+        sorted(token_diff_rows, key=lambda row: (
+            str(row["domain"]), str(row["normalized_path"]).casefold(),
+            str(row["target_member_name"] or row["source_member_name"]).casefold(),
+            str(row["token_key"]),
+        )),
+    )
+    write_tsv(
+        evidence_root / "FOCUSED_SHADER_EFFECT_REVIEW.tsv",
+        focused_fields,
+        sorted(focused_rows, key=lambda row: (
+            {"critical": 0, "high": 1, "medium": 2, "low": 3}.get(str(row["review_priority"]), 9),
+            str(row.get("domain", "")), str(row.get("normalized_path", "")).casefold(),
+            str(row.get("target_member_name") or row.get("source_member_name") or "").casefold(),
+        )),
+    )
+    write_tsv(
+        evidence_root / "SHADER_EFFECT_SCAN_SKIPPED.tsv",
+        ["candidate_id", "side", "normalized_path", "member_key", "member_name", "reason"],
+        skipped_rows,
+    )
+
+    dxbc_diff_counts = Counter(str(row["classification"]) for row in dxbc_diff_rows)
+    token_diff_counts = Counter(str(row["classification"]) for row in token_diff_rows)
+    focus_counts = Counter(str(row["review_priority"]) for row in focused_rows)
+    summary = {
+        "type": "br_quartet_restoration_shader_effect_evidence_summary",
+        "format_version": FORMAT_VERSION,
+        "tool_version": TOOL_VERSION,
+        "source_material_delta_tool_version": material_summary.get("tool_version"),
+        "status": "focused_shader_effect_posteffect_evidence_complete_manual_confirmation_required",
+        "focused_candidate_files": len(effects),
+        "render_payload_rows": len(payload_rows),
+        "render_pair_classifications": dict(sorted(classification_counts.items())),
+        "render_member_extensions": dict(sorted(extension_counts.items())),
+        "payload_bytes_analyzed": total_payload_bytes,
+        "embedded_dxbc_program_rows": len(dxbc_rows),
+        "dxbc_program_difference_rows": len(dxbc_diff_rows),
+        "dxbc_program_classifications": dict(sorted(dxbc_diff_counts.items())),
+        "technical_token_difference_rows": len(token_diff_rows),
+        "technical_token_classifications": dict(sorted(token_diff_counts.items())),
+        "focused_review_rows": len(focused_rows),
+        "focused_review_priorities": dict(sorted(focus_counts.items())),
+        "skipped_rows": len(skipped_rows),
+        "analysis_scope": [
+            "changed_water_and_heightfog_G1S_files",
+            "changed_G1E_G1EM_effect_members",
+            "changed_KPS_posteffect_members",
+            "embedded_DXBC_program_envelopes_and_resource_identifiers",
+            "focused_render_identifiers_and_bounded_nearby_float_candidates",
+        ],
+        "policy": {
+            "installed_games_modified": False,
+            "proprietary_shader_or_effect_payloads_in_report": False,
+            "technical_identifiers_hashes_offsets_and_numeric_candidates_only": True,
+            "nearby_float_candidates_are_not_decoded_parameters": True,
+            "automatic_censorship_claims": False,
+            "legacy_dlc_in_scope": False,
+        },
+        "material_delta_finding": (
+            "The 0.0.10 report shows mostly parameter-presence/count differences. Wet Rfl_W variants "
+            "change which materials carry fTranslucency/fRpAlphaThres; their retained numeric values "
+            "remain 0.829999983 and 0.75 rather than exposing one global opacity replacement value."
+        ),
+        "next_action": (
+            "Upload the shader/effect evidence archive. Use changed water/fog shader programs, G1E identifiers "
+            "and KPS post-effect deltas to select the smallest scene-specific restoration prototypes; do not "
+            "replace complete remastered scene or character archives without in-game confirmation."
+        ),
+    }
+    atomic_json(evidence_root / "SUMMARY.json", summary)
+    output = report_root / SHADER_EFFECT_REPORT_NAME
+    make_report_archive(evidence_root, output)
+    return output, summary
+
+
+
+DXBC_CODE_FOURCCS = {"SHDR", "SHEX"}
+DXBC_SIGNATURE_FOURCCS = {"ISGN", "OSGN", "OSG5", "PCSG", "PSG1"}
+
+
+def parse_dxbc_chunk_payloads(payload: bytes, program: dict[str, Any]) -> list[dict[str, Any]]:
+    """Return internal DXBC chunk payloads for local analysis only."""
+    offset = int(program.get("offset", 0))
+    total_size = int(program.get("size", 0))
+    if offset < 0 or total_size < 32 or offset + total_size > len(payload):
+        raise RestorationError("DXBC program bounds are invalid")
+    chunk_count = struct.unpack_from("<I", payload, offset + 28)[0]
+    if chunk_count > 4096 or offset + 32 + chunk_count * 4 > offset + total_size:
+        raise RestorationError("DXBC chunk table is invalid")
+    rel_offsets = struct.unpack_from(f"<{chunk_count}I", payload, offset + 32) if chunk_count else ()
+    occurrence: Counter[str] = Counter()
+    rows: list[dict[str, Any]] = []
+    for index, relative in enumerate(rel_offsets):
+        chunk_start = offset + relative
+        if relative + 8 > total_size or chunk_start + 8 > offset + total_size:
+            raise RestorationError("DXBC chunk header exceeds program")
+        fourcc = payload[chunk_start : chunk_start + 4].decode("ascii", errors="replace")
+        size = struct.unpack_from("<I", payload, chunk_start + 4)[0]
+        chunk_end = chunk_start + 8 + size
+        if chunk_end > offset + total_size:
+            raise RestorationError("DXBC chunk payload exceeds program")
+        chunk_payload = payload[chunk_start + 8 : chunk_end]
+        count = occurrence[fourcc]
+        occurrence[fourcc] += 1
+        rows.append(
+            {
+                "index": index,
+                "comparison_key": f"{fourcc}#{count}",
+                "fourcc": fourcc,
+                "occurrence": count,
+                "size": size,
+                "sha256": hashlib.sha256(chunk_payload).hexdigest(),
+                "payload": chunk_payload,
+            }
+        )
+    return rows
+
+
+def parse_dxbc_instruction_stream(chunk_payload: bytes) -> dict[str, Any]:
+    """Parse DXBC instruction envelopes conservatively without decoding operands."""
+    if len(chunk_payload) < 4 or len(chunk_payload) % 4:
+        return {
+            "status": "unaligned_or_too_small",
+            "version_token": "",
+            "declared_dwords": "",
+            "dword_count": len(chunk_payload) // 4,
+            "instructions": [],
+        }
+    dwords = list(struct.unpack(f"<{len(chunk_payload) // 4}I", chunk_payload))
+    version_token = dwords[0]
+    declared = dwords[1] if len(dwords) >= 2 else 0
+    start = 2 if 2 <= declared <= len(dwords) else 1
+    rows: list[dict[str, Any]] = []
+    cursor = start
+    status = "ok"
+    while cursor < len(dwords):
+        token = dwords[cursor]
+        opcode = token & 0x7FF
+        length = (token >> 24) & 0x7F
+        if length == 0:
+            length = 1
+        if cursor + length > len(dwords):
+            status = "truncated_instruction_envelope"
+            length = len(dwords) - cursor
+        words = dwords[cursor : cursor + length]
+        packed = struct.pack(f"<{len(words)}I", *words)
+        float_candidates: list[str] = []
+        seen: set[str] = set()
+        for word in words[1:]:
+            value = struct.unpack("<f", struct.pack("<I", word))[0]
+            if not math.isfinite(value) or abs(value) > 10000:
+                continue
+            if value != 0.0 and abs(value) < 1e-6:
+                continue
+            formatted = _format_float(value)
+            if formatted not in seen:
+                seen.add(formatted)
+                float_candidates.append(formatted)
+            if len(float_candidates) >= 12:
+                break
+        rows.append(
+            {
+                "instruction_index": len(rows),
+                "dword_offset": cursor,
+                "opcode_id": opcode,
+                "length_dwords": length,
+                "token_sha256": hashlib.sha256(packed).hexdigest(),
+                "float_candidates": " || ".join(float_candidates),
+                "words": words,
+            }
+        )
+        cursor += max(1, length)
+        if status != "ok":
+            break
+    return {
+        "status": status,
+        "version_token": f"0x{version_token:08x}",
+        "declared_dwords": declared,
+        "dword_count": len(dwords),
+        "instructions": rows,
+    }
+
+
+def compare_dxbc_instruction_streams(
+    source_chunk: bytes | None,
+    target_chunk: bytes | None,
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    source = parse_dxbc_instruction_stream(source_chunk or b"") if source_chunk is not None else {
+        "status": "missing", "instructions": [], "dword_count": 0, "declared_dwords": "", "version_token": ""
+    }
+    target = parse_dxbc_instruction_stream(target_chunk or b"") if target_chunk is not None else {
+        "status": "missing", "instructions": [], "dword_count": 0, "declared_dwords": "", "version_token": ""
+    }
+    left = list(source["instructions"])
+    right = list(target["instructions"])
+    left_keys = [(row["opcode_id"], row["length_dwords"]) for row in left]
+    right_keys = [(row["opcode_id"], row["length_dwords"]) for row in right]
+    matcher = difflib.SequenceMatcher(a=left_keys, b=right_keys, autojunk=False)
+    rows: list[dict[str, Any]] = []
+    unchanged = 0
+    token_changed = 0
+    inserted = 0
+    removed = 0
+    opcode_changed = 0
+
+    def append_pair(lrow: dict[str, Any] | None, rrow: dict[str, Any] | None, classification: str) -> None:
+        nonlocal token_changed, inserted, removed, opcode_changed
+        if classification == "same_opcode_tokens_changed":
+            token_changed += 1
+        elif classification == "inserted_in_target":
+            inserted += 1
+        elif classification == "removed_in_target":
+            removed += 1
+        elif classification == "opcode_or_length_changed":
+            opcode_changed += 1
+        rows.append(
+            {
+                "source_instruction_index": (lrow or {}).get("instruction_index", ""),
+                "target_instruction_index": (rrow or {}).get("instruction_index", ""),
+                "source_dword_offset": (lrow or {}).get("dword_offset", ""),
+                "target_dword_offset": (rrow or {}).get("dword_offset", ""),
+                "source_opcode_id": (lrow or {}).get("opcode_id", ""),
+                "target_opcode_id": (rrow or {}).get("opcode_id", ""),
+                "source_length_dwords": (lrow or {}).get("length_dwords", ""),
+                "target_length_dwords": (rrow or {}).get("length_dwords", ""),
+                "source_token_sha256": (lrow or {}).get("token_sha256", ""),
+                "target_token_sha256": (rrow or {}).get("token_sha256", ""),
+                "source_float_candidates": (lrow or {}).get("float_candidates", ""),
+                "target_float_candidates": (rrow or {}).get("float_candidates", ""),
+                "classification": classification,
+                "review_status": "instruction_envelope_and_undecoded_literal_candidates_only",
+            }
+        )
+
+    for tag, i1, i2, j1, j2 in matcher.get_opcodes():
+        if tag == "equal":
+            for li, rj in zip(range(i1, i2), range(j1, j2)):
+                if left[li]["token_sha256"] == right[rj]["token_sha256"]:
+                    unchanged += 1
+                else:
+                    append_pair(left[li], right[rj], "same_opcode_tokens_changed")
+            continue
+        if tag == "delete":
+            for li in range(i1, i2):
+                append_pair(left[li], None, "removed_in_target")
+            continue
+        if tag == "insert":
+            for rj in range(j1, j2):
+                append_pair(None, right[rj], "inserted_in_target")
+            continue
+        paired = min(i2 - i1, j2 - j1)
+        for offset in range(paired):
+            append_pair(left[i1 + offset], right[j1 + offset], "opcode_or_length_changed")
+        for li in range(i1 + paired, i2):
+            append_pair(left[li], None, "removed_in_target")
+        for rj in range(j1 + paired, j2):
+            append_pair(None, right[rj], "inserted_in_target")
+
+    summary = {
+        "source_parse_status": source["status"],
+        "target_parse_status": target["status"],
+        "source_instruction_count": len(left),
+        "target_instruction_count": len(right),
+        "unchanged_instruction_count": unchanged,
+        "same_opcode_tokens_changed": token_changed,
+        "inserted_instruction_count": inserted,
+        "removed_instruction_count": removed,
+        "opcode_or_length_changed": opcode_changed,
+        "source_dword_count": source.get("dword_count", 0),
+        "target_dword_count": target.get("dword_count", 0),
+        "source_declared_dwords": source.get("declared_dwords", ""),
+        "target_declared_dwords": target.get("declared_dwords", ""),
+        "source_version_token": source.get("version_token", ""),
+        "target_version_token": target.get("version_token", ""),
+    }
+    return summary, rows
+
+
+def compare_dxbc_chunks(
+    source_payload: bytes | None,
+    target_payload: bytes | None,
+    source_program: dict[str, Any] | None,
+    target_program: dict[str, Any] | None,
+) -> tuple[list[dict[str, Any]], dict[str, Any], list[dict[str, Any]]]:
+    source_chunks = {
+        row["comparison_key"]: row
+        for row in (parse_dxbc_chunk_payloads(source_payload, source_program) if source_payload is not None and source_program else [])
+    }
+    target_chunks = {
+        row["comparison_key"]: row
+        for row in (parse_dxbc_chunk_payloads(target_payload, target_program) if target_payload is not None and target_program else [])
+    }
+    chunk_rows: list[dict[str, Any]] = []
+    instruction_rows: list[dict[str, Any]] = []
+    instruction_summary: dict[str, Any] = {}
+    changed_fourccs: list[str] = []
+    identical_fourccs: list[str] = []
+    resource_changed = False
+    signature_changed = False
+    code_changed = False
+    stat_changed = False
+    for key in sorted(set(source_chunks) | set(target_chunks), key=str.casefold):
+        left = source_chunks.get(key)
+        right = target_chunks.get(key)
+        if left and right:
+            classification = "identical" if left["sha256"] == right["sha256"] else "changed"
+        elif left:
+            classification = "removed_in_target"
+        else:
+            classification = "added_in_target"
+        fourcc = str((right or left or {}).get("fourcc", ""))
+        if classification == "identical":
+            identical_fourccs.append(fourcc)
+        else:
+            changed_fourccs.append(fourcc)
+        if fourcc == "RDEF" and classification != "identical":
+            resource_changed = True
+        if fourcc in DXBC_SIGNATURE_FOURCCS and classification != "identical":
+            signature_changed = True
+        if fourcc in DXBC_CODE_FOURCCS and classification != "identical":
+            code_changed = True
+            instruction_summary, instruction_rows = compare_dxbc_instruction_streams(
+                (left or {}).get("payload"), (right or {}).get("payload")
+            )
+        if fourcc == "STAT" and classification != "identical":
+            stat_changed = True
+        chunk_rows.append(
+            {
+                "chunk_key": key,
+                "fourcc": fourcc,
+                "source_size": (left or {}).get("size", ""),
+                "target_size": (right or {}).get("size", ""),
+                "source_sha256": (left or {}).get("sha256", ""),
+                "target_sha256": (right or {}).get("sha256", ""),
+                "classification": classification,
+                "review_status": "DXBC_chunk_metadata_only",
+            }
+        )
+    if not source_program:
+        structure = "program_added_in_target"
+    elif not target_program:
+        structure = "program_removed_in_target"
+    elif resource_changed:
+        structure = "resource_definition_delta"
+    elif signature_changed:
+        structure = "io_signature_delta"
+    elif code_changed:
+        structure = "code_delta_with_stable_resources_and_signatures"
+    elif stat_changed:
+        structure = "compiler_statistics_only_delta"
+    elif changed_fourccs:
+        structure = "noncode_metadata_delta"
+    else:
+        structure = "identical"
+    summary = {
+        "program_structure_classification": structure,
+        "changed_chunk_fourccs": ",".join(changed_fourccs),
+        "identical_chunk_fourccs": ",".join(identical_fourccs),
+        **instruction_summary,
+    }
+    return chunk_rows, summary, instruction_rows
+
+
+def _common_prefix_size(source: bytes, target: bytes) -> int:
+    limit = min(len(source), len(target))
+    index = 0
+    block = 4096
+    while index + block <= limit and source[index : index + block] == target[index : index + block]:
+        index += block
+    while index < limit and source[index] == target[index]:
+        index += 1
+    return index
+
+
+def _common_suffix_size(source: bytes, target: bytes, prefix: int) -> int:
+    limit = min(len(source), len(target)) - prefix
+    index = 0
+    block = 4096
+    while index + block <= limit and source[len(source)-index-block:len(source)-index] == target[len(target)-index-block:len(target)-index]:
+        index += block
+    while index < limit and source[len(source)-1-index] == target[len(target)-1-index]:
+        index += 1
+    return index
+
+
+def aligned_changed_ranges(source: bytes, target: bytes, *, merge_gap: int = 8, maximum_ranges: int = 256) -> list[tuple[int, int]]:
+    limit = min(len(source), len(target))
+    raw: list[tuple[int, int]] = []
+    start: int | None = None
+    for index in range(limit):
+        if source[index] != target[index]:
+            if start is None:
+                start = index
+        elif start is not None:
+            raw.append((start, index))
+            start = None
+    if start is not None:
+        raw.append((start, limit))
+    if len(source) != len(target):
+        raw.append((limit, max(len(source), len(target))))
+    merged: list[tuple[int, int]] = []
+    for start, end in raw:
+        if merged and start - merged[-1][1] <= merge_gap:
+            merged[-1] = (merged[-1][0], end)
+        else:
+            merged.append((start, end))
+        if len(merged) >= maximum_ranges:
+            break
+    return merged
+
+
+def undecoded_float_delta_candidates(source: bytes, target: bytes, *, maximum_values: int = 32) -> str:
+    limit = min(len(source), len(target))
+    values: list[str] = []
+    for offset in range(0, limit - 3, 4):
+        left_raw = source[offset : offset + 4]
+        right_raw = target[offset : offset + 4]
+        if left_raw == right_raw:
+            continue
+        left = struct.unpack("<f", left_raw)[0]
+        right = struct.unpack("<f", right_raw)[0]
+        if not math.isfinite(left) or not math.isfinite(right):
+            continue
+        if abs(left) > 10000 or abs(right) > 10000:
+            continue
+        if left != 0.0 and abs(left) < 1e-6:
+            continue
+        if right != 0.0 and abs(right) < 1e-6:
+            continue
+        values.append(f"0x{offset:x}:{_format_float(left)}->{_format_float(right)}")
+        if len(values) >= maximum_values:
+            break
+    return " || ".join(values)
+
+
+def analyze_payload_binary_delta(source: bytes | None, target: bytes | None, *, extension: str) -> dict[str, Any]:
+    if source is None:
+        return {
+            "classification": "added_in_target", "source_size": "", "target_size": len(target or b""),
+            "size_delta": len(target or b""), "common_prefix_bytes": 0, "common_suffix_bytes": 0,
+            "aligned_changed_bytes": len(target or b""), "changed_density": 1.0, "changed_range_count": 1,
+            "first_changed_ranges": f"0:{len(target or b'')}", "changed_dword_count": "",
+            "undecoded_float_delta_candidates": "", "delta_shape": "added", "delta_signature": "",
+        }
+    if target is None:
+        return {
+            "classification": "removed_in_target", "source_size": len(source), "target_size": "",
+            "size_delta": -len(source), "common_prefix_bytes": 0, "common_suffix_bytes": 0,
+            "aligned_changed_bytes": len(source), "changed_density": 1.0, "changed_range_count": 1,
+            "first_changed_ranges": f"0:{len(source)}", "changed_dword_count": "",
+            "undecoded_float_delta_candidates": "", "delta_shape": "removed", "delta_signature": "",
+        }
+    if source == target:
+        return {
+            "classification": "identical", "source_size": len(source), "target_size": len(target),
+            "size_delta": 0, "common_prefix_bytes": len(source), "common_suffix_bytes": 0,
+            "aligned_changed_bytes": 0, "changed_density": 0.0, "changed_range_count": 0,
+            "first_changed_ranges": "", "changed_dword_count": 0,
+            "undecoded_float_delta_candidates": "", "delta_shape": "identical", "delta_signature": "",
+        }
+    prefix = _common_prefix_size(source, target)
+    suffix = _common_suffix_size(source, target, prefix)
+    ranges = aligned_changed_ranges(source, target)
+    limit = min(len(source), len(target))
+    changed_aligned = sum(1 for index in range(limit) if source[index] != target[index])
+    changed_total = changed_aligned + abs(len(source) - len(target))
+    density = changed_total / max(len(source), len(target), 1)
+    changed_dwords = sum(
+        1 for offset in range(0, limit - 3, 4)
+        if source[offset : offset + 4] != target[offset : offset + 4]
+    )
+    if density <= 0.001:
+        density_bucket = "le_0.1pct"
+    elif density <= 0.01:
+        density_bucket = "le_1pct"
+    elif density <= 0.05:
+        density_bucket = "le_5pct"
+    elif density <= 0.25:
+        density_bucket = "le_25pct"
+    else:
+        density_bucket = "gt_25pct"
+    range_bucket = "1" if len(ranges) == 1 else "2_4" if len(ranges) <= 4 else "5_16" if len(ranges) <= 16 else "gt_16"
+    size_kind = "same_size" if len(source) == len(target) else "size_changed"
+    shape = f"{extension}|{size_kind}|{density_bucket}|ranges_{range_bucket}"
+    range_text_all = ",".join(f"{start}:{end-start}" for start, end in ranges)
+    signature_payload = f"{extension}|{len(target)-len(source)}|{range_text_all}".encode("utf-8")
+    return {
+        "classification": "changed",
+        "source_size": len(source),
+        "target_size": len(target),
+        "size_delta": len(target) - len(source),
+        "common_prefix_bytes": prefix,
+        "common_suffix_bytes": suffix,
+        "aligned_changed_bytes": changed_total,
+        "changed_density": f"{density:.9f}",
+        "changed_range_count": len(ranges),
+        "first_changed_ranges": ",".join(f"{start}:{end-start}" for start, end in ranges[:24]),
+        "changed_dword_count": changed_dwords,
+        "undecoded_float_delta_candidates": undecoded_float_delta_candidates(source, target),
+        "delta_shape": shape,
+        "delta_signature": hashlib.sha256(signature_payload).hexdigest(),
+    }
+
+
+def load_focused_render_pairs(
+    *,
+    workspace_root: Path,
+    report_root: Path,
+    rules_file: Path,
+    maximum_earc_bytes: int,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    differences = load_report_jsons(report_root, "differences")
+    effects = build_effect_material_candidates(differences, load_effect_material_rules(rules_file))
+    pairs: list[dict[str, Any]] = []
+    skipped: list[dict[str, Any]] = []
+    for effect in effects:
+        normalized_path = str(effect["normalized_path"])
+        refs = {"source": effect.get("source"), "target": effect.get("target")}
+        if normalized_path.casefold().endswith(".g1s"):
+            payloads: dict[str, bytes | None] = {"source": None, "target": None}
+            for side in ("source", "target"):
+                ref = refs[side]
+                if not ref:
+                    continue
+                local_path = inventory_workspace_file(
+                    workspace_root, side, str(effect["pair_id"]), str(ref.get("archive", "")), str(ref.get("path", ""))
+                )
+                if not local_path.is_file():
+                    skipped.append({"candidate_id": effect["candidate_id"], "side": side, "normalized_path": normalized_path, "member_key": "<direct>", "member_name": Path(normalized_path).name, "reason": "workspace_file_missing"})
+                    continue
+                payloads[side] = local_path.read_bytes()
+            pairs.append({**effect, "member_key": "<direct>", "source_member_name": Path(normalized_path).name if payloads["source"] is not None else "", "target_member_name": Path(normalized_path).name if payloads["target"] is not None else "", "source_payload": payloads["source"], "target_payload": payloads["target"]})
+            continue
+        if not normalized_path.casefold().endswith((".elixir", ".elixir.gz")):
+            continue
+        archives: dict[str, dict[str, Any] | None] = {"source": None, "target": None}
+        for side in ("source", "target"):
+            ref = refs[side]
+            if not ref:
+                continue
+            local_path = inventory_workspace_file(
+                workspace_root, side, str(effect["pair_id"]), str(ref.get("archive", "")), str(ref.get("path", ""))
+            )
+            if not local_path.is_file():
+                skipped.append({"candidate_id": effect["candidate_id"], "side": side, "normalized_path": normalized_path, "member_key": "<archive>", "member_name": "", "reason": "workspace_file_missing"})
+                continue
+            try:
+                archives[side] = read_earc_archive(local_path, maximum_bytes=maximum_earc_bytes, include_member_payloads=True)
+            except RestorationError as exc:
+                skipped.append({"candidate_id": effect["candidate_id"], "side": side, "normalized_path": normalized_path, "member_key": "<archive>", "member_name": "", "reason": str(exc)})
+        source_members = {str(row["comparison_key"]): row for row in (archives["source"] or {}).get("members", [])}
+        target_members = {str(row["comparison_key"]): row for row in (archives["target"] or {}).get("members", [])}
+        for member_key in sorted(set(source_members) | set(target_members), key=str.casefold):
+            left = source_members.get(member_key)
+            right = target_members.get(member_key)
+            extension = str((right or left or {}).get("extension", ""))
+            if extension not in RENDER_MEMBER_EXTENSIONS:
+                continue
+            if left and right and str(left.get("sha256", "")) == str(right.get("sha256", "")):
+                continue
+            pairs.append({**effect, "member_key": member_key, "source_member_name": str((left or {}).get("name", "")), "target_member_name": str((right or {}).get("name", "")), "source_payload": (left or {}).get("payload"), "target_payload": (right or {}).get("payload")})
+    return pairs, skipped
+
+
+def collect_binary_delta_evidence(
+    *,
+    project_root: Path,
+    workspace_root: Path,
+    report_root: Path,
+    rules_file: Path,
+    maximum_earc_bytes: int,
+    maximum_payload_bytes: int,
+) -> tuple[Path, dict[str, Any]]:
+    shader_summary_path = report_root / SHADER_EFFECT_EVIDENCE_DIR / "SUMMARY.json"
+    shader_summary = load_json(shader_summary_path)
+    if shader_summary.get("type") != "br_quartet_restoration_shader_effect_evidence_summary":
+        raise RestorationError(f"Not a shader/effect evidence report: {shader_summary_path}")
+    pairs, skipped_rows = load_focused_render_pairs(
+        workspace_root=workspace_root,
+        report_root=report_root,
+        rules_file=rules_file,
+        maximum_earc_bytes=maximum_earc_bytes,
+    )
+    payload_rows: list[dict[str, Any]] = []
+    chunk_rows: list[dict[str, Any]] = []
+    program_rows: list[dict[str, Any]] = []
+    instruction_rows: list[dict[str, Any]] = []
+    prototype_rows: list[dict[str, Any]] = []
+    total_bytes = 0
+
+    for index, pair in enumerate(pairs, start=1):
+        source_payload = pair.get("source_payload")
+        target_payload = pair.get("target_payload")
+        for side, payload in (("source", source_payload), ("target", target_payload)):
+            if payload is not None and len(payload) > maximum_payload_bytes:
+                skipped_rows.append({"candidate_id": pair["candidate_id"], "side": side, "normalized_path": pair["normalized_path"], "member_key": pair["member_key"], "member_name": pair.get(f"{side}_member_name", ""), "reason": f"payload_exceeds_limit:{len(payload)}>{maximum_payload_bytes}"})
+                if side == "source":
+                    source_payload = None
+                else:
+                    target_payload = None
+        if source_payload is None and target_payload is None:
+            continue
+        extension = Path(str(pair.get("target_member_name") or pair.get("source_member_name") or pair["normalized_path"])).suffix.casefold()
+        delta = analyze_payload_binary_delta(source_payload, target_payload, extension=extension)
+        total_bytes += len(source_payload or b"") + len(target_payload or b"")
+        base = {
+            "candidate_id": pair["candidate_id"], "rule_id": pair["rule_id"], "domain": pair["domain"],
+            "priority": pair["priority"], "evidence_kind": pair["evidence_kind"], "normalized_path": pair["normalized_path"],
+            "member_key": pair["member_key"], "source_member_name": pair.get("source_member_name", ""),
+            "target_member_name": pair.get("target_member_name", ""), "extension": extension,
+        }
+        payload_rows.append({**base, **delta, "review_status": "binary_delta_shape_and_undecoded_float_candidates_only"})
+
+        source_programs = find_dxbc_programs(source_payload or b"", label=str(pair.get("source_member_name", ""))) if source_payload is not None else []
+        target_programs = find_dxbc_programs(target_payload or b"", label=str(pair.get("target_member_name", ""))) if target_payload is not None else []
+        pair_program_rows: list[dict[str, Any]] = []
+        for program_delta in compare_dxbc_programs(source_programs, target_programs):
+            source_index = program_delta.get("source_program_index", "")
+            target_index = program_delta.get("target_program_index", "")
+            source_program = source_programs[int(source_index)] if source_index != "" else None
+            target_program = target_programs[int(target_index)] if target_index != "" else None
+            chunks, structure, instructions = compare_dxbc_chunks(source_payload, target_payload, source_program, target_program)
+            program_base = {
+                **base,
+                "source_program_index": source_index, "target_program_index": target_index,
+                "source_stage": program_delta.get("source_stage", ""), "target_stage": program_delta.get("target_stage", ""),
+                "source_shader_model": program_delta.get("source_shader_model", ""), "target_shader_model": program_delta.get("target_shader_model", ""),
+                "source_program_size": program_delta.get("source_size", ""), "target_program_size": program_delta.get("target_size", ""),
+                "source_resource_tokens": program_delta.get("source_resource_tokens", ""), "target_resource_tokens": program_delta.get("target_resource_tokens", ""),
+                "program_matching_basis": program_delta.get("matching_basis", ""),
+                **structure,
+                "review_status": "DXBC_chunk_and_instruction_envelope_metadata_only",
+            }
+            program_rows.append(program_base)
+            pair_program_rows.append(program_base)
+            for row in chunks:
+                chunk_rows.append({**base, "source_program_index": source_index, "target_program_index": target_index, **row})
+            for row in instructions:
+                instruction_rows.append({**base, "source_program_index": source_index, "target_program_index": target_index, **row})
+
+        density = float(delta.get("changed_density", 1.0) or 1.0)
+        if pair["evidence_kind"] == "shader" and pair_program_rows:
+            structures = {str(row["program_structure_classification"]) for row in pair_program_rows}
+            stable_code = structures <= {"code_delta_with_stable_resources_and_signatures", "identical"}
+            if stable_code:
+                action = "controlled_original_direct_shader_override_test"
+                risk = "medium"
+                basis = "direct water/fog shader keeps RDEF and IO signatures while executable code changes"
+            else:
+                action = "defer_direct_shader_until_binding_delta_is_understood"
+                risk = "high"
+                basis = "direct shader changes resource definitions, IO signatures or program inventory"
+            prototype_rows.append({**base, "prototype_action": action, "risk": risk, "evidence_basis": basis, "payload_delta_shape": delta["delta_shape"], "program_structures": ",".join(sorted(structures)), "review_status": "controlled_in_game_test_required_no_patch_generated"})
+        elif extension == ".kps":
+            prototype_rows.append({**base, "prototype_action": "defer_global_posteffect_member", "risk": "high", "evidence_basis": "posteffect pack has broad remaster changes and added unsharp-mask/HDR variants", "payload_delta_shape": delta["delta_shape"], "program_structures": ",".join(sorted({str(row["program_structure_classification"]) for row in pair_program_rows})), "review_status": "not_selected_for_restoration_without_scene_binding"})
+        elif extension in {".opl2", ".bin"} and delta["classification"] == "changed" and density <= 0.05:
+            prototype_rows.append({**base, "prototype_action": "controlled_scene_descriptor_probe", "risk": "medium", "evidence_basis": "small scene-specific binary delta in a critical pool/shower/bathroom candidate", "payload_delta_shape": delta["delta_shape"], "program_structures": "", "review_status": "controlled_in_game_test_required_no_patch_generated"})
+        elif extension in {".g1e", ".g1em"} and pair["priority"] == "critical" and delta["classification"] == "changed" and density <= 0.10:
+            prototype_rows.append({**base, "prototype_action": "controlled_scene_or_wet_effect_member_probe", "risk": "medium_high", "evidence_basis": "focused effect member has a comparatively small binary delta", "payload_delta_shape": delta["delta_shape"], "program_structures": "", "review_status": "cluster_review_required_before_test"})
+
+    clusters: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for row in payload_rows:
+        key = str(row.get("delta_signature") or f"{row['classification']}|{row['delta_shape']}")
+        clusters[key].append(row)
+    cluster_rows: list[dict[str, Any]] = []
+    cluster_id_by_key: dict[str, str] = {}
+    for key, members in clusters.items():
+        cluster_id = "delta_" + hashlib.sha256(key.encode("utf-8")).hexdigest()[:16]
+        cluster_id_by_key[key] = cluster_id
+        cluster_rows.append({
+            "cluster_id": cluster_id,
+            "member_count": len(members),
+            "classifications": ",".join(sorted({str(row["classification"]) for row in members})),
+            "extensions": ",".join(sorted({str(row["extension"]) for row in members})),
+            "domains": ",".join(sorted({str(row["domain"]) for row in members})),
+            "rules": ",".join(sorted({str(row["rule_id"]) for row in members})),
+            "delta_shapes": ",".join(sorted({str(row["delta_shape"]) for row in members})),
+            "size_deltas": ",".join(sorted({str(row["size_delta"]) for row in members})),
+            "example_members": " || ".join(str(row["target_member_name"] or row["source_member_name"]) for row in members[:8]),
+            "interpretation": "likely_shared_format_or_remaster_delta" if len(members) >= 8 else "small_or_unique_delta_cluster_manual_review",
+        })
+    for row in payload_rows:
+        key = str(row.get("delta_signature") or f"{row['classification']}|{row['delta_shape']}")
+        row["delta_cluster_id"] = cluster_id_by_key[key]
+        row["delta_cluster_size"] = len(clusters[key])
+
+    evidence_root = report_root / BINARY_DELTA_EVIDENCE_DIR
+    if evidence_root.exists():
+        shutil.rmtree(evidence_root)
+    evidence_root.mkdir(parents=True, exist_ok=True)
+    payload_fields = ["candidate_id", "rule_id", "domain", "priority", "evidence_kind", "normalized_path", "member_key", "source_member_name", "target_member_name", "extension", "classification", "source_size", "target_size", "size_delta", "common_prefix_bytes", "common_suffix_bytes", "aligned_changed_bytes", "changed_density", "changed_range_count", "first_changed_ranges", "changed_dword_count", "undecoded_float_delta_candidates", "delta_shape", "delta_signature", "delta_cluster_id", "delta_cluster_size", "review_status"]
+    write_tsv(evidence_root / "PAYLOAD_BINARY_DELTA.tsv", payload_fields, sorted(payload_rows, key=lambda row: (str(row["domain"]), str(row["normalized_path"]).casefold(), str(row["target_member_name"] or row["source_member_name"]).casefold())))
+    write_tsv(evidence_root / "PAYLOAD_DELTA_CLUSTERS.tsv", ["cluster_id", "member_count", "classifications", "extensions", "domains", "rules", "delta_shapes", "size_deltas", "example_members", "interpretation"], sorted(cluster_rows, key=lambda row: (-int(row["member_count"]), str(row["cluster_id"]))))
+    program_fields = ["candidate_id", "rule_id", "domain", "priority", "evidence_kind", "normalized_path", "member_key", "source_member_name", "target_member_name", "extension", "source_program_index", "target_program_index", "source_stage", "target_stage", "source_shader_model", "target_shader_model", "source_program_size", "target_program_size", "source_resource_tokens", "target_resource_tokens", "program_matching_basis", "program_structure_classification", "changed_chunk_fourccs", "identical_chunk_fourccs", "source_parse_status", "target_parse_status", "source_instruction_count", "target_instruction_count", "unchanged_instruction_count", "same_opcode_tokens_changed", "inserted_instruction_count", "removed_instruction_count", "opcode_or_length_changed", "source_dword_count", "target_dword_count", "source_declared_dwords", "target_declared_dwords", "source_version_token", "target_version_token", "review_status"]
+    write_tsv(evidence_root / "DXBC_PROGRAM_STRUCTURE.tsv", program_fields, sorted(program_rows, key=lambda row: (str(row["normalized_path"]).casefold(), str(row["target_member_name"] or row["source_member_name"]).casefold(), str(row["target_program_index"] or row["source_program_index"]))))
+    chunk_fields = ["candidate_id", "rule_id", "domain", "priority", "evidence_kind", "normalized_path", "member_key", "source_member_name", "target_member_name", "extension", "source_program_index", "target_program_index", "chunk_key", "fourcc", "source_size", "target_size", "source_sha256", "target_sha256", "classification", "review_status"]
+    write_tsv(evidence_root / "DXBC_CHUNK_DELTA.tsv", chunk_fields, sorted(chunk_rows, key=lambda row: (str(row["normalized_path"]).casefold(), str(row["target_member_name"] or row["source_member_name"]).casefold(), str(row["target_program_index"] or row["source_program_index"]), str(row["chunk_key"]))))
+    instruction_fields = ["candidate_id", "rule_id", "domain", "priority", "evidence_kind", "normalized_path", "member_key", "source_member_name", "target_member_name", "extension", "source_program_index", "target_program_index", "source_instruction_index", "target_instruction_index", "source_dword_offset", "target_dword_offset", "source_opcode_id", "target_opcode_id", "source_length_dwords", "target_length_dwords", "source_token_sha256", "target_token_sha256", "source_float_candidates", "target_float_candidates", "classification", "review_status"]
+    write_tsv(evidence_root / "DXBC_INSTRUCTION_DELTA.tsv", instruction_fields, instruction_rows)
+    prototype_fields = ["candidate_id", "rule_id", "domain", "priority", "evidence_kind", "normalized_path", "member_key", "source_member_name", "target_member_name", "extension", "prototype_action", "risk", "evidence_basis", "payload_delta_shape", "program_structures", "review_status"]
+    write_tsv(evidence_root / "RESTORATION_PROTOTYPE_CANDIDATES.tsv", prototype_fields, sorted(prototype_rows, key=lambda row: ({"critical": 0, "high": 1}.get(str(row["priority"]), 9), str(row["normalized_path"]).casefold(), str(row["target_member_name"] or row["source_member_name"]).casefold())))
+    write_tsv(evidence_root / "BINARY_DELTA_SCAN_SKIPPED.tsv", ["candidate_id", "side", "normalized_path", "member_key", "member_name", "reason"], skipped_rows)
+
+    structure_counts = Counter(str(row["program_structure_classification"]) for row in program_rows)
+    prototype_counts = Counter(str(row["prototype_action"]) for row in prototype_rows)
+    cluster_sizes = Counter(int(row["member_count"]) for row in cluster_rows)
+    summary = {
+        "type": "br_quartet_restoration_binary_delta_evidence_summary",
+        "format_version": FORMAT_VERSION,
+        "tool_version": TOOL_VERSION,
+        "source_shader_effect_tool_version": shader_summary.get("tool_version"),
+        "status": "focused_binary_and_DXBC_chunk_delta_complete_controlled_prototypes_not_generated",
+        "focused_payload_pairs": len(payload_rows),
+        "payload_bytes_analyzed": total_bytes,
+        "delta_cluster_rows": len(cluster_rows),
+        "shared_delta_clusters_ge_8_members": sum(1 for row in cluster_rows if int(row["member_count"]) >= 8),
+        "dxbc_program_rows": len(program_rows),
+        "dxbc_program_structure_classifications": dict(sorted(structure_counts.items())),
+        "dxbc_chunk_rows": len(chunk_rows),
+        "dxbc_instruction_delta_rows": len(instruction_rows),
+        "prototype_candidate_rows": len(prototype_rows),
+        "prototype_actions": dict(sorted(prototype_counts.items())),
+        "skipped_rows": len(skipped_rows),
+        "analysis_scope": [
+            "per_chunk_DXBC_RDEF_signature_code_and_STAT_hash_comparison",
+            "conservative_DXBC_instruction_envelope_alignment_without_operand_decoding",
+            "focused_payload_common_prefix_suffix_changed_ranges_and_delta_clusters",
+            "separation_of_broad_posteffect_remaster_changes_from_direct_water_heightfog_shader_candidates",
+            "metadata_only_controlled_prototype_selection",
+        ],
+        "policy": {
+            "installed_games_modified": False,
+            "proprietary_shader_or_effect_payloads_in_report": False,
+            "full_instruction_tokens_exported": False,
+            "undecoded_float_candidates_are_parameters": False,
+            "restoration_patch_generated": False,
+            "automatic_censorship_claims": False,
+            "legacy_dlc_in_scope": False,
+        },
+        "shader_effect_finding": (
+            "Direct cwater/cwater2/swater/heightfog programs retain the same visible resource identifiers and chunk layout, while pe_pack contains broad remaster-wide changes including target-only unsharp-mask and HDR/DOF variants. This stage determines whether the direct shaders are code-only deltas with stable bindings and clusters opaque G1E/G1EM/OPL2/BIN changes before any controlled in-game override is built."
+        ),
+        "next_action": (
+            "Upload the binary-delta evidence archive. If direct water/height-fog shaders are code-only with stable RDEF and IO signatures, build separate reversible test prototypes for each shader family. Keep the global post-effect pack deferred unless a scene-specific binding is proven."
+        ),
+    }
+    atomic_json(evidence_root / "SUMMARY.json", summary)
+    output = report_root / BINARY_DELTA_REPORT_NAME
+    make_report_archive(evidence_root, output)
+    return output, summary
+
+
+
+DXBC_REFLECTION_DIRECT_PATHS = {
+    "data/x64/shader/cwater.g1s",
+    "data/x64/shader/cwater2.g1s",
+    "data/x64/shader/swater.g1s",
+    "data/x64/shader/heightfog.g1s",
+}
+
+
+def _bounded_c_string(payload: bytes, offset: int, *, maximum: int = 4096) -> tuple[str, str]:
+    if offset <= 0:
+        return "", "empty"
+    if offset >= len(payload):
+        return "", "offset_out_of_bounds"
+    end = payload.find(b"\x00", offset, min(len(payload), offset + maximum))
+    if end < 0:
+        return "", "unterminated"
+    return payload[offset:end].decode("utf-8", errors="replace"), "ok"
+
+
+def _stable_json_sha256(value: Any) -> str:
+    return hashlib.sha256(
+        json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
+
+
+def parse_dxbc_rdef(chunk_payload: bytes) -> dict[str, Any]:
+    """Parse DXBC RDEF reflection metadata without exporting shader bytecode."""
+    result: dict[str, Any] = {
+        "status": "ok",
+        "target_version": "",
+        "target_stage": "",
+        "flags": "",
+        "creator": "",
+        "creator_status": "",
+        "resources": [],
+        "cbuffers": [],
+        "variables": [],
+        "resource_semantic_sha256": "",
+        "cbuffer_semantic_sha256": "",
+        "reflection_semantic_sha256": "",
+    }
+    if len(chunk_payload) < 28:
+        result["status"] = "rdef_header_too_small"
+        return result
+    try:
+        cbuffer_count, cbuffer_offset, resource_count, resource_offset = struct.unpack_from(
+            "<4I", chunk_payload, 0
+        )
+        target_version, target_stage = struct.unpack_from("<2H", chunk_payload, 16)
+        flags, creator_offset = struct.unpack_from("<2I", chunk_payload, 20)
+    except struct.error:
+        result["status"] = "rdef_header_truncated"
+        return result
+    result.update(
+        {
+            "target_version": f"0x{target_version:04x}",
+            "target_stage": f"0x{target_stage:04x}",
+            "flags": f"0x{flags:08x}",
+            "cbuffer_count": cbuffer_count,
+            "resource_count": resource_count,
+        }
+    )
+    creator, creator_status = _bounded_c_string(chunk_payload, creator_offset)
+    result["creator"] = creator
+    result["creator_status"] = creator_status
+    if cbuffer_count > 4096 or resource_count > 4096:
+        result["status"] = "rdef_unreasonable_table_count"
+        return result
+
+    resource_entry_size = 40 if target_version >= 0x0501 else 32
+    resources: list[dict[str, Any]] = []
+    if resource_count:
+        if resource_offset <= 0 or resource_offset + resource_count * resource_entry_size > len(chunk_payload):
+            result["status"] = "rdef_resource_table_out_of_bounds"
+            return result
+        for index in range(resource_count):
+            offset = resource_offset + index * resource_entry_size
+            values = struct.unpack_from("<4Ii3I", chunk_payload, offset)
+            name_offset, resource_type, return_type, dimension, sample_count, bind_point, bind_count, resource_flags = values
+            space = 0
+            resource_id = index
+            if resource_entry_size == 40:
+                space, resource_id = struct.unpack_from("<2I", chunk_payload, offset + 32)
+            name, name_status = _bounded_c_string(chunk_payload, name_offset)
+            resources.append(
+                {
+                    "resource_index": index,
+                    "name": name,
+                    "name_status": name_status,
+                    "resource_type": resource_type,
+                    "return_type": return_type,
+                    "dimension": dimension,
+                    "sample_count": sample_count,
+                    "bind_point": bind_point,
+                    "bind_count": bind_count,
+                    "flags": resource_flags,
+                    "space": space,
+                    "resource_id": resource_id,
+                }
+            )
+
+    cbuffers: list[dict[str, Any]] = []
+    variables: list[dict[str, Any]] = []
+    cbuffer_entry_size = 24
+    variable_entry_size = 40 if target_version >= 0x0500 else 24
+    type_entry_size = 36 if target_version >= 0x0500 else 16
+    if cbuffer_count:
+        if cbuffer_offset <= 0 or cbuffer_offset + cbuffer_count * cbuffer_entry_size > len(chunk_payload):
+            result["status"] = "rdef_cbuffer_table_out_of_bounds"
+            return result
+        for cbuffer_index in range(cbuffer_count):
+            offset = cbuffer_offset + cbuffer_index * cbuffer_entry_size
+            name_offset, variable_count, variable_offset, buffer_size, buffer_flags, buffer_type = struct.unpack_from(
+                "<6I", chunk_payload, offset
+            )
+            name, name_status = _bounded_c_string(chunk_payload, name_offset)
+            cbuffer_row = {
+                "cbuffer_index": cbuffer_index,
+                "name": name,
+                "name_status": name_status,
+                "variable_count": variable_count,
+                "size": buffer_size,
+                "flags": buffer_flags,
+                "buffer_type": buffer_type,
+            }
+            cbuffers.append(cbuffer_row)
+            if variable_count > 16384:
+                result["status"] = "rdef_unreasonable_variable_count"
+                return result
+            if variable_count and (
+                variable_offset <= 0
+                or variable_offset + variable_count * variable_entry_size > len(chunk_payload)
+            ):
+                result["status"] = "rdef_variable_table_out_of_bounds"
+                return result
+            for variable_index in range(variable_count):
+                variable_pos = variable_offset + variable_index * variable_entry_size
+                name_off, start_offset, variable_size, variable_flags, type_offset, default_offset = struct.unpack_from(
+                    "<6I", chunk_payload, variable_pos
+                )
+                variable_name, variable_name_status = _bounded_c_string(chunk_payload, name_off)
+                type_class = type_code = rows = columns = elements = members = 0
+                type_name = ""
+                type_name_status = "empty"
+                if type_offset and type_offset + type_entry_size <= len(chunk_payload):
+                    type_class, type_code, rows, columns, elements, members, _member_offset = struct.unpack_from(
+                        "<6HI", chunk_payload, type_offset
+                    )
+                    if target_version >= 0x0500:
+                        type_name_offset = struct.unpack_from("<I", chunk_payload, type_offset + 32)[0]
+                        type_name, type_name_status = _bounded_c_string(chunk_payload, type_name_offset)
+                elif type_offset:
+                    type_name_status = "type_out_of_bounds"
+                default_sha256 = ""
+                default_status = "none"
+                if default_offset:
+                    if default_offset + variable_size <= len(chunk_payload):
+                        default_sha256 = hashlib.sha256(
+                            chunk_payload[default_offset : default_offset + variable_size]
+                        ).hexdigest()
+                        default_status = "present_hashed"
+                    else:
+                        default_status = "default_out_of_bounds"
+                variables.append(
+                    {
+                        "cbuffer_index": cbuffer_index,
+                        "cbuffer_name": name,
+                        "variable_index": variable_index,
+                        "name": variable_name,
+                        "name_status": variable_name_status,
+                        "start_offset": start_offset,
+                        "size": variable_size,
+                        "flags": variable_flags,
+                        "type_class": type_class,
+                        "type_code": type_code,
+                        "rows": rows,
+                        "columns": columns,
+                        "elements": elements,
+                        "members": members,
+                        "type_name": type_name,
+                        "type_name_status": type_name_status,
+                        "default_status": default_status,
+                        "default_sha256": default_sha256,
+                    }
+                )
+
+    resource_semantics = sorted(
+        [
+            {
+                key: row[key]
+                for key in (
+                    "name", "resource_type", "return_type", "dimension", "sample_count",
+                    "bind_point", "bind_count", "flags", "space",
+                )
+            }
+            for row in resources
+        ],
+        key=lambda row: (str(row["name"]).casefold(), int(row["bind_point"]), int(row["resource_type"])),
+    )
+    cbuffer_semantics = {
+        "cbuffers": sorted(
+            [
+                {key: row[key] for key in ("name", "variable_count", "size", "flags", "buffer_type")}
+                for row in cbuffers
+            ],
+            key=lambda row: str(row["name"]).casefold(),
+        ),
+        "variables": sorted(
+            [
+                {
+                    key: row[key]
+                    for key in (
+                        "cbuffer_name", "name", "start_offset", "size", "flags", "type_class",
+                        "type_code", "rows", "columns", "elements", "members", "type_name",
+                        "default_status", "default_sha256",
+                    )
+                }
+                for row in variables
+            ],
+            key=lambda row: (
+                str(row["cbuffer_name"]).casefold(),
+                int(row["start_offset"]),
+                str(row["name"]).casefold(),
+            ),
+        ),
+    }
+    header_semantics = {
+        "target_version": result["target_version"],
+        "target_stage": result["target_stage"],
+        "flags": result["flags"],
+    }
+    result["resources"] = resources
+    result["cbuffers"] = cbuffers
+    result["variables"] = variables
+    result["resource_semantic_sha256"] = _stable_json_sha256(resource_semantics)
+    result["cbuffer_semantic_sha256"] = _stable_json_sha256(cbuffer_semantics)
+    result["reflection_semantic_sha256"] = _stable_json_sha256(
+        {"header": header_semantics, "resources": resource_semantics, "cbuffers": cbuffer_semantics}
+    )
+    return result
+
+
+def parse_dxbc_signature(chunk_payload: bytes, fourcc: str) -> dict[str, Any]:
+    result: dict[str, Any] = {"status": "ok", "elements": [], "semantic_sha256": ""}
+    if len(chunk_payload) < 8:
+        result["status"] = "signature_header_too_small"
+        return result
+    count, unknown = struct.unpack_from("<2I", chunk_payload, 0)
+    if count > 4096:
+        result["status"] = "signature_unreasonable_count"
+        return result
+    if fourcc in {"OSG5", "PCSG"}:
+        entry_size = 28
+        has_stream = True
+        has_precision = False
+    elif fourcc in {"ISG1", "OSG1", "PSG1"}:
+        entry_size = 32
+        has_stream = True
+        has_precision = True
+    else:
+        entry_size = 24
+        has_stream = False
+        has_precision = False
+    if 8 + count * entry_size > len(chunk_payload):
+        result["status"] = "signature_table_out_of_bounds"
+        return result
+    rows: list[dict[str, Any]] = []
+    for index in range(count):
+        pos = 8 + index * entry_size
+        stream = 0
+        if has_stream:
+            stream = struct.unpack_from("<I", chunk_payload, pos)[0]
+            pos += 4
+        name_offset, semantic_index, system_value, component_type, register = struct.unpack_from(
+            "<5I", chunk_payload, pos
+        )
+        mask, rw_mask, unused = struct.unpack_from("<BBH", chunk_payload, pos + 20)
+        precision = 0
+        if has_precision:
+            precision = struct.unpack_from("<I", chunk_payload, pos + 24)[0]
+        name, name_status = _bounded_c_string(chunk_payload, name_offset)
+        rows.append(
+            {
+                "element_index": index,
+                "stream": stream,
+                "semantic_name": name,
+                "name_status": name_status,
+                "semantic_index": semantic_index,
+                "system_value": system_value,
+                "component_type": component_type,
+                "register": register,
+                "mask": mask,
+                "rw_mask": rw_mask,
+                "precision": precision,
+            }
+        )
+    semantics = sorted(
+        [
+            {key: row[key] for key in (
+                "stream", "semantic_name", "semantic_index", "system_value", "component_type",
+                "register", "mask", "rw_mask", "precision",
+            )}
+            for row in rows
+        ],
+        key=lambda row: (int(row["stream"]), int(row["register"]), str(row["semantic_name"]).casefold(), int(row["semantic_index"])),
+    )
+    result.update(
+        {
+            "unknown": unknown,
+            "elements": rows,
+            "semantic_sha256": _stable_json_sha256(semantics),
+        }
+    )
+    return result
+
+
+def parse_dxbc_stat(chunk_payload: bytes) -> dict[str, Any]:
+    if len(chunk_payload) % 4:
+        return {"status": "stat_unaligned", "values": []}
+    values = list(struct.unpack(f"<{len(chunk_payload) // 4}I", chunk_payload))
+    return {"status": "ok", "values": values}
+
+
+def _chunk_map(payload: bytes | None, program: dict[str, Any] | None) -> dict[str, dict[str, Any]]:
+    if payload is None or program is None:
+        return {}
+    return {row["comparison_key"]: row for row in parse_dxbc_chunk_payloads(payload, program)}
+
+
+def _semantic_diff_count(left: Sequence[dict[str, Any]], right: Sequence[dict[str, Any]], keys: Sequence[str]) -> tuple[int, int, int]:
+    def normalize(rows: Sequence[dict[str, Any]]) -> Counter[str]:
+        return Counter(
+            _stable_json_sha256({key: row.get(key, "") for key in keys})
+            for row in rows
+        )
+    a = normalize(left)
+    b = normalize(right)
+    removed = sum((a - b).values())
+    added = sum((b - a).values())
+    return removed, added, sum((a & b).values())
+
+
+
+_DXBC_MD5_SHIFTS = (
+    7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22,
+    5, 9, 14, 20, 5, 9, 14, 20, 5, 9, 14, 20, 5, 9, 14, 20,
+    4, 11, 16, 23, 4, 11, 16, 23, 4, 11, 16, 23, 4, 11, 16, 23,
+    6, 10, 15, 21, 6, 10, 15, 21, 6, 10, 15, 21, 6, 10, 15, 21,
+)
+_DXBC_MD5_CONSTANTS = tuple(
+    int(abs(math.sin(index + 1)) * (1 << 32)) & 0xFFFFFFFF for index in range(64)
+)
+
+
+def _rotate_left32(value: int, shift: int) -> int:
+    value &= 0xFFFFFFFF
+    return ((value << shift) | (value >> (32 - shift))) & 0xFFFFFFFF
+
+
+def _dxbc_md5_transform(state: list[int], block: bytes) -> None:
+    if len(block) != 64:
+        raise RestorationError(f"DXBC checksum block must be 64 bytes, got {len(block)}")
+    words = struct.unpack("<16I", block)
+    a, b, c, d = state
+    aa, bb, cc, dd = a, b, c, d
+    for index in range(64):
+        if index < 16:
+            value = (b & c) | ((~b) & d)
+            word_index = index
+        elif index < 32:
+            value = (b & d) | (c & (~d))
+            word_index = (5 * index + 1) % 16
+        elif index < 48:
+            value = b ^ c ^ d
+            word_index = (3 * index + 5) % 16
+        else:
+            value = c ^ (b | (~d))
+            word_index = (7 * index) % 16
+        value = (value + a + _DXBC_MD5_CONSTANTS[index] + words[word_index]) & 0xFFFFFFFF
+        a, d, c, b = d, c, b, (b + _rotate_left32(value, _DXBC_MD5_SHIFTS[index])) & 0xFFFFFFFF
+    state[0] = (aa + a) & 0xFFFFFFFF
+    state[1] = (bb + b) & 0xFFFFFFFF
+    state[2] = (cc + c) & 0xFFFFFFFF
+    state[3] = (dd + d) & 0xFFFFFFFF
+
+
+def calculate_dxbc_checksum(blob: bytes) -> bytes:
+    """Calculate the legacy Microsoft DXBC checksum used in bytes 4..19."""
+    if len(blob) < 32 or blob[:4] != b"DXBC":
+        raise RestorationError("DXBC checksum input is not a DXBC container")
+    payload = blob[0x14:]
+    bit_count = (len(payload) * 8) & 0xFFFFFFFF
+    state = [0x67452301, 0xEFCDAB89, 0x98BADCFE, 0x10325476]
+    full_size = len(payload) & ~0x3F
+    for offset in range(0, full_size, 64):
+        _dxbc_md5_transform(state, payload[offset : offset + 64])
+    tail = payload[full_size:]
+    if len(tail) >= 56:
+        first = tail + b"\x80" + bytes(63 - len(tail))
+        _dxbc_md5_transform(state, first)
+        words = [0] * 16
+        words[0] = bit_count
+        words[15] = ((bit_count >> 2) | 1) & 0xFFFFFFFF
+        _dxbc_md5_transform(state, struct.pack("<16I", *words))
+    else:
+        block = bytearray(64)
+        struct.pack_into("<I", block, 0, bit_count)
+        block[4 : 4 + len(tail)] = tail
+        block[4 + len(tail)] = 0x80
+        struct.pack_into("<I", block, 60, ((bit_count >> 2) | 1) & 0xFFFFFFFF)
+        _dxbc_md5_transform(state, bytes(block))
+    return struct.pack("<4I", *state)
+
+
+def stamp_dxbc_checksum(blob: bytes) -> bytes:
+    mutable = bytearray(blob)
+    mutable[4:20] = calculate_dxbc_checksum(blob)
+    return bytes(mutable)
+
+
+def rebuild_dxbc_with_source_code(
+    source_payload: bytes,
+    target_payload: bytes,
+    source_program: dict[str, Any],
+    target_program: dict[str, Any],
+) -> tuple[bytes, dict[str, Any]]:
+    source_chunks = _chunk_map(source_payload, source_program)
+    target_chunk_rows = parse_dxbc_chunk_payloads(target_payload, target_program)
+    target_offset = int(target_program["offset"])
+    unknown = struct.unpack_from("<I", target_payload, target_offset + 20)[0]
+    chunks: list[tuple[bytes, bytes, str]] = []
+    transplanted: list[str] = []
+    for row in target_chunk_rows:
+        key = str(row["comparison_key"])
+        fourcc = str(row["fourcc"])
+        payload = bytes(row["payload"])
+        if fourcc in DXBC_CODE_FOURCCS:
+            source_row = source_chunks.get(key)
+            if source_row is None:
+                raise RestorationError(f"Source DXBC is missing code chunk {key}")
+            payload = bytes(source_row["payload"])
+            transplanted.append(key)
+        chunks.append((fourcc.encode("ascii"), payload, key))
+    header_size = 32 + 4 * len(chunks)
+    offsets: list[int] = []
+    body = bytearray()
+    cursor = header_size
+    for fourcc, payload, _key in chunks:
+        offsets.append(cursor)
+        body.extend(fourcc)
+        body.extend(struct.pack("<I", len(payload)))
+        body.extend(payload)
+        cursor += 8 + len(payload)
+    total_size = header_size + len(body)
+    raw = (
+        b"DXBC" + bytes(16) + struct.pack("<3I", unknown, total_size, len(chunks))
+        + (struct.pack(f"<{len(offsets)}I", *offsets) if offsets else b"") + bytes(body)
+    )
+    rebuilt = stamp_dxbc_checksum(raw)
+    parsed = parse_dxbc_program(rebuilt, 0, label="dry_run_transplant")
+    if parsed is None or int(parsed.get("size", 0)) != len(rebuilt):
+        raise RestorationError("Rebuilt DXBC failed conservative reparse")
+    rebuilt_chunks = _chunk_map(rebuilt, parsed)
+    target_chunks = _chunk_map(target_payload, target_program)
+    non_code_preserved = all(
+        rebuilt_chunks.get(key, {}).get("sha256") == row.get("sha256")
+        for key, row in target_chunks.items()
+        if str(row.get("fourcc", "")) not in DXBC_CODE_FOURCCS
+    )
+    source_code_preserved = all(
+        rebuilt_chunks.get(key, {}).get("sha256") == source_chunks.get(key, {}).get("sha256")
+        for key in transplanted
+    )
+    checksum = calculate_dxbc_checksum(rebuilt)
+    return rebuilt, {
+        "transplanted_chunks": ",".join(transplanted),
+        "non_code_chunks_preserved": non_code_preserved,
+        "source_code_chunks_preserved": source_code_preserved,
+        "stored_checksum_hex": rebuilt[4:20].hex(),
+        "calculated_checksum_hex": checksum.hex(),
+        "checksum_matches": rebuilt[4:20] == checksum,
+    }
+
+
+def _dxbc_outer_regions(payload: bytes, programs: Sequence[dict[str, Any]]) -> list[tuple[str, int, int]]:
+    ranges = sorted((int(row["offset"]), int(row["offset"]) + int(row["size"])) for row in programs)
+    regions: list[tuple[str, int, int]] = []
+    cursor = 0
+    for index, (start, end) in enumerate(ranges):
+        if start < cursor or end > len(payload):
+            raise RestorationError("Overlapping or invalid DXBC ranges in G1S payload")
+        if start > cursor:
+            label = "prefix" if cursor == 0 else f"between_{index-1}_{index}"
+            regions.append((label, cursor, start))
+        cursor = end
+    if cursor < len(payload):
+        regions.append(("suffix", cursor, len(payload)))
+    return regions
+
+
+def _scan_g1s_scalar_references(
+    payload: bytes,
+    programs: Sequence[dict[str, Any]],
+    *,
+    side: str,
+    normalized_path: str,
+) -> list[dict[str, Any]]:
+    regions = _dxbc_outer_regions(payload, programs)
+    values: list[tuple[str, int | str, int]] = [
+        ("file_size", "", len(payload)),
+        ("program_count", "", len(programs)),
+    ]
+    for index, program in enumerate(programs):
+        start = int(program["offset"])
+        size = int(program["size"])
+        values.extend(
+            [
+                ("program_offset", index, start),
+                ("program_size", index, size),
+                ("program_end", index, start + size),
+            ]
+        )
+    rows: list[dict[str, Any]] = []
+    seen: set[tuple[Any, ...]] = set()
+    for value_kind, program_index, value in values:
+        for width, endian, fmt in ((4, "little", "<I"), (8, "little", "<Q")):
+            if value < 0 or value >= 1 << (width * 8):
+                continue
+            encoded = struct.pack(fmt, value)
+            for region_name, start, end in regions:
+                cursor = start
+                found = 0
+                while cursor + width <= end:
+                    offset = payload.find(encoded, cursor, end)
+                    if offset < 0:
+                        break
+                    key = (value_kind, program_index, width, endian, offset)
+                    if key not in seen:
+                        seen.add(key)
+                        aligned = offset % width == 0
+                        confidence = "high" if width == 4 and aligned else "medium" if aligned else "low"
+                        rows.append(
+                            {
+                                "side": side,
+                                "normalized_path": normalized_path,
+                                "program_index": program_index,
+                                "value_kind": value_kind,
+                                "value": value,
+                                "width": width,
+                                "endian": endian,
+                                "field_offset": offset,
+                                "aligned": str(aligned).lower(),
+                                "outer_region": region_name,
+                                "confidence": confidence,
+                            }
+                        )
+                    found += 1
+                    if found >= 32:
+                        break
+                    cursor = offset + 1
+    return rows
+
+
+def collect_g1s_envelope_evidence(
+    *,
+    project_root: Path,
+    workspace_root: Path,
+    report_root: Path,
+    rules_file: Path,
+    maximum_earc_bytes: int,
+    maximum_payload_bytes: int,
+) -> tuple[Path, dict[str, Any]]:
+    reflection_summary_path = report_root / DXBC_REFLECTION_EVIDENCE_DIR / "SUMMARY.json"
+    reflection_summary = load_json(reflection_summary_path)
+    if reflection_summary.get("type") != "br_quartet_restoration_dxbc_reflection_evidence_summary":
+        raise RestorationError(f"Not a DXBC reflection evidence report: {reflection_summary_path}")
+    readiness = read_tsv(report_root / DXBC_REFLECTION_EVIDENCE_DIR / "PROTOTYPE_READINESS.tsv")
+    ready_paths = {
+        str(row["normalized_path"]).casefold()
+        for row in readiness
+        if row.get("readiness") == "ready_for_reversible_prototype_generation"
+    }
+    reflection_diff = read_tsv(report_root / DXBC_REFLECTION_EVIDENCE_DIR / "DXBC_REFLECTION_DIFF.tsv")
+    code_delta_keys = {
+        (str(row["normalized_path"]).casefold(), int(row["source_program_index"]), int(row["target_program_index"]))
+        for row in reflection_diff
+        if row.get("classification") == "code_delta_with_stable_reflection"
+        and row.get("source_program_index", "") != ""
+        and row.get("target_program_index", "") != ""
+    }
+    pairs, skipped_rows = load_focused_render_pairs(
+        workspace_root=workspace_root,
+        report_root=report_root,
+        rules_file=rules_file,
+        maximum_earc_bytes=maximum_earc_bytes,
+    )
+    pairs = [
+        row for row in pairs
+        if row.get("evidence_kind") == "shader"
+        and str(row.get("normalized_path", "")).casefold() in ready_paths
+        and str(row.get("normalized_path", "")).casefold().endswith(".g1s")
+    ]
+    file_rows: list[dict[str, Any]] = []
+    program_rows: list[dict[str, Any]] = []
+    reference_rows: list[dict[str, Any]] = []
+    dry_run_rows: list[dict[str, Any]] = []
+    plan_rows: list[dict[str, Any]] = []
+
+    for pair in pairs:
+        normalized_path = str(pair["normalized_path"])
+        payloads = {"source": pair.get("source_payload"), "target": pair.get("target_payload")}
+        programs_by_side: dict[str, list[dict[str, Any]]] = {}
+        for side in ("source", "target"):
+            payload = payloads[side]
+            if payload is None:
+                skipped_rows.append({"candidate_id": pair["candidate_id"], "side": side, "normalized_path": normalized_path, "member_key": "<direct>", "member_name": Path(normalized_path).name, "reason": "payload_missing"})
+                programs_by_side[side] = []
+                continue
+            if len(payload) > maximum_payload_bytes:
+                skipped_rows.append({"candidate_id": pair["candidate_id"], "side": side, "normalized_path": normalized_path, "member_key": "<direct>", "member_name": Path(normalized_path).name, "reason": f"payload_exceeds_limit:{len(payload)}>{maximum_payload_bytes}"})
+                programs_by_side[side] = []
+                continue
+            programs = find_dxbc_programs(payload, label=Path(normalized_path).name)
+            programs_by_side[side] = programs
+            regions = _dxbc_outer_regions(payload, programs)
+            outer_bytes = sum(end - start for _name, start, end in regions)
+            first_magic = payload[:8]
+            file_rows.append(
+                {
+                    "candidate_id": pair["candidate_id"], "rule_id": pair["rule_id"], "domain": pair["domain"], "priority": pair["priority"],
+                    "normalized_path": normalized_path, "side": side, "file_size": len(payload),
+                    "first_8_bytes_hex": first_magic.hex(), "first_8_bytes_ascii": "".join(chr(v) if 32 <= v < 127 else "." for v in first_magic),
+                    "dxbc_program_count": len(programs), "dxbc_total_bytes": sum(int(row["size"]) for row in programs),
+                    "outer_total_bytes": outer_bytes, "outer_region_count": len(regions),
+                    "outer_region_sizes": ",".join(f"{name}:{end-start}" for name, start, end in regions),
+                    "outer_region_sha256": _stable_json_sha256([{"name": name, "size": end-start, "sha256": hashlib.sha256(payload[start:end]).hexdigest()} for name, start, end in regions]),
+                }
+            )
+            reference_rows.extend(_scan_g1s_scalar_references(payload, programs, side=side, normalized_path=normalized_path))
+            for index, program in enumerate(programs):
+                start = int(program["offset"])
+                size = int(program["size"])
+                stored = payload[start + 4 : start + 20]
+                calculated = calculate_dxbc_checksum(payload[start : start + size])
+                previous_end = int(programs[index - 1]["offset"]) + int(programs[index - 1]["size"]) if index else 0
+                next_start = int(programs[index + 1]["offset"]) if index + 1 < len(programs) else len(payload)
+                program_rows.append(
+                    {
+                        "candidate_id": pair["candidate_id"], "rule_id": pair["rule_id"], "domain": pair["domain"], "priority": pair["priority"],
+                        "normalized_path": normalized_path, "side": side, "program_index": index, "stage": program.get("stage", ""),
+                        "shader_model": program.get("shader_model", ""), "program_offset": start, "program_size": size, "program_end": start + size,
+                        "gap_before": start - previous_end, "gap_after": next_start - (start + size),
+                        "stored_checksum_hex": stored.hex(), "calculated_checksum_hex": calculated.hex(), "checksum_matches": str(stored == calculated).lower(),
+                        "program_sha256": program.get("sha256", ""), "chunk_fourccs": program.get("chunk_fourccs", ""), "chunk_sizes": program.get("chunk_sizes", ""),
+                    }
+                )
+        source_payload = payloads["source"]
+        target_payload = payloads["target"]
+        source_programs = programs_by_side.get("source", [])
+        target_programs = programs_by_side.get("target", [])
+        selected_rows: list[dict[str, Any]] = []
+        if source_payload is not None and target_payload is not None:
+            for source_index, source_program in enumerate(source_programs):
+                for target_index, target_program in enumerate(target_programs):
+                    key = (normalized_path.casefold(), source_index, target_index)
+                    if key not in code_delta_keys:
+                        continue
+                    try:
+                        rebuilt, metadata = rebuild_dxbc_with_source_code(source_payload, target_payload, source_program, target_program)
+                        rebuilt_program = parse_dxbc_program(rebuilt, 0, label="dry_run")
+                        target_chunks = _chunk_map(target_payload, target_program)
+                        rebuilt_chunks = _chunk_map(rebuilt, rebuilt_program or {}) if rebuilt_program else {}
+                        target_rdef = parse_dxbc_rdef(target_chunks["RDEF#0"]["payload"]) if "RDEF#0" in target_chunks else {"status": "missing", "reflection_semantic_sha256": ""}
+                        rebuilt_rdef = parse_dxbc_rdef(rebuilt_chunks["RDEF#0"]["payload"]) if "RDEF#0" in rebuilt_chunks else {"status": "missing", "reflection_semantic_sha256": ""}
+                        row = {
+                            "candidate_id": pair["candidate_id"], "rule_id": pair["rule_id"], "domain": pair["domain"], "priority": pair["priority"],
+                            "normalized_path": normalized_path, "source_program_index": source_index, "target_program_index": target_index,
+                            "stage": target_program.get("stage", ""), "shader_model": target_program.get("shader_model", ""),
+                            "source_program_size": source_program.get("size", ""), "target_program_size": target_program.get("size", ""),
+                            "rebuilt_program_size": len(rebuilt), "rebuilt_size_delta_vs_target": len(rebuilt) - int(target_program.get("size", 0)),
+                            "transplanted_chunks": metadata["transplanted_chunks"],
+                            "non_code_chunks_preserved": str(metadata["non_code_chunks_preserved"]).lower(),
+                            "source_code_chunks_preserved": str(metadata["source_code_chunks_preserved"]).lower(),
+                            "target_reflection_semantic_sha256": target_rdef.get("reflection_semantic_sha256", ""),
+                            "rebuilt_reflection_semantic_sha256": rebuilt_rdef.get("reflection_semantic_sha256", ""),
+                            "reflection_preserved": str(target_rdef.get("status") == "ok" and target_rdef.get("reflection_semantic_sha256") == rebuilt_rdef.get("reflection_semantic_sha256")).lower(),
+                            "checksum_matches": str(metadata["checksum_matches"]).lower(),
+                            "dry_run_status": "valid_rebuilt_DXBC_not_written_to_disk",
+                        }
+                    except RestorationError as exc:
+                        row = {
+                            "candidate_id": pair["candidate_id"], "rule_id": pair["rule_id"], "domain": pair["domain"], "priority": pair["priority"],
+                            "normalized_path": normalized_path, "source_program_index": source_index, "target_program_index": target_index,
+                            "stage": target_program.get("stage", ""), "shader_model": target_program.get("shader_model", ""),
+                            "source_program_size": source_program.get("size", ""), "target_program_size": target_program.get("size", ""),
+                            "rebuilt_program_size": "", "rebuilt_size_delta_vs_target": "", "transplanted_chunks": "",
+                            "non_code_chunks_preserved": "false", "source_code_chunks_preserved": "false",
+                            "target_reflection_semantic_sha256": "", "rebuilt_reflection_semantic_sha256": "", "reflection_preserved": "false",
+                            "checksum_matches": "false", "dry_run_status": f"error:{exc}",
+                        }
+                    dry_run_rows.append(row)
+                    selected_rows.append(row)
+        target_refs = [row for row in reference_rows if row["normalized_path"] == normalized_path and row["side"] == "target"]
+        reference_kinds = Counter(str(row["value_kind"]) for row in target_refs if row["confidence"] == "high")
+        size_deltas = [int(row["rebuilt_size_delta_vs_target"]) for row in selected_rows if str(row.get("rebuilt_size_delta_vs_target", "")) not in {"", "None"}]
+        dry_valid = bool(selected_rows) and all(row["dry_run_status"] == "valid_rebuilt_DXBC_not_written_to_disk" for row in selected_rows)
+        same_size = dry_valid and all(value == 0 for value in size_deltas)
+        checksum_verified = all(row["checksum_matches"] == "true" for row in selected_rows) if selected_rows else False
+        if not dry_valid:
+            readiness_status = "dry_run_rebuild_failed"
+            next_action = "fix_DXBC_rebuilder_before_any_G1S_serializer"
+        elif same_size:
+            readiness_status = "same_size_DXBC_transplant_possible_outer_offsets_unchanged"
+            next_action = "generate_reversible_local_G1S_prototype_with_byte_for_byte_outer_preservation"
+        elif reference_kinds.get("program_offset", 0) and reference_kinds.get("program_size", 0):
+            readiness_status = "G1S_outer_reference_table_candidates_detected_serializer_not_implemented"
+            next_action = "decode_and_validate_G1S_offset_size_table_then_generate_local_prototype"
+        else:
+            readiness_status = "G1S_outer_layout_unresolved_size_changing_transplant_not_safe"
+            next_action = "use_envelope_evidence_to_decode_G1S_program_table_before_prototype_generation"
+        plan_rows.append(
+            {
+                "candidate_id": pair["candidate_id"], "rule_id": pair["rule_id"], "domain": pair["domain"], "priority": pair["priority"],
+                "normalized_path": normalized_path, "selected_program_count": len(selected_rows),
+                "rebuilt_size_deltas": ",".join(str(value) for value in size_deltas),
+                "all_rebuilt_DXBC_valid": str(dry_valid).lower(), "all_rebuilt_checksums_valid": str(checksum_verified).lower(),
+                "high_confidence_program_offset_refs": reference_kinds.get("program_offset", 0),
+                "high_confidence_program_size_refs": reference_kinds.get("program_size", 0),
+                "high_confidence_program_end_refs": reference_kinds.get("program_end", 0),
+                "high_confidence_file_size_refs": reference_kinds.get("file_size", 0),
+                "readiness": readiness_status, "next_action": next_action,
+                "prototype_generated": "false",
+            }
+        )
+
+    evidence_root = report_root / G1S_ENVELOPE_EVIDENCE_DIR
+    if evidence_root.exists():
+        shutil.rmtree(evidence_root)
+    evidence_root.mkdir(parents=True, exist_ok=True)
+    write_tsv(evidence_root / "G1S_FILES.tsv", [
+        "candidate_id", "rule_id", "domain", "priority", "normalized_path", "side", "file_size", "first_8_bytes_hex", "first_8_bytes_ascii",
+        "dxbc_program_count", "dxbc_total_bytes", "outer_total_bytes", "outer_region_count", "outer_region_sizes", "outer_region_sha256",
+    ], file_rows)
+    write_tsv(evidence_root / "G1S_DXBC_PROGRAMS.tsv", [
+        "candidate_id", "rule_id", "domain", "priority", "normalized_path", "side", "program_index", "stage", "shader_model", "program_offset", "program_size", "program_end",
+        "gap_before", "gap_after", "stored_checksum_hex", "calculated_checksum_hex", "checksum_matches", "program_sha256", "chunk_fourccs", "chunk_sizes",
+    ], program_rows)
+    write_tsv(evidence_root / "G1S_OFFSET_REFERENCE_CANDIDATES.tsv", [
+        "side", "normalized_path", "program_index", "value_kind", "value", "width", "endian", "field_offset", "aligned", "outer_region", "confidence",
+    ], reference_rows)
+    write_tsv(evidence_root / "DXBC_TRANSPLANT_DRY_RUN.tsv", [
+        "candidate_id", "rule_id", "domain", "priority", "normalized_path", "source_program_index", "target_program_index", "stage", "shader_model",
+        "source_program_size", "target_program_size", "rebuilt_program_size", "rebuilt_size_delta_vs_target", "transplanted_chunks", "non_code_chunks_preserved",
+        "source_code_chunks_preserved", "target_reflection_semantic_sha256", "rebuilt_reflection_semantic_sha256", "reflection_preserved", "checksum_matches", "dry_run_status",
+    ], dry_run_rows)
+    write_tsv(evidence_root / "G1S_SERIALIZATION_PLAN.tsv", [
+        "candidate_id", "rule_id", "domain", "priority", "normalized_path", "selected_program_count", "rebuilt_size_deltas", "all_rebuilt_DXBC_valid",
+        "all_rebuilt_checksums_valid", "high_confidence_program_offset_refs", "high_confidence_program_size_refs", "high_confidence_program_end_refs",
+        "high_confidence_file_size_refs", "readiness", "next_action", "prototype_generated",
+    ], plan_rows)
+    write_tsv(evidence_root / "G1S_ENVELOPE_SCAN_SKIPPED.tsv", ["candidate_id", "side", "normalized_path", "member_key", "member_name", "reason"], skipped_rows)
+    checksum_counts = Counter(row["checksum_matches"] for row in program_rows)
+    readiness_counts = Counter(row["readiness"] for row in plan_rows)
+    summary = {
+        "type": "br_quartet_restoration_g1s_envelope_evidence_summary",
+        "format_version": FORMAT_VERSION,
+        "tool_version": TOOL_VERSION,
+        "source_dxbc_reflection_tool_version": reflection_summary.get("tool_version"),
+        "status": "G1S_outer_envelope_and_DXBC_checksum_dry_run_complete_no_prototype_written",
+        "ready_shader_files": len(plan_rows),
+        "g1s_file_rows": len(file_rows),
+        "dxbc_program_rows": len(program_rows),
+        "stored_checksum_matches": dict(sorted(checksum_counts.items())),
+        "offset_reference_candidate_rows": len(reference_rows),
+        "dry_run_transplant_rows": len(dry_run_rows),
+        "serialization_readiness": dict(sorted(readiness_counts.items())),
+        "skipped_rows": len(skipped_rows),
+        "policy": {
+            "installed_games_modified": False,
+            "prototype_G1S_written": False,
+            "shader_bytecode_exported_in_report": False,
+            "DXBC_transplants_built_only_in_memory": True,
+            "DXBC_checksum_algorithm_verified_against_local_programs": True,
+            "automatic_censorship_claims": False,
+            "legacy_dlc_in_scope": False,
+        },
+        "next_action": "Upload the G1S envelope evidence archive. Implement a serializer only when the outer offset/size table is understood; then generate separate local reversible heightfog and swater prototypes without writing installed game files.",
+    }
+    atomic_json(evidence_root / "SUMMARY.json", summary)
+    output = report_root / G1S_ENVELOPE_REPORT_NAME
+    make_report_archive(evidence_root, output)
+    return output, summary
+
+
+def _atomic_write_bytes(path: Path, payload: bytes) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, temporary = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
+    try:
+        with os.fdopen(fd, "wb") as handle:
+            handle.write(payload)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, path)
+    except Exception:
+        try:
+            os.unlink(temporary)
+        except FileNotFoundError:
+            pass
+        raise
+
+
+def decode_g1s_program_table(payload: bytes, programs: Sequence[dict[str, Any]]) -> dict[str, Any]:
+    """Decode the minimal observed _S2G program-size table conservatively.
+
+    Quartet's direct G1S files keep all DXBC programs contiguous from one
+    explicitly stored first-program offset through EOF.  The observed _S2G3000
+    and _S2G7000 envelopes store the complete file size at offset 8, the first
+    DXBC offset at offset 176, and one compact size table in the prefix.  The
+    first program size is duplicated, while each later program size appears
+    once.  Reject anything outside this exact shape rather than guessing.
+    """
+    if len(payload) < 180 or not payload.startswith(b"_S2G"):
+        raise RestorationError("Unsupported G1S envelope magic or truncated header")
+    if not programs:
+        raise RestorationError("G1S contains no parseable DXBC programs")
+    ordered = sorted(programs, key=lambda row: int(row["offset"]))
+    first_offset = int(ordered[0]["offset"])
+    if struct.unpack_from("<I", payload, 8)[0] != len(payload):
+        raise RestorationError("G1S file-size field at offset 8 does not match payload length")
+    if struct.unpack_from("<I", payload, 176)[0] != first_offset:
+        raise RestorationError("G1S first-program offset field at offset 176 is not validated")
+    cursor = first_offset
+    for index, program in enumerate(ordered):
+        offset = int(program["offset"])
+        size = int(program["size"])
+        if offset != cursor:
+            raise RestorationError(f"G1S DXBC programs are not contiguous at program {index}")
+        cursor += size
+    if cursor != len(payload):
+        raise RestorationError("G1S has unmodeled data after the final DXBC program")
+    prefix = payload[:first_offset]
+    sizes = [int(row["size"]) for row in ordered]
+    if len(set(sizes)) != len(sizes):
+        raise RestorationError("G1S program sizes are not unique; conservative table decoding is ambiguous")
+    refs: dict[int, list[int]] = {}
+    all_offsets: list[int] = []
+    for index, size in enumerate(sizes):
+        encoded = struct.pack("<I", size)
+        found: list[int] = []
+        for offset in range(0, len(prefix) - 3, 4):
+            if prefix[offset : offset + 4] == encoded:
+                found.append(offset)
+        expected = 2 if index == 0 else 1
+        if len(found) != expected:
+            raise RestorationError(
+                f"G1S program {index} size {size} has {len(found)} aligned prefix references; expected {expected}"
+            )
+        refs[index] = found
+        all_offsets.extend(found)
+    if not all_offsets or max(all_offsets) - min(all_offsets) > max(64, 8 * len(programs) + 16):
+        raise RestorationError("G1S program-size references do not form one compact table")
+    return {
+        "magic": payload[:8].decode("ascii", errors="replace"),
+        "file_size_field_offset": 8,
+        "first_program_offset_field_offset": 176,
+        "first_program_offset": first_offset,
+        "program_sizes": sizes,
+        "program_size_field_offsets": refs,
+        "program_table_start": min(all_offsets),
+        "program_table_end": max(all_offsets) + 4,
+    }
+
+
+def serialize_g1s_code_transplant(
+    target_payload: bytes,
+    target_programs: Sequence[dict[str, Any]],
+    replacements: dict[int, bytes],
+) -> tuple[bytes, dict[str, Any], list[dict[str, Any]]]:
+    if not replacements:
+        raise RestorationError("No G1S DXBC replacements were requested")
+    ordered = sorted(target_programs, key=lambda row: int(row["offset"]))
+    table = decode_g1s_program_table(target_payload, ordered)
+    if any(index < 0 or index >= len(ordered) for index in replacements):
+        raise RestorationError("G1S replacement program index is out of range")
+    first_offset = int(table["first_program_offset"])
+    prefix = bytearray(target_payload[:first_offset])
+    program_blobs: list[bytes] = []
+    field_rows: list[dict[str, Any]] = []
+    approved_prefix_bytes: set[int] = set(range(8, 12))
+    for index, program in enumerate(ordered):
+        start = int(program["offset"])
+        size = int(program["size"])
+        original = target_payload[start : start + size]
+        replacement = replacements.get(index, original)
+        parsed = parse_dxbc_program(replacement, 0, label=f"prototype_program_{index}")
+        if parsed is None or int(parsed["size"]) != len(replacement):
+            raise RestorationError(f"Replacement DXBC program {index} failed validation")
+        program_blobs.append(replacement)
+        old_size = size
+        new_size = len(replacement)
+        if new_size != old_size:
+            for field_offset in table["program_size_field_offsets"][index]:
+                struct.pack_into("<I", prefix, field_offset, new_size)
+                approved_prefix_bytes.update(range(field_offset, field_offset + 4))
+                field_rows.append(
+                    {
+                        "field_kind": "program_size",
+                        "program_index": index,
+                        "field_offset": field_offset,
+                        "old_value": old_size,
+                        "new_value": new_size,
+                    }
+                )
+    rebuilt_size = len(prefix) + sum(len(blob) for blob in program_blobs)
+    struct.pack_into("<I", prefix, 8, rebuilt_size)
+    field_rows.append(
+        {
+            "field_kind": "file_size",
+            "program_index": "",
+            "field_offset": 8,
+            "old_value": len(target_payload),
+            "new_value": rebuilt_size,
+        }
+    )
+    rebuilt = bytes(prefix) + b"".join(program_blobs)
+    reparsed = find_dxbc_programs(rebuilt, label="serialized_G1S_prototype")
+    if len(reparsed) != len(ordered):
+        raise RestorationError("Serialized G1S changed the DXBC program count")
+    cursor = first_offset
+    for index, (expected_blob, program) in enumerate(zip(program_blobs, reparsed)):
+        if int(program["offset"]) != cursor or int(program["size"]) != len(expected_blob):
+            raise RestorationError(f"Serialized G1S program table failed round-trip at program {index}")
+        if rebuilt[cursor : cursor + len(expected_blob)] != expected_blob:
+            raise RestorationError(f"Serialized G1S program bytes differ at program {index}")
+        stored = expected_blob[4:20]
+        calculated = calculate_dxbc_checksum(expected_blob)
+        if stored != calculated:
+            raise RestorationError(f"Serialized G1S program {index} has an invalid DXBC checksum")
+        cursor += len(expected_blob)
+    if cursor != len(rebuilt) or struct.unpack_from("<I", rebuilt, 8)[0] != len(rebuilt):
+        raise RestorationError("Serialized G1S final size validation failed")
+    prefix_differences = {
+        index for index, (left, right) in enumerate(zip(target_payload[:first_offset], rebuilt[:first_offset]))
+        if left != right
+    }
+    unexpected = prefix_differences - approved_prefix_bytes
+    if unexpected:
+        raise RestorationError(f"Serialized G1S changed unapproved prefix bytes: {sorted(unexpected)[:16]}")
+    metadata = {
+        "magic": table["magic"],
+        "first_program_offset": first_offset,
+        "program_count": len(ordered),
+        "target_size": len(target_payload),
+        "prototype_size": len(rebuilt),
+        "size_delta": len(rebuilt) - len(target_payload),
+        "program_table_start": table["program_table_start"],
+        "program_table_end": table["program_table_end"],
+        "changed_prefix_byte_count": len(prefix_differences),
+        "only_approved_prefix_fields_changed": True,
+    }
+    return rebuilt, metadata, field_rows
+
+
+def build_g1s_prototypes(
+    *,
+    project_root: Path,
+    workspace_root: Path,
+    report_root: Path,
+    rules_file: Path,
+    maximum_earc_bytes: int,
+    maximum_payload_bytes: int,
+) -> tuple[Path, dict[str, Any]]:
+    envelope_root = report_root / G1S_ENVELOPE_EVIDENCE_DIR
+    envelope_summary = load_json(envelope_root / "SUMMARY.json")
+    if envelope_summary.get("type") != "br_quartet_restoration_g1s_envelope_evidence_summary":
+        raise RestorationError(f"Not a G1S envelope evidence report: {envelope_root / 'SUMMARY.json'}")
+    plan_rows = read_tsv(envelope_root / "G1S_SERIALIZATION_PLAN.tsv")
+    eligible_paths = {
+        str(row["normalized_path"]).casefold()
+        for row in plan_rows
+        if row.get("readiness") == "G1S_outer_reference_table_candidates_detected_serializer_not_implemented"
+        and row.get("all_rebuilt_DXBC_valid") == "true"
+        and row.get("all_rebuilt_checksums_valid") == "true"
+    }
+    dry_rows = [
+        row for row in read_tsv(envelope_root / "DXBC_TRANSPLANT_DRY_RUN.tsv")
+        if str(row.get("normalized_path", "")).casefold() in eligible_paths
+        and row.get("dry_run_status") == "valid_rebuilt_DXBC_not_written_to_disk"
+        and row.get("reflection_preserved") == "true"
+        and row.get("checksum_matches") == "true"
+    ]
+    selected_by_path: dict[str, list[dict[str, str]]] = defaultdict(list)
+    for row in dry_rows:
+        selected_by_path[str(row["normalized_path"]).casefold()].append(row)
+    pairs, skipped_rows = load_focused_render_pairs(
+        workspace_root=workspace_root,
+        report_root=report_root,
+        rules_file=rules_file,
+        maximum_earc_bytes=maximum_earc_bytes,
+    )
+    pairs = [
+        row for row in pairs
+        if row.get("evidence_kind") == "shader"
+        and str(row.get("normalized_path", "")).casefold() in eligible_paths
+        and str(row.get("normalized_path", "")).casefold().endswith(".g1s")
+    ]
+    prototype_root = workspace_root / G1S_PROTOTYPE_BUILD_DIR
+    require_within(prototype_root, workspace_root, "Prototype root")
+    if prototype_root.exists():
+        shutil.rmtree(prototype_root)
+    prototype_root.mkdir(parents=True, exist_ok=True)
+    prototype_rows: list[dict[str, Any]] = []
+    program_rows: list[dict[str, Any]] = []
+    field_rows: list[dict[str, Any]] = []
+    validation_rows: list[dict[str, Any]] = []
+    built_ids: set[str] = set()
+
+    for pair in pairs:
+        normalized_path = str(pair["normalized_path"])
+        path_key = normalized_path.casefold()
+        source_payload = pair.get("source_payload")
+        target_payload = pair.get("target_payload")
+        if source_payload is None or target_payload is None:
+            skipped_rows.append({"candidate_id": pair["candidate_id"], "side": "both", "normalized_path": normalized_path, "member_key": "<direct>", "member_name": Path(normalized_path).name, "reason": "source_or_target_payload_missing"})
+            continue
+        if len(source_payload) > maximum_payload_bytes or len(target_payload) > maximum_payload_bytes:
+            skipped_rows.append({"candidate_id": pair["candidate_id"], "side": "both", "normalized_path": normalized_path, "member_key": "<direct>", "member_name": Path(normalized_path).name, "reason": "payload_exceeds_limit"})
+            continue
+        source_programs = find_dxbc_programs(source_payload, label=f"source:{normalized_path}")
+        target_programs = find_dxbc_programs(target_payload, label=f"target:{normalized_path}")
+        replacements: dict[int, bytes] = {}
+        selected_indices: list[int] = []
+        for selection in sorted(selected_by_path.get(path_key, []), key=lambda row: int(row["target_program_index"])):
+            source_index = int(selection["source_program_index"])
+            target_index = int(selection["target_program_index"])
+            if source_index >= len(source_programs) or target_index >= len(target_programs):
+                raise RestorationError(f"Prototype selection index is out of range for {normalized_path}")
+            rebuilt, metadata = rebuild_dxbc_with_source_code(
+                source_payload,
+                target_payload,
+                source_programs[source_index],
+                target_programs[target_index],
+            )
+            replacements[target_index] = rebuilt
+            selected_indices.append(target_index)
+            rebuilt_program = find_dxbc_programs(rebuilt, label="rebuilt_DXBC")[0]
+            source_chunks = _chunk_map(source_payload, source_programs[source_index])
+            target_chunks = _chunk_map(target_payload, target_programs[target_index])
+            rebuilt_chunks = _chunk_map(rebuilt, rebuilt_program)
+            program_rows.append(
+                {
+                    "candidate_id": pair["candidate_id"], "rule_id": pair["rule_id"], "domain": pair["domain"], "priority": pair["priority"],
+                    "normalized_path": normalized_path, "source_program_index": source_index, "target_program_index": target_index,
+                    "stage": target_programs[target_index].get("stage", ""), "shader_model": target_programs[target_index].get("shader_model", ""),
+                    "target_program_size": target_programs[target_index]["size"], "prototype_program_size": len(rebuilt),
+                    "size_delta": len(rebuilt) - int(target_programs[target_index]["size"]),
+                    "source_code_sha256": _stable_json_sha256({key: row["sha256"] for key, row in source_chunks.items() if row["fourcc"] in DXBC_CODE_FOURCCS}),
+                    "prototype_code_sha256": _stable_json_sha256({key: row["sha256"] for key, row in rebuilt_chunks.items() if row["fourcc"] in DXBC_CODE_FOURCCS}),
+                    "target_noncode_sha256": _stable_json_sha256({key: row["sha256"] for key, row in target_chunks.items() if row["fourcc"] not in DXBC_CODE_FOURCCS}),
+                    "prototype_noncode_sha256": _stable_json_sha256({key: row["sha256"] for key, row in rebuilt_chunks.items() if row["fourcc"] not in DXBC_CODE_FOURCCS}),
+                    "source_code_preserved": str(metadata["source_code_chunks_preserved"]).lower(),
+                    "target_noncode_preserved": str(metadata["non_code_chunks_preserved"]).lower(),
+                    "checksum_valid": str(metadata["checksum_matches"]).lower(),
+                }
+            )
+        if not replacements:
+            skipped_rows.append({"candidate_id": pair["candidate_id"], "side": "both", "normalized_path": normalized_path, "member_key": "<direct>", "member_name": Path(normalized_path).name, "reason": "no_valid_dry_run_selection"})
+            continue
+        prototype, serializer_meta, fields = serialize_g1s_code_transplant(target_payload, target_programs, replacements)
+        prototype_id = f"{pair['rule_id']}_original_code"
+        if prototype_id in built_ids:
+            prototype_id = f"{prototype_id}_{pair['candidate_id'][-8:]}"
+        built_ids.add(prototype_id)
+        output_file = prototype_root / prototype_id / "override" / PurePosixPath(normalized_path)
+        require_within(output_file, prototype_root, "Prototype output")
+        _atomic_write_bytes(output_file, prototype)
+        target_sha = hashlib.sha256(target_payload).hexdigest()
+        prototype_sha = hashlib.sha256(prototype).hexdigest()
+        relative_output = output_file.relative_to(project_root).as_posix()
+        manifest = {
+            "type": "br_quartet_restoration_local_g1s_prototype",
+            "format_version": 1,
+            "tool_version": TOOL_VERSION,
+            "prototype_id": prototype_id,
+            "rule_id": pair["rule_id"],
+            "domain": pair["domain"],
+            "normalized_target_path": normalized_path,
+            "selected_target_program_indices": selected_indices,
+            "target_sha256": target_sha,
+            "prototype_sha256": prototype_sha,
+            "target_size": len(target_payload),
+            "prototype_size": len(prototype),
+            "status": "local_reversible_prototype_not_installed",
+            "warning": "Do not copy into an installed game yet. This file is for a later isolated repack/test workflow.",
+        }
+        atomic_json(prototype_root / prototype_id / "PROTOTYPE.json", manifest)
+        (prototype_root / prototype_id / "README_TESTING.txt").write_text(
+            "Local Blue Reflection Quartet restoration prototype.\n"
+            "It preserves the Quartet G1S envelope and DXBC reflection metadata, while transplanting only selected Original executable code chunks.\n"
+            "It has not been installed or tested in game. Use only through the later isolated repack/test workflow.\n",
+            encoding="utf-8",
+        )
+        for row in fields:
+            field_rows.append({"prototype_id": prototype_id, "normalized_path": normalized_path, **row})
+        reparsed = find_dxbc_programs(prototype, label=f"prototype:{normalized_path}")
+        unselected_preserved = all(
+            prototype[int(reparsed[index]["offset"]): int(reparsed[index]["offset"]) + int(reparsed[index]["size"])]
+            == target_payload[int(target_programs[index]["offset"]): int(target_programs[index]["offset"]) + int(target_programs[index]["size"])]
+            for index in range(len(target_programs)) if index not in replacements
+        )
+        checks = {
+            "prototype_written_under_local_workspace": output_file.is_file() and is_relative_to(output_file.resolve(), workspace_root.resolve()),
+            "target_file_unchanged": hashlib.sha256(target_payload).hexdigest() == target_sha,
+            "program_count_preserved": len(reparsed) == len(target_programs),
+            "selected_programs_rebuilt": all(index in replacements for index in selected_indices),
+            "unselected_programs_byte_identical": unselected_preserved,
+            "only_approved_prefix_fields_changed": bool(serializer_meta["only_approved_prefix_fields_changed"]),
+            "all_prototype_DXBC_checksums_valid": all(
+                prototype[int(row["offset"]) + 4:int(row["offset"]) + 20]
+                == calculate_dxbc_checksum(prototype[int(row["offset"]):int(row["offset"]) + int(row["size"])])
+                for row in reparsed
+            ),
+        }
+        for check, passed in checks.items():
+            validation_rows.append({"prototype_id": prototype_id, "normalized_path": normalized_path, "check": check, "passed": str(bool(passed)).lower()})
+        if not all(checks.values()):
+            raise RestorationError(f"Prototype validation failed for {normalized_path}: {checks}")
+        prototype_rows.append(
+            {
+                "prototype_id": prototype_id, "candidate_id": pair["candidate_id"], "rule_id": pair["rule_id"], "domain": pair["domain"], "priority": pair["priority"],
+                "normalized_path": normalized_path, "local_output_path": relative_output,
+                "selected_program_indices": ",".join(str(value) for value in selected_indices),
+                "target_size": len(target_payload), "prototype_size": len(prototype), "size_delta": len(prototype) - len(target_payload),
+                "target_sha256": target_sha, "prototype_sha256": prototype_sha,
+                "g1s_magic": serializer_meta["magic"], "first_program_offset": serializer_meta["first_program_offset"],
+                "program_table_start": serializer_meta["program_table_start"], "program_table_end": serializer_meta["program_table_end"],
+                "status": "local_reversible_prototype_built_not_installed",
+            }
+        )
+
+    evidence_root = report_root / G1S_PROTOTYPE_EVIDENCE_DIR
+    if evidence_root.exists():
+        shutil.rmtree(evidence_root)
+    evidence_root.mkdir(parents=True, exist_ok=True)
+    write_tsv(evidence_root / "G1S_PROTOTYPES.tsv", [
+        "prototype_id", "candidate_id", "rule_id", "domain", "priority", "normalized_path", "local_output_path",
+        "selected_program_indices", "target_size", "prototype_size", "size_delta", "target_sha256", "prototype_sha256",
+        "g1s_magic", "first_program_offset", "program_table_start", "program_table_end", "status",
+    ], prototype_rows)
+    write_tsv(evidence_root / "G1S_PROTOTYPE_PROGRAMS.tsv", [
+        "candidate_id", "rule_id", "domain", "priority", "normalized_path", "source_program_index", "target_program_index",
+        "stage", "shader_model", "target_program_size", "prototype_program_size", "size_delta", "source_code_sha256",
+        "prototype_code_sha256", "target_noncode_sha256", "prototype_noncode_sha256", "source_code_preserved",
+        "target_noncode_preserved", "checksum_valid",
+    ], program_rows)
+    write_tsv(evidence_root / "G1S_SERIALIZER_FIELDS.tsv", [
+        "prototype_id", "normalized_path", "field_kind", "program_index", "field_offset", "old_value", "new_value",
+    ], field_rows)
+    write_tsv(evidence_root / "G1S_PROTOTYPE_VALIDATION.tsv", [
+        "prototype_id", "normalized_path", "check", "passed",
+    ], validation_rows)
+    write_tsv(evidence_root / "G1S_PROTOTYPE_BUILD_SKIPPED.tsv", [
+        "candidate_id", "side", "normalized_path", "member_key", "member_name", "reason",
+    ], skipped_rows)
+    status_counts = Counter(row["status"] for row in prototype_rows)
+    summary = {
+        "type": "br_quartet_restoration_g1s_prototype_evidence_summary",
+        "format_version": FORMAT_VERSION,
+        "tool_version": TOOL_VERSION,
+        "source_g1s_envelope_tool_version": envelope_summary.get("tool_version"),
+        "status": "local_reversible_G1S_prototypes_built_and_roundtrip_validated_not_installed",
+        "prototype_rows": len(prototype_rows),
+        "prototype_program_rows": len(program_rows),
+        "serializer_field_rows": len(field_rows),
+        "validation_rows": len(validation_rows),
+        "validation_failures": sum(1 for row in validation_rows if row["passed"] != "true"),
+        "prototype_statuses": dict(sorted(status_counts.items())),
+        "skipped_rows": len(skipped_rows),
+        "local_prototype_root": (prototype_root.relative_to(project_root)).as_posix(),
+        "policy": {
+            "installed_games_modified": False,
+            "source_or_target_extraction_modified": False,
+            "prototype_payloads_in_uploaded_report": False,
+            "prototype_files_written_only_under_local_workspace": True,
+            "whole_original_G1S_replacement_used": False,
+            "Quartet_G1S_envelope_preserved": True,
+            "Quartet_DXBC_reflection_and_signature_metadata_preserved": True,
+            "Original_selected_DXBC_code_chunks_transplanted": True,
+            "legacy_dlc_in_scope": False,
+        },
+        "next_action": "Upload the metadata-only prototype evidence archive. Then add an isolated repack/test harness that backs up and verifies target archives before any manual in-game validation; test heightfog and swater separately.",
+    }
+    atomic_json(evidence_root / "SUMMARY.json", summary)
+    output = report_root / G1S_PROTOTYPE_REPORT_NAME
+    make_report_archive(evidence_root, output)
+    return output, summary
+
+def collect_dxbc_reflection_evidence(
+    *,
+    project_root: Path,
+    workspace_root: Path,
+    report_root: Path,
+    rules_file: Path,
+    maximum_earc_bytes: int,
+    maximum_payload_bytes: int,
+) -> tuple[Path, dict[str, Any]]:
+    binary_summary_path = report_root / BINARY_DELTA_EVIDENCE_DIR / "SUMMARY.json"
+    binary_summary = load_json(binary_summary_path)
+    if binary_summary.get("type") != "br_quartet_restoration_binary_delta_evidence_summary":
+        raise RestorationError(f"Not a binary-delta evidence report: {binary_summary_path}")
+    pairs, skipped_rows = load_focused_render_pairs(
+        workspace_root=workspace_root,
+        report_root=report_root,
+        rules_file=rules_file,
+        maximum_earc_bytes=maximum_earc_bytes,
+    )
+    pairs = [
+        row for row in pairs
+        if row.get("evidence_kind") == "shader"
+        and str(row.get("normalized_path", "")).casefold() in DXBC_REFLECTION_DIRECT_PATHS
+    ]
+    program_rows: list[dict[str, Any]] = []
+    resource_rows: list[dict[str, Any]] = []
+    cbuffer_rows: list[dict[str, Any]] = []
+    variable_rows: list[dict[str, Any]] = []
+    signature_rows: list[dict[str, Any]] = []
+    diff_rows: list[dict[str, Any]] = []
+    stat_rows: list[dict[str, Any]] = []
+    readiness_rows: list[dict[str, Any]] = []
+
+    for pair in pairs:
+        source_payload = pair.get("source_payload")
+        target_payload = pair.get("target_payload")
+        for side, payload in (("source", source_payload), ("target", target_payload)):
+            if payload is not None and len(payload) > maximum_payload_bytes:
+                skipped_rows.append(
+                    {
+                        "candidate_id": pair["candidate_id"],
+                        "side": side,
+                        "normalized_path": pair["normalized_path"],
+                        "member_key": pair["member_key"],
+                        "member_name": pair.get(f"{side}_member_name", ""),
+                        "reason": f"payload_exceeds_limit:{len(payload)}>{maximum_payload_bytes}",
+                    }
+                )
+                if side == "source":
+                    source_payload = None
+                else:
+                    target_payload = None
+        source_programs = find_dxbc_programs(source_payload or b"", label=str(pair.get("source_member_name", ""))) if source_payload is not None else []
+        target_programs = find_dxbc_programs(target_payload or b"", label=str(pair.get("target_member_name", ""))) if target_payload is not None else []
+        path_programs: list[dict[str, Any]] = []
+        for program_delta in compare_dxbc_programs(source_programs, target_programs):
+            source_index = program_delta.get("source_program_index", "")
+            target_index = program_delta.get("target_program_index", "")
+            source_program = source_programs[int(source_index)] if source_index != "" else None
+            target_program = target_programs[int(target_index)] if target_index != "" else None
+            source_chunks = _chunk_map(source_payload, source_program)
+            target_chunks = _chunk_map(target_payload, target_program)
+            source_rdef_chunk = source_chunks.get("RDEF#0")
+            target_rdef_chunk = target_chunks.get("RDEF#0")
+            source_rdef = parse_dxbc_rdef(source_rdef_chunk["payload"]) if source_rdef_chunk else {"status": "missing", "resources": [], "cbuffers": [], "variables": [], "reflection_semantic_sha256": "", "resource_semantic_sha256": "", "cbuffer_semantic_sha256": "", "creator": "", "target_version": "", "target_stage": "", "flags": ""}
+            target_rdef = parse_dxbc_rdef(target_rdef_chunk["payload"]) if target_rdef_chunk else {"status": "missing", "resources": [], "cbuffers": [], "variables": [], "reflection_semantic_sha256": "", "resource_semantic_sha256": "", "cbuffer_semantic_sha256": "", "creator": "", "target_version": "", "target_stage": "", "flags": ""}
+            source_signatures: dict[str, dict[str, Any]] = {}
+            target_signatures: dict[str, dict[str, Any]] = {}
+            for key, chunk in source_chunks.items():
+                if chunk["fourcc"] in DXBC_SIGNATURE_FOURCCS | {"ISG1", "OSG1"}:
+                    source_signatures[key] = parse_dxbc_signature(chunk["payload"], str(chunk["fourcc"]))
+            for key, chunk in target_chunks.items():
+                if chunk["fourcc"] in DXBC_SIGNATURE_FOURCCS | {"ISG1", "OSG1"}:
+                    target_signatures[key] = parse_dxbc_signature(chunk["payload"], str(chunk["fourcc"]))
+            source_signature_semantics = {
+                key: value.get("semantic_sha256", "") for key, value in source_signatures.items()
+            }
+            target_signature_semantics = {
+                key: value.get("semantic_sha256", "") for key, value in target_signatures.items()
+            }
+            signatures_same = source_signature_semantics == target_signature_semantics
+            source_code = {
+                key: row["sha256"] for key, row in source_chunks.items() if row["fourcc"] in DXBC_CODE_FOURCCS
+            }
+            target_code = {
+                key: row["sha256"] for key, row in target_chunks.items() if row["fourcc"] in DXBC_CODE_FOURCCS
+            }
+            code_same = source_code == target_code
+            reflection_same = (
+                source_rdef.get("status") == "ok"
+                and target_rdef.get("status") == "ok"
+                and source_rdef.get("reflection_semantic_sha256") == target_rdef.get("reflection_semantic_sha256")
+            )
+            if source_program is None:
+                classification = "program_added_in_target"
+            elif target_program is None:
+                classification = "program_removed_in_target"
+            elif source_rdef.get("status") != "ok" or target_rdef.get("status") != "ok":
+                classification = "reflection_parse_error"
+            elif not reflection_same:
+                classification = "reflection_layout_delta"
+            elif not signatures_same:
+                classification = "io_signature_delta"
+            elif not code_same:
+                classification = "code_delta_with_stable_reflection"
+            elif source_program.get("sha256") != target_program.get("sha256"):
+                classification = "compiler_or_reflection_metadata_only_delta"
+            else:
+                classification = "identical"
+
+            base = {
+                "candidate_id": pair["candidate_id"],
+                "rule_id": pair["rule_id"],
+                "domain": pair["domain"],
+                "priority": pair["priority"],
+                "normalized_path": pair["normalized_path"],
+                "source_program_index": source_index,
+                "target_program_index": target_index,
+                "source_stage": program_delta.get("source_stage", ""),
+                "target_stage": program_delta.get("target_stage", ""),
+                "source_shader_model": program_delta.get("source_shader_model", ""),
+                "target_shader_model": program_delta.get("target_shader_model", ""),
+            }
+            resource_removed, resource_added, resource_identical = _semantic_diff_count(
+                source_rdef.get("resources", []), target_rdef.get("resources", []),
+                ("name", "resource_type", "return_type", "dimension", "sample_count", "bind_point", "bind_count", "flags", "space"),
+            )
+            cbuffer_removed, cbuffer_added, cbuffer_identical = _semantic_diff_count(
+                source_rdef.get("cbuffers", []), target_rdef.get("cbuffers", []),
+                ("name", "variable_count", "size", "flags", "buffer_type"),
+            )
+            variable_removed, variable_added, variable_identical = _semantic_diff_count(
+                source_rdef.get("variables", []), target_rdef.get("variables", []),
+                ("cbuffer_name", "name", "start_offset", "size", "flags", "type_class", "type_code", "rows", "columns", "elements", "members", "type_name", "default_status", "default_sha256"),
+            )
+            row = {
+                **base,
+                "source_program_sha256": (source_program or {}).get("sha256", ""),
+                "target_program_sha256": (target_program or {}).get("sha256", ""),
+                "source_rdef_raw_sha256": (source_rdef_chunk or {}).get("sha256", ""),
+                "target_rdef_raw_sha256": (target_rdef_chunk or {}).get("sha256", ""),
+                "source_reflection_semantic_sha256": source_rdef.get("reflection_semantic_sha256", ""),
+                "target_reflection_semantic_sha256": target_rdef.get("reflection_semantic_sha256", ""),
+                "source_creator": source_rdef.get("creator", ""),
+                "target_creator": target_rdef.get("creator", ""),
+                "source_rdef_status": source_rdef.get("status", ""),
+                "target_rdef_status": target_rdef.get("status", ""),
+                "signatures_semantically_identical": str(signatures_same).lower(),
+                "code_chunks_identical": str(code_same).lower(),
+                "resource_removed": resource_removed,
+                "resource_added": resource_added,
+                "resource_identical": resource_identical,
+                "cbuffer_removed": cbuffer_removed,
+                "cbuffer_added": cbuffer_added,
+                "cbuffer_identical": cbuffer_identical,
+                "variable_removed": variable_removed,
+                "variable_added": variable_added,
+                "variable_identical": variable_identical,
+                "classification": classification,
+                "review_status": "semantic_DXBC_reflection_metadata_only",
+            }
+            program_rows.append(row)
+            path_programs.append(row)
+            diff_rows.append(
+                {
+                    **base,
+                    "classification": classification,
+                    "resource_removed": resource_removed,
+                    "resource_added": resource_added,
+                    "cbuffer_removed": cbuffer_removed,
+                    "cbuffer_added": cbuffer_added,
+                    "variable_removed": variable_removed,
+                    "variable_added": variable_added,
+                    "signatures_semantically_identical": str(signatures_same).lower(),
+                    "code_chunks_identical": str(code_same).lower(),
+                    "interpretation": (
+                        "executable_code_delta_with_compatible_reflection_candidate"
+                        if classification == "code_delta_with_stable_reflection"
+                        else "raw_DXBC_difference_is_non_executable_metadata_only"
+                        if classification == "compiler_or_reflection_metadata_only_delta"
+                        else "binding_or_signature_compatibility_not_proven"
+                        if classification in {"reflection_layout_delta", "io_signature_delta", "reflection_parse_error"}
+                        else classification
+                    ),
+                }
+            )
+            for side, parsed in (("source", source_rdef), ("target", target_rdef)):
+                for resource in parsed.get("resources", []):
+                    resource_rows.append({**base, "side": side, **resource})
+                for cbuffer in parsed.get("cbuffers", []):
+                    cbuffer_rows.append({**base, "side": side, **cbuffer})
+                for variable in parsed.get("variables", []):
+                    variable_rows.append({**base, "side": side, **variable})
+            for side, signatures in (("source", source_signatures), ("target", target_signatures)):
+                for chunk_key, parsed in signatures.items():
+                    for element in parsed.get("elements", []):
+                        signature_rows.append(
+                            {**base, "side": side, "chunk_key": chunk_key, "signature_status": parsed.get("status", ""), **element}
+                        )
+            source_stat = parse_dxbc_stat(source_chunks["STAT#0"]["payload"]) if "STAT#0" in source_chunks else {"status": "missing", "values": []}
+            target_stat = parse_dxbc_stat(target_chunks["STAT#0"]["payload"]) if "STAT#0" in target_chunks else {"status": "missing", "values": []}
+            max_stat = max(len(source_stat.get("values", [])), len(target_stat.get("values", [])))
+            for stat_index in range(max_stat):
+                left = source_stat.get("values", [])[stat_index] if stat_index < len(source_stat.get("values", [])) else ""
+                right = target_stat.get("values", [])[stat_index] if stat_index < len(target_stat.get("values", [])) else ""
+                if left == right:
+                    continue
+                stat_rows.append(
+                    {**base, "stat_index": stat_index, "source_value": left, "target_value": right, "review_status": "compiler_statistics_metadata_only"}
+                )
+
+        classes = Counter(str(row["classification"]) for row in path_programs)
+        code_programs = [row for row in path_programs if row["classification"] == "code_delta_with_stable_reflection"]
+        unsafe = any(
+            row["classification"] in {"reflection_layout_delta", "io_signature_delta", "reflection_parse_error", "program_added_in_target", "program_removed_in_target"}
+            for row in path_programs
+        )
+        normalized_path = str(pair["normalized_path"])
+        if unsafe:
+            action = "defer_shader_prototype_binding_or_inventory_delta"
+            risk = "high"
+            readiness = "not_ready"
+        elif code_programs:
+            if normalized_path.endswith("heightfog.g1s"):
+                action = "prepare_surgical_heightfog_DXBC_code_chunk_transplant"
+                risk = "medium"
+            elif normalized_path.endswith("swater.g1s"):
+                action = "prepare_separate_swater_vertex_DXBC_code_chunk_transplant"
+                risk = "medium_high"
+            else:
+                action = "prepare_surgical_direct_shader_DXBC_code_chunk_transplant"
+                risk = "medium"
+            readiness = "ready_for_reversible_prototype_generation"
+        else:
+            action = "do_not_build_shader_override_no_executable_code_delta"
+            risk = "low"
+            readiness = "not_a_shader_code_restoration_candidate"
+        readiness_rows.append(
+            {
+                "candidate_id": pair["candidate_id"],
+                "rule_id": pair["rule_id"],
+                "domain": pair["domain"],
+                "priority": pair["priority"],
+                "normalized_path": normalized_path,
+                "program_count": len(path_programs),
+                "program_classifications": " || ".join(f"{key}:{value}" for key, value in sorted(classes.items())),
+                "code_delta_programs": ",".join(
+                    f"{row['target_program_index'] or row['source_program_index']}:{row['target_stage'] or row['source_stage']}"
+                    for row in code_programs
+                ),
+                "readiness": readiness,
+                "prototype_action": action,
+                "risk": risk,
+                "prototype_scope": "DXBC_code_chunks_only_preserve_Quartet_outer_G1S_and_reflection_metadata",
+                "review_status": "prototype_not_generated",
+            }
+        )
+
+    evidence_root = report_root / DXBC_REFLECTION_EVIDENCE_DIR
+    if evidence_root.exists():
+        shutil.rmtree(evidence_root)
+    evidence_root.mkdir(parents=True, exist_ok=True)
+    write_tsv(
+        evidence_root / "DXBC_REFLECTION_PROGRAMS.tsv",
+        [
+            "candidate_id", "rule_id", "domain", "priority", "normalized_path",
+            "source_program_index", "target_program_index", "source_stage", "target_stage",
+            "source_shader_model", "target_shader_model", "source_program_sha256", "target_program_sha256",
+            "source_rdef_raw_sha256", "target_rdef_raw_sha256", "source_reflection_semantic_sha256",
+            "target_reflection_semantic_sha256", "source_creator", "target_creator", "source_rdef_status",
+            "target_rdef_status", "signatures_semantically_identical", "code_chunks_identical",
+            "resource_removed", "resource_added", "resource_identical", "cbuffer_removed", "cbuffer_added",
+            "cbuffer_identical", "variable_removed", "variable_added", "variable_identical",
+            "classification", "review_status",
+        ],
+        sorted(program_rows, key=lambda row: (str(row["normalized_path"]).casefold(), str(row["target_program_index"] or row["source_program_index"]))),
+    )
+    common_base = [
+        "candidate_id", "rule_id", "domain", "priority", "normalized_path", "source_program_index",
+        "target_program_index", "source_stage", "target_stage", "source_shader_model", "target_shader_model",
+    ]
+    write_tsv(
+        evidence_root / "DXBC_RESOURCE_BINDINGS.tsv",
+        common_base + ["side", "resource_index", "name", "name_status", "resource_type", "return_type", "dimension", "sample_count", "bind_point", "bind_count", "flags", "space", "resource_id"],
+        resource_rows,
+    )
+    write_tsv(
+        evidence_root / "DXBC_CBUFFERS.tsv",
+        common_base + ["side", "cbuffer_index", "name", "name_status", "variable_count", "size", "flags", "buffer_type"],
+        cbuffer_rows,
+    )
+    write_tsv(
+        evidence_root / "DXBC_CBUFFER_VARIABLES.tsv",
+        common_base + ["side", "cbuffer_index", "cbuffer_name", "variable_index", "name", "name_status", "start_offset", "size", "flags", "type_class", "type_code", "rows", "columns", "elements", "members", "type_name", "type_name_status", "default_status", "default_sha256"],
+        variable_rows,
+    )
+    write_tsv(
+        evidence_root / "DXBC_SIGNATURE_ELEMENTS.tsv",
+        common_base + ["side", "chunk_key", "signature_status", "element_index", "stream", "semantic_name", "name_status", "semantic_index", "system_value", "component_type", "register", "mask", "rw_mask", "precision"],
+        signature_rows,
+    )
+    write_tsv(
+        evidence_root / "DXBC_REFLECTION_DIFF.tsv",
+        common_base + ["classification", "resource_removed", "resource_added", "cbuffer_removed", "cbuffer_added", "variable_removed", "variable_added", "signatures_semantically_identical", "code_chunks_identical", "interpretation"],
+        diff_rows,
+    )
+    write_tsv(
+        evidence_root / "DXBC_STAT_DELTA.tsv",
+        common_base + ["stat_index", "source_value", "target_value", "review_status"],
+        stat_rows,
+    )
+    write_tsv(
+        evidence_root / "PROTOTYPE_READINESS.tsv",
+        ["candidate_id", "rule_id", "domain", "priority", "normalized_path", "program_count", "program_classifications", "code_delta_programs", "readiness", "prototype_action", "risk", "prototype_scope", "review_status"],
+        sorted(readiness_rows, key=lambda row: (str(row["priority"]), str(row["normalized_path"]).casefold())),
+    )
+    write_tsv(
+        evidence_root / "DXBC_REFLECTION_SCAN_SKIPPED.tsv",
+        ["candidate_id", "side", "normalized_path", "member_key", "member_name", "reason"],
+        skipped_rows,
+    )
+    classification_counts = Counter(str(row["classification"]) for row in program_rows)
+    readiness_counts = Counter(str(row["readiness"]) for row in readiness_rows)
+    action_counts = Counter(str(row["prototype_action"]) for row in readiness_rows)
+    summary = {
+        "type": "br_quartet_restoration_dxbc_reflection_evidence_summary",
+        "format_version": FORMAT_VERSION,
+        "tool_version": TOOL_VERSION,
+        "source_binary_delta_tool_version": binary_summary.get("tool_version"),
+        "status": "DXBC_reflection_binding_and_signature_semantics_complete_prototypes_not_generated",
+        "direct_shader_files": len(readiness_rows),
+        "program_rows": len(program_rows),
+        "program_classifications": dict(sorted(classification_counts.items())),
+        "resource_binding_rows": len(resource_rows),
+        "constant_buffer_rows": len(cbuffer_rows),
+        "constant_buffer_variable_rows": len(variable_rows),
+        "signature_element_rows": len(signature_rows),
+        "stat_delta_rows": len(stat_rows),
+        "prototype_readiness": dict(sorted(readiness_counts.items())),
+        "prototype_actions": dict(sorted(action_counts.items())),
+        "skipped_rows": len(skipped_rows),
+        "policy": {
+            "installed_games_modified": False,
+            "shader_bytecode_exported": False,
+            "resource_and_constant_buffer_metadata_only": True,
+            "prototype_patch_generated": False,
+            "automatic_censorship_claims": False,
+            "legacy_dlc_in_scope": False,
+        },
+        "next_action": (
+            "Upload the DXBC reflection evidence archive. Generate separate reversible surgical code-chunk "
+            "transplant prototypes only for shader families whose executable code differs while resource, "
+            "constant-buffer and IO-signature semantics remain compatible. Do not override cwater/cwater2 "
+            "when their executable code is identical."
+        ),
+    }
+    atomic_json(evidence_root / "SUMMARY.json", summary)
+    output = report_root / DXBC_REFLECTION_REPORT_NAME
+    make_report_archive(evidence_root, output)
+    return output, summary
+
+
+
+
+
+LIGHTSHAFT_KEYWORDS = (
+    "lightshaft", "light_shaft", "godray", "god_ray", "sunshaft", "sun_shaft",
+    "volumetriclight", "volumetric_light", "lightbeam", "light_beam",
+    "beam", "shaft", "radialblur", "radial_blur", "bloom", "flare", "glare",
+)
+
+COSTUME_EVENT_EXTENSIONS = {".ebd", ".epd", ".bsb", ".bin", ".dat"}
+
+
+def load_restoration_dimensions(path: Path) -> list[dict[str, str]]:
+    rows = [row for row in read_tsv(path) if row.get("status") == "active"]
+    required = ("dimension_id", "priority", "evidence_surfaces", "note")
+    for row in rows:
+        missing = [name for name in required if not row.get(name)]
+        if missing:
+            raise RestorationError(
+                f"Restoration dimension {row.get('dimension_id', '<unnamed>')} is missing: "
+                + ", ".join(missing)
+            )
+    if not rows:
+        raise RestorationError(f"No active restoration dimensions: {path}")
+    return rows
+
+
+def costume_family_for_path(path: str) -> str:
+    value = safe_posix_path(path).casefold()
+    name = Path(logical_asset_stem(value)).name
+    if "item_bathtowel" in value:
+        return "bath_towel"
+    if "item_swimsuit" in value:
+        return "swimsuit_prop"
+    ordered = (
+        ("_rfl_w", "wet_reflector"),
+        ("_udw3", "underwear_variant_3"),
+        ("_udw2", "underwear_variant_2"),
+        ("_udw", "underwear"),
+        ("_tng", "underwear_or_towel_state"),
+        ("_nkd", "unclothed_body"),
+        ("_swm", "swimwear"),
+        ("_scl", "school_costume"),
+        ("_rfl", "reflector_costume"),
+    )
+    for token, family in ordered:
+        if token in name:
+            return family
+    if any(token in name for token in ("costume", "cloth", "dress", "uniform", "wear")):
+        return "other_costume"
+    return ""
+
+
+def decode_technical_text(payload: bytes) -> str:
+    if payload.startswith(b"\xef\xbb\xbf"):
+        return payload.decode("utf-8-sig", errors="replace")
+    if payload.startswith((b"\xff\xfe", b"\xfe\xff")):
+        return payload.decode("utf-16", errors="replace")
+    sample = payload[:4096]
+    if sample and sample.count(b"\x00") > len(sample) // 4:
+        even_zeros = sample[0::2].count(0)
+        odd_zeros = sample[1::2].count(0)
+        encoding = "utf-16le" if odd_zeros >= even_zeros else "utf-16be"
+        return payload.decode(encoding, errors="replace")
+    return payload.decode("utf-8", errors="replace")
+
+
+def flatten_xml_settings(payload: bytes) -> list[dict[str, str]]:
+    text = decode_technical_text(payload).strip("\x00\ufeff\n\r\t ")
+    if not text:
+        return []
+    try:
+        root = ET.fromstring(text)
+    except ET.ParseError:
+        rows: list[dict[str, str]] = []
+        for line_index, line in enumerate(text.splitlines()):
+            stripped = line.strip()
+            if not stripped or stripped.startswith(("#", ";", "//")):
+                continue
+            match = re.match(r"([A-Za-z_][A-Za-z0-9_.:/-]{1,127})\s*[=:]\s*(.{1,256})$", stripped)
+            if match:
+                rows.append({"setting_path": match.group(1), "value": match.group(2).strip()})
+            elif any(keyword in stripped.casefold() for keyword in LIGHTSHAFT_KEYWORDS):
+                rows.append({"setting_path": f"line[{line_index}]", "value": stripped[:256]})
+        return rows
+
+    rows: list[dict[str, str]] = []
+    def visit(element: ET.Element, path: str) -> None:
+        current = path or str(element.tag)
+        for key, value in sorted(element.attrib.items()):
+            rows.append({"setting_path": f"{current}/@{key}", "value": str(value)[:256]})
+        value = (element.text or "").strip()
+        if value:
+            rows.append({"setting_path": f"{current}/#text", "value": value[:256]})
+        counts: Counter[str] = Counter()
+        for child in list(element):
+            index = counts[str(child.tag)]
+            counts[str(child.tag)] += 1
+            visit(child, f"{current}/{child.tag}[{index}]")
+    # Avoid duplicating the root tag in the first path.
+    for key, value in sorted(root.attrib.items()):
+        rows.append({"setting_path": f"{root.tag}/@{key}", "value": str(value)[:256]})
+    root_value = (root.text or "").strip()
+    if root_value:
+        rows.append({"setting_path": f"{root.tag}/#text", "value": root_value[:256]})
+    counts: Counter[str] = Counter()
+    for child in list(root):
+        index = counts[str(child.tag)]
+        counts[str(child.tag)] += 1
+        visit(child, f"{root.tag}/{child.tag}[{index}]")
+    return rows
+
+
+def extract_keyword_tokens(payload: bytes, keywords: Sequence[str]) -> list[str]:
+    found: set[str] = set()
+    folded_keywords = tuple(keyword.casefold() for keyword in keywords)
+    for match in TECHNICAL_IDENTIFIER_RE.finditer(payload):
+        token = match.group(0).decode("ascii", errors="strict")
+        folded = token.casefold()
+        if any(keyword in folded for keyword in folded_keywords):
+            found.add(token)
+    return sorted(found, key=str.casefold)
+
+
+def useful_oid_window(value: bytes) -> bool:
+    if len(value) < 8 or len(set(value)) < 4:
+        return False
+    if all(byte in {0x00, 0xFF} for byte in value):
+        return False
+    printable = sum(0x20 <= byte < 0x7F for byte in value)
+    # Textual IDs were already exhausted; prefer numeric/binary fingerprints.
+    if printable >= int(len(value) * 0.85):
+        return False
+    words = [int.from_bytes(value[index:index+4], "little") for index in range(0, len(value) - 3, 4)]
+    if words and all(word <= 4 or word in {0xFFFFFFFF} for word in words):
+        return False
+    return True
+
+
+def oid_seed_windows(payload: bytes, *, maximum_per_payload: int = 8) -> list[tuple[int, bytes, str]]:
+    candidates: list[tuple[int, bytes, str, int]] = []
+    if 8 <= len(payload) <= 128 and useful_oid_window(payload):
+        candidates.append((0, payload, "full_oid_payload", len(set(payload))))
+    for size in (24, 20, 16, 12, 8):
+        if len(payload) < size:
+            continue
+        for offset in range(0, len(payload) - size + 1, 4):
+            window = payload[offset:offset + size]
+            if useful_oid_window(window):
+                score = len(set(window)) * 100 + size - offset // 4
+                candidates.append((offset, window, f"aligned_{size}_byte_window", score))
+    selected: list[tuple[int, bytes, str]] = []
+    seen: set[bytes] = set()
+    for offset, window, kind, _score in sorted(candidates, key=lambda row: (-row[3], -len(row[1]), row[0])):
+        if window in seen:
+            continue
+        seen.add(window)
+        selected.append((offset, window, kind))
+        if len(selected) >= maximum_per_payload:
+            break
+    return selected
+
+
+def common_prefix_length(left: bytes, right: bytes) -> int:
+    limit = min(len(left), len(right))
+    index = 0
+    while index < limit and left[index] == right[index]:
+        index += 1
+    return index
+
+
+def common_suffix_length(left: bytes, right: bytes, prefix: int = 0) -> int:
+    limit = min(len(left), len(right)) - prefix
+    index = 0
+    while index < limit and left[len(left) - 1 - index] == right[len(right) - 1 - index]:
+        index += 1
+    return index
+
+
+def _inventory_index(inventories: Sequence[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
+    result: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for inventory in inventories:
+        pair_id = str(inventory.get("archive_group", ""))
+        for entry in inventory.get("files", []):
+            result[str(entry.get("normalized_path", "")).casefold()].append({**entry, "pair_id": pair_id})
+    return result
+
+
+def _read_asset_oid_members(
+    *, workspace_root: Path, side: str, entry: dict[str, Any], maximum_earc_bytes: int,
+) -> list[dict[str, Any]]:
+    local_path = inventory_workspace_file(
+        workspace_root, side, str(entry["pair_id"]), str(entry["archive"]), str(entry["path"])
+    )
+    if not local_path.is_file():
+        raise RestorationError(f"workspace_file_missing: {local_path}")
+    if str(entry.get("normalized_path", "")).casefold().endswith(".elixir.gz"):
+        archive = read_earc_archive(local_path, maximum_bytes=maximum_earc_bytes, include_member_payloads=True)
+        return [
+            {"member_name": str(member["name"]), "payload": member["payload"]}
+            for member in archive["members"]
+            if str(member["name"]).casefold().endswith("oid.bin")
+        ]
+    payload = local_path.read_bytes()
+    return [{"member_name": Path(str(entry["path"])).name, "payload": payload}]
+
+
+def collect_presentation_surface_evidence(
+    *,
+    project_root: Path,
+    workspace_root: Path,
+    report_root: Path,
+    candidate_rules_file: Path,
+    effect_rules_file: Path,
+    dimensions_file: Path,
+    maximum_earc_bytes: int,
+    maximum_payload_bytes: int,
+) -> tuple[Path, dict[str, Any]]:
+    inventory_summary = load_json(report_root / "SUMMARY.json")
+    if inventory_summary.get("type") != "br_quartet_restoration_research_summary":
+        raise RestorationError(f"Not a Quartet restoration report: {report_root / 'SUMMARY.json'}")
+    prototype_summary_path = report_root / G1S_PROTOTYPE_EVIDENCE_DIR / "SUMMARY.json"
+    prototype_summary = load_json(prototype_summary_path)
+    if prototype_summary.get("type") != "br_quartet_restoration_g1s_prototype_evidence_summary":
+        raise RestorationError(f"Not a G1S prototype report: {prototype_summary_path}")
+    if int(prototype_summary.get("validation_failures", -1)) != 0:
+        raise RestorationError("G1S prototype evidence contains validation failures")
+
+    differences = load_report_jsons(report_root, "differences")
+    inv_dir = report_root / "inventories"
+    source_inventories = [load_json(path) for path in sorted(inv_dir.glob("*.source.json"))]
+    target_inventories = [load_json(path) for path in sorted(inv_dir.glob("*.target.json"))]
+    if not source_inventories or not target_inventories:
+        raise RestorationError("Could not resolve source/target inventories for presentation-surface analysis")
+
+    dimensions = load_restoration_dimensions(dimensions_file)
+    candidate_rules = load_candidate_rules(candidate_rules_file)
+    candidates = build_candidate_families(
+        differences=differences, target_inventories=target_inventories, rules=candidate_rules
+    )
+    source_index = _inventory_index(source_inventories)
+    target_index = _inventory_index(target_inventories)
+
+    dimension_rows = [
+        {
+            "dimension_id": row["dimension_id"], "priority": row["priority"],
+            "evidence_surfaces": row["evidence_surfaces"], "status": "in_scope_not_automatically_censorship",
+            "note": row["note"],
+        }
+        for row in dimensions
+    ]
+
+    # Build candidate/counterpart OID fingerprints.
+    oid_assets: list[dict[str, Any]] = []
+    skipped_rows: list[dict[str, Any]] = []
+    for candidate in candidates:
+        for role, side, paths, index in (
+            ("variant", "target", candidate["asset_files"], target_index),
+            ("counterpart_original", "source", candidate["counterpart_asset_paths"], source_index),
+        ):
+            for asset_path in paths:
+                if not str(asset_path).casefold().endswith(".elixir.gz"):
+                    continue
+                entries = index.get(str(asset_path).casefold(), [])
+                if not entries:
+                    skipped_rows.append({"stage": "oid", "path": asset_path, "side": side, "reason": "inventory_entry_missing"})
+                    continue
+                try:
+                    members = _read_asset_oid_members(
+                        workspace_root=workspace_root, side=side, entry=entries[0], maximum_earc_bytes=maximum_earc_bytes
+                    )
+                except RestorationError as exc:
+                    skipped_rows.append({"stage": "oid", "path": asset_path, "side": side, "reason": str(exc)})
+                    continue
+                for member in members:
+                    oid_assets.append({
+                        "candidate_id": candidate["candidate_id"], "family": candidate["family"],
+                        "character_id": candidate["character_id"], "role": role, "side": side,
+                        "asset_path": asset_path, "member_name": member["member_name"], "payload": member["payload"],
+                    })
+
+    seed_owners: dict[bytes, list[dict[str, Any]]] = defaultdict(list)
+    for asset in oid_assets:
+        for offset, seed, kind in oid_seed_windows(asset["payload"]):
+            seed_owners[seed].append({**asset, "seed_offset": offset, "seed_kind": kind})
+    unique_seeds: list[dict[str, Any]] = []
+    for seed, owners in seed_owners.items():
+        owner_keys = {(str(row["candidate_id"]), str(row["role"]), str(row["asset_path"]), str(row["member_name"])) for row in owners}
+        if len(owner_keys) != 1:
+            continue
+        owner = owners[0]
+        unique_seeds.append({
+            **owner,
+            "seed": seed,
+            "seed_id": "oidseed_" + hashlib.sha256(seed).hexdigest()[:18],
+            "seed_length": len(seed),
+            "seed_sha256": hashlib.sha256(seed).hexdigest(),
+            "uniqueness": "unique_across_scanned_costume_oid_members",
+        })
+    # Keep strongest deterministic fingerprints per asset.
+    grouped_seeds: dict[tuple[str, str, str, str], list[dict[str, Any]]] = defaultdict(list)
+    for row in unique_seeds:
+        grouped_seeds[(str(row["candidate_id"]), str(row["role"]), str(row["asset_path"]), str(row["member_name"]))].append(row)
+    scan_seeds: list[dict[str, Any]] = []
+    for rows in grouped_seeds.values():
+        scan_seeds.extend(sorted(rows, key=lambda row: (-int(row["seed_length"]), int(row["seed_offset"])))[:4])
+
+    # Scan changed event binaries for variant/base OID fingerprints.
+    event_hit_rows: list[dict[str, Any]] = []
+    event_delta_rows: list[dict[str, Any]] = []
+    binding_groups: dict[tuple[str, str], dict[str, Any]] = {}
+    for report in differences:
+        pair_id = str(report.get("source_archive_group", ""))
+        if pair_id != "br1_events":
+            continue
+        for entry in report.get("entries", []):
+            if entry.get("classification") != "changed" or entry.get("scope_status") != "in_scope":
+                continue
+            normalized_path = str(entry.get("normalized_path", ""))
+            if Path(normalized_path).suffix.casefold() not in COSTUME_EVENT_EXTENSIONS:
+                continue
+            source_ref = entry.get("source") or {}
+            target_ref = entry.get("target") or {}
+            source_path = inventory_workspace_file(workspace_root, "source", pair_id, str(source_ref.get("archive", "")), str(source_ref.get("path", "")))
+            target_path = inventory_workspace_file(workspace_root, "target", pair_id, str(target_ref.get("archive", "")), str(target_ref.get("path", "")))
+            if not source_path.is_file() or not target_path.is_file():
+                skipped_rows.append({"stage": "event", "path": normalized_path, "side": "both", "reason": "workspace_file_missing"})
+                continue
+            source_payload = source_path.read_bytes()
+            target_payload = target_path.read_bytes()
+            prefix = common_prefix_length(source_payload, target_payload)
+            suffix = common_suffix_length(source_payload, target_payload, prefix)
+            event_delta_rows.append({
+                "pair_id": pair_id, "normalized_path": normalized_path,
+                "source_size": len(source_payload), "target_size": len(target_payload),
+                "size_delta": len(target_payload) - len(source_payload),
+                "common_prefix_bytes": prefix, "common_suffix_bytes": suffix,
+                "source_changed_span": max(0, len(source_payload) - prefix - suffix),
+                "target_changed_span": max(0, len(target_payload) - prefix - suffix),
+                "review_status": "binary_scene_delta_not_censorship_proof",
+            })
+            for side, payload in (("source", source_payload), ("target", target_payload)):
+                for seed_row in scan_seeds:
+                    seed = seed_row["seed"]
+                    first = payload.find(seed)
+                    if first < 0:
+                        continue
+                    offsets: list[int] = []
+                    cursor = 0
+                    while len(offsets) < 8:
+                        found = payload.find(seed, cursor)
+                        if found < 0:
+                            break
+                        offsets.append(found)
+                        cursor = found + 1
+                    hit = {
+                        "candidate_id": seed_row["candidate_id"], "family": seed_row["family"],
+                        "character_id": seed_row["character_id"], "role": seed_row["role"],
+                        "seed_id": seed_row["seed_id"], "seed_length": seed_row["seed_length"],
+                        "pair_id": pair_id, "normalized_path": normalized_path, "side": side,
+                        "occurrence_count": len(offsets), "first_offsets": ",".join(str(value) for value in offsets),
+                        "review_status": "binary_fingerprint_hit_requires_scene_confirmation",
+                    }
+                    event_hit_rows.append(hit)
+                    key = (normalized_path, str(seed_row["candidate_id"]))
+                    group = binding_groups.setdefault(key, {
+                        "normalized_path": normalized_path, "candidate_id": seed_row["candidate_id"],
+                        "family": seed_row["family"], "character_id": seed_row["character_id"],
+                        "source_variant_seeds": set(), "source_counterpart_seeds": set(),
+                        "target_variant_seeds": set(), "target_counterpart_seeds": set(),
+                    })
+                    group[f"{side}_{'variant' if seed_row['role'] == 'variant' else 'counterpart'}_seeds"].add(seed_row["seed_id"])
+
+    binding_rows: list[dict[str, Any]] = []
+    for group in binding_groups.values():
+        sv=len(group["source_variant_seeds"]); sc=len(group["source_counterpart_seeds"])
+        tv=len(group["target_variant_seeds"]); tc=len(group["target_counterpart_seeds"])
+        if tv and sc:
+            classification="candidate_costume_substitution"
+        elif tv and not sv:
+            classification="candidate_target_only_costume_binding"
+        elif sc and not tc and not tv:
+            classification="candidate_removed_or_reencoded_costume_binding"
+        else:
+            classification="costume_fingerprint_present_without_directional_substitution"
+        independent=max(sv+sc, tv+tc)
+        confidence="high" if independent >= 2 and classification.startswith("candidate_") else "medium" if independent >= 1 else "low"
+        binding_rows.append({
+            "normalized_path": group["normalized_path"], "candidate_id": group["candidate_id"],
+            "family": group["family"], "character_id": group["character_id"],
+            "source_variant_seed_count": sv, "source_counterpart_seed_count": sc,
+            "target_variant_seed_count": tv, "target_counterpart_seed_count": tc,
+            "classification": classification, "confidence": confidence,
+            "review_status": "manual_scene_and_costume_state_confirmation_required",
+        })
+
+    # Find target-only and changed lightshaft/godray settings and focused render members.
+    preset_rows: list[dict[str, Any]] = []
+    light_asset_rows: list[dict[str, Any]] = []
+    member_rows: list[dict[str, Any]] = []
+    effect_candidates = build_effect_material_candidates(differences, load_effect_material_rules(effect_rules_file))
+    for report in differences:
+        pair_id = str(report.get("source_archive_group", ""))
+        for entry in report.get("entries", []):
+            normalized_path = str(entry.get("normalized_path", ""))
+            folded = normalized_path.casefold()
+            keyword_path = any(keyword in folded for keyword in LIGHTSHAFT_KEYWORDS)
+            preset_path = folded.endswith(("lightshaftpreset.xml", "lightshaftpreset.xml.e", "bloompreset.xml", "bloompreset.xml.e"))
+            if not (keyword_path or preset_path):
+                continue
+            source_ref=entry.get("source") or {}; target_ref=entry.get("target") or {}
+            light_asset_rows.append({
+                "pair_id": pair_id, "normalized_path": normalized_path,
+                "classification": entry.get("classification", ""),
+                "source_size": source_ref.get("size", ""), "target_size": target_ref.get("size", ""),
+                "path_keywords": ",".join(keyword for keyword in LIGHTSHAFT_KEYWORDS if keyword in folded),
+                "review_status": "godray_or_lightshaft_candidate_not_censorship_proof",
+            })
+            settings_by_side: dict[str, dict[str, str]] = {}
+            for side, ref in (("source", source_ref), ("target", target_ref)):
+                if not ref:
+                    settings_by_side[side]={}; continue
+                local_path=inventory_workspace_file(workspace_root, side, pair_id, str(ref.get("archive", "")), str(ref.get("path", "")))
+                if not local_path.is_file():
+                    skipped_rows.append({"stage": "light_preset", "path": normalized_path, "side": side, "reason": "workspace_file_missing"})
+                    settings_by_side[side]={}; continue
+                payload=local_path.read_bytes()
+                if len(payload) > maximum_payload_bytes:
+                    skipped_rows.append({"stage": "light_preset", "path": normalized_path, "side": side, "reason": "payload_exceeds_limit"})
+                    settings_by_side[side]={}; continue
+                settings_by_side[side]={row["setting_path"]: row["value"] for row in flatten_xml_settings(payload)}
+            for setting in sorted(set(settings_by_side.get("source",{})) | set(settings_by_side.get("target",{})), key=str.casefold):
+                source_value=settings_by_side.get("source",{}).get(setting,"")
+                target_value=settings_by_side.get("target",{}).get(setting,"")
+                if source_value == target_value:
+                    continue
+                delta="added_in_target" if not source_value else "removed_in_target" if not target_value else "value_changed"
+                preset_rows.append({
+                    "pair_id": pair_id, "normalized_path": normalized_path, "setting_path": setting,
+                    "source_value": source_value, "target_value": target_value, "delta": delta,
+                    "review_status": "technical_render_setting_requires_visual_confirmation",
+                })
+
+    focused_by_path = {str(row["normalized_path"]).casefold(): row for row in effect_candidates}
+    for path_key, candidate in focused_by_path.items():
+        source_ref=candidate.get("source") or {}; target_ref=candidate.get("target") or {}
+        archives: dict[str, dict[str, Any] | None] = {"source": None, "target": None}
+        for side, ref in (("source",source_ref),("target",target_ref)):
+            if not ref or not str(ref.get("path","")).casefold().endswith(".elixir.gz"):
+                continue
+            local_path=inventory_workspace_file(workspace_root, side, str(candidate["pair_id"]), str(ref.get("archive","")), str(ref.get("path","")))
+            if not local_path.is_file():
+                continue
+            try:
+                archives[side]=read_earc_archive(local_path, maximum_bytes=maximum_earc_bytes, include_member_payloads=True)
+            except RestorationError as exc:
+                skipped_rows.append({"stage":"light_member","path":candidate["normalized_path"],"side":side,"reason":str(exc)})
+        members_by_side: dict[str, dict[str, dict[str, Any]]] = {}
+        for side in ("source","target"):
+            archive=archives[side]
+            members_by_side[side]={str(member["comparison_key"]):member for member in archive["members"]} if archive else {}
+        for key in sorted(set(members_by_side["source"]) | set(members_by_side["target"])):
+            sm=members_by_side["source"].get(key); tm=members_by_side["target"].get(key)
+            names=" ".join(str(row.get("name","")) for row in (sm,tm) if row)
+            tokens=set()
+            for row in (sm,tm):
+                if row and len(row["payload"]) <= maximum_payload_bytes:
+                    tokens.update(extract_keyword_tokens(row["payload"], LIGHTSHAFT_KEYWORDS))
+            hits=sorted({keyword for keyword in LIGHTSHAFT_KEYWORDS if keyword in names.casefold()} | {token for token in tokens}, key=str.casefold)
+            if not hits:
+                continue
+            status="added_in_target" if sm is None else "removed_in_target" if tm is None else "identical" if sm["sha256"]==tm["sha256"] else "changed"
+            member_rows.append({
+                "candidate_id":candidate["candidate_id"],"domain":candidate["domain"],
+                "normalized_path":candidate["normalized_path"],"member_key":key,
+                "source_member_name":sm.get("name","") if sm else "","target_member_name":tm.get("name","") if tm else "",
+                "status":status,"keyword_hits":",".join(hits),
+                "review_status":"godray_or_lightshaft_member_requires_visual_confirmation",
+            })
+
+    evidence_root=report_root/PRESENTATION_SURFACE_EVIDENCE_DIR
+    if evidence_root.exists(): shutil.rmtree(evidence_root)
+    evidence_root.mkdir(parents=True, exist_ok=True)
+    write_tsv(evidence_root/"RESTORATION_SCOPE_DIMENSIONS.tsv", ["dimension_id","priority","evidence_surfaces","status","note"], dimension_rows)
+    write_tsv(evidence_root/"COSTUME_OID_SIGNATURES.tsv", ["seed_id","candidate_id","family","character_id","role","side","asset_path","member_name","seed_kind","seed_offset","seed_length","seed_sha256","uniqueness"], [
+        {key:value for key,value in row.items() if key != "seed" and key != "payload"} for row in sorted(scan_seeds,key=lambda row:(str(row["candidate_id"]),str(row["role"]),-int(row["seed_length"]),int(row["seed_offset"])))
+    ])
+    write_tsv(evidence_root/"EVENT_COSTUME_BINDING_HITS.tsv", ["candidate_id","family","character_id","role","seed_id","seed_length","pair_id","normalized_path","side","occurrence_count","first_offsets","review_status"], sorted(event_hit_rows,key=lambda row:(str(row["normalized_path"]).casefold(),str(row["candidate_id"]),str(row["side"]),str(row["seed_id"]))))
+    write_tsv(evidence_root/"SCENE_COSTUME_BINDING_CANDIDATES.tsv", ["normalized_path","candidate_id","family","character_id","source_variant_seed_count","source_counterpart_seed_count","target_variant_seed_count","target_counterpart_seed_count","classification","confidence","review_status"], sorted(binding_rows,key=lambda row:({"high":0,"medium":1,"low":2}.get(str(row["confidence"]),9),str(row["normalized_path"]).casefold(),str(row["candidate_id"]))))
+    write_tsv(evidence_root/"EVENT_BINARY_DELTA_SUMMARY.tsv", ["pair_id","normalized_path","source_size","target_size","size_delta","common_prefix_bytes","common_suffix_bytes","source_changed_span","target_changed_span","review_status"], sorted(event_delta_rows,key=lambda row:(-max(int(row["source_changed_span"]),int(row["target_changed_span"])),str(row["normalized_path"]).casefold())))
+    write_tsv(evidence_root/"LIGHTSHAFT_ASSET_CANDIDATES.tsv", ["pair_id","normalized_path","classification","source_size","target_size","path_keywords","review_status"], sorted(light_asset_rows,key=lambda row:str(row["normalized_path"]).casefold()))
+    write_tsv(evidence_root/"LIGHTSHAFT_PRESET_SETTINGS.tsv", ["pair_id","normalized_path","setting_path","source_value","target_value","delta","review_status"], sorted(preset_rows,key=lambda row:(str(row["normalized_path"]).casefold(),str(row["setting_path"]).casefold())))
+    write_tsv(evidence_root/"LIGHTSHAFT_EFFECT_MEMBERS.tsv", ["candidate_id","domain","normalized_path","member_key","source_member_name","target_member_name","status","keyword_hits","review_status"], sorted(member_rows,key=lambda row:(str(row["normalized_path"]).casefold(),str(row["member_key"]).casefold())))
+    write_tsv(evidence_root/"PRESENTATION_SURFACE_SCAN_SKIPPED.tsv", ["stage","path","side","reason"], skipped_rows)
+
+    classification_counts=Counter(str(row["classification"]) for row in binding_rows)
+    summary={
+        "type":"br_quartet_restoration_presentation_surface_evidence_summary",
+        "format_version":FORMAT_VERSION,"tool_version":TOOL_VERSION,
+        "source_inventory_tool_version":inventory_summary.get("tool_version"),
+        "source_g1s_prototype_tool_version":prototype_summary.get("tool_version"),
+        "status":"expanded_censorship_surface_analysis_complete_manual_scene_confirmation_required",
+        "g1s_prototypes_validated":int(prototype_summary.get("prototype_rows",0)),
+        "g1s_prototype_validation_failures":int(prototype_summary.get("validation_failures",0)),
+        "restoration_dimensions":[row["dimension_id"] for row in dimensions],
+        "costume_candidate_families":len(candidates),"oid_asset_members":len(oid_assets),
+        "unique_oid_seed_rows":len(scan_seeds),"event_files_analyzed":len(event_delta_rows),
+        "event_costume_binding_hit_rows":len(event_hit_rows),"scene_costume_binding_candidates":len(binding_rows),
+        "scene_costume_binding_classifications":dict(sorted(classification_counts.items())),
+        "lightshaft_asset_candidates":len(light_asset_rows),"lightshaft_preset_setting_differences":len(preset_rows),
+        "lightshaft_effect_member_candidates":len(member_rows),"skipped_rows":len(skipped_rows),
+        "policy":{
+            "installed_games_modified":False,"prototype_files_installed":False,"proprietary_payloads_in_report":False,
+            "raw_oid_seed_bytes_exported":False,"automatic_censorship_claims":False,"legacy_dlc_in_scope":False,
+            "translation_edits_in_scope":False,
+        },
+        "next_action":"Upload this report. Use high-confidence event costume substitutions and lightshaft preset/effect members to select scene-specific restoration candidates. Keep the validated heightfog and swater prototypes parked until the wider scene surfaces are mapped; do not treat them as the complete restoration.",
+    }
+    atomic_json(evidence_root/"SUMMARY.json",summary)
+    output=report_root/PRESENTATION_SURFACE_REPORT_NAME
+    make_report_archive(evidence_root,output)
+    return output,summary
+
+
+
+COMMON_NOISE_U32 = {
+    0x00000000, 0x00000001, 0x00000002, 0x00000003, 0x00000004,
+    0xFFFFFFFF, 0x3F000000, 0x3F800000, 0x40000000, 0xBF800000,
+}
+
+
+def nontrivial_identifier_u32(value: int) -> bool:
+    value &= 0xFFFFFFFF
+    if value in COMMON_NOISE_U32 or value <= 0x100:
+        return False
+    raw = struct.pack("<I", value)
+    if all(0x20 <= byte < 0x7F for byte in raw):
+        return False
+    exponent = (value >> 23) & 0xFF
+    mantissa = value & 0x7FFFFF
+    if exponent == 0xFF and mantissa:
+        return False
+    return True
+
+
+def fnv1a32(data: bytes) -> int:
+    value = 0x811C9DC5
+    for byte in data:
+        value ^= byte
+        value = (value * 0x01000193) & 0xFFFFFFFF
+    return value
+
+
+def oid_numeric_identifier_candidates(payload: bytes) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    words: list[tuple[int, int]] = []
+    for offset in range(0, len(payload) - 3, 4):
+        value = struct.unpack_from("<I", payload, offset)[0]
+        if nontrivial_identifier_u32(value):
+            words.append((offset, value))
+            rows.append({
+                "seed_kind": "aligned_u32_le",
+                "offset": offset,
+                "length": 4,
+                "value": value,
+                "seed": struct.pack("<I", value),
+            })
+    for index in range(len(words) - 1):
+        left_offset, left = words[index]
+        right_offset, right = words[index + 1]
+        if right_offset != left_offset + 4:
+            continue
+        seed = struct.pack("<II", left, right)
+        rows.append({
+            "seed_kind": "adjacent_u32_pair_le",
+            "offset": left_offset,
+            "length": 8,
+            "value": (right << 32) | left,
+            "seed": seed,
+        })
+    return rows
+
+
+def candidate_name_forms(asset_path: str, member_name: str) -> list[str]:
+    path = safe_posix_path(asset_path)
+    logical = logical_asset_stem(path)
+    forms = {
+        path,
+        logical,
+        Path(path).name,
+        Path(logical).name,
+        member_name,
+        Path(member_name).stem,
+    }
+    expanded: set[str] = set()
+    for value in forms:
+        value = value.strip()
+        if not value:
+            continue
+        expanded.update({value, value.casefold(), value.upper()})
+        stem = Path(value).stem
+        if stem:
+            expanded.update({stem, stem.casefold(), stem.upper()})
+    return sorted(expanded, key=lambda value: (len(value), value.casefold(), value))
+
+
+def build_event_identifier_seeds(oid_assets: Sequence[dict[str, Any]]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    numeric_owners: dict[tuple[str, bytes], list[dict[str, Any]]] = defaultdict(list)
+    hash_rows: list[dict[str, Any]] = []
+    hash_seen: set[tuple[str, str, str, int]] = set()
+    for asset in oid_assets:
+        for row in oid_numeric_identifier_candidates(asset["payload"]):
+            numeric_owners[(str(row["seed_kind"]), row["seed"])].append({**asset, **row})
+        for text in candidate_name_forms(str(asset["asset_path"]), str(asset["member_name"])):
+            encoded = text.encode("utf-8")
+            for algorithm, value in (("crc32", zlib.crc32(encoded) & 0xFFFFFFFF), ("fnv1a32", fnv1a32(encoded))):
+                if not nontrivial_identifier_u32(value):
+                    continue
+                key = (str(asset["candidate_id"]), str(asset["role"]), algorithm, value)
+                if key in hash_seen:
+                    continue
+                hash_seen.add(key)
+                hash_rows.append({
+                    **{name: asset[name] for name in ("candidate_id", "family", "character_id", "role", "side", "asset_path", "member_name")},
+                    "algorithm": algorithm,
+                    "input_form_sha256": hashlib.sha256(encoded).hexdigest(),
+                    "input_length": len(encoded),
+                    "value": value,
+                    "value_hex": f"0x{value:08x}",
+                    "seed": struct.pack("<I", value),
+                    "seed_id": f"namehash_{algorithm}_{value:08x}",
+                    "review_status": "hash_hypothesis_not_confirmed_engine_algorithm",
+                })
+
+    numeric_rows: list[dict[str, Any]] = []
+    grouped: dict[tuple[str, str, str], list[dict[str, Any]]] = defaultdict(list)
+    for (seed_kind, seed), owners in numeric_owners.items():
+        owner_groups = {(str(row["candidate_id"]), str(row["role"])) for row in owners}
+        if len(owner_groups) != 1:
+            continue
+        candidate_id, role = next(iter(owner_groups))
+        representative = sorted(owners, key=lambda row: (str(row["asset_path"]), str(row["member_name"]), int(row["offset"])))[0]
+        row = {
+            **{name: representative[name] for name in ("candidate_id", "family", "character_id", "role", "side", "asset_path", "member_name")},
+            "seed_kind": seed_kind,
+            "seed_offset": representative["offset"],
+            "seed_length": len(seed),
+            "value_hex": "0x" + seed[::-1].hex(),
+            "seed": seed,
+            "seed_id": "oidnum_" + hashlib.sha256(seed).hexdigest()[:18],
+            "owner_member_count": len({(str(owner["asset_path"]), str(owner["member_name"])) for owner in owners}),
+            "uniqueness": "unique_to_candidate_role_across_scanned_oid_members",
+        }
+        grouped[(candidate_id, role, seed_kind)].append(row)
+    for rows in grouped.values():
+        rows = sorted(rows, key=lambda row: (-int(row["owner_member_count"]), -int(row["seed_length"]), int(row["seed_offset"]), str(row["value_hex"])))
+        numeric_rows.extend(rows[:32])
+    return numeric_rows, hash_rows
+
+
+def aligned_seed_hits(payload: bytes, seeds: Sequence[dict[str, Any]]) -> list[tuple[dict[str, Any], list[int]]]:
+    by_length: dict[int, dict[bytes, list[dict[str, Any]]]] = defaultdict(lambda: defaultdict(list))
+    for row in seeds:
+        by_length[len(row["seed"])][row["seed"]].append(row)
+    hits: list[tuple[dict[str, Any], list[int]]] = []
+    for length, mapping in by_length.items():
+        offsets_by_seed: dict[bytes, list[int]] = defaultdict(list)
+        for offset in range(0, len(payload) - length + 1, 4):
+            value = payload[offset:offset + length]
+            if value in mapping and len(offsets_by_seed[value]) < 8:
+                offsets_by_seed[value].append(offset)
+        for seed, offsets in offsets_by_seed.items():
+            for row in mapping[seed]:
+                hits.append((row, offsets))
+    return hits
+
+
+def sequence_word_delta_runs(source: bytes, target: bytes, *, maximum_runs: int = 256) -> tuple[list[dict[str, Any]], Counter[tuple[int, int]]]:
+    source_words = [value[0] for value in struct.iter_unpack("<I", source[:len(source) - len(source) % 4])]
+    target_words = [value[0] for value in struct.iter_unpack("<I", target[:len(target) - len(target) % 4])]
+    matcher = difflib.SequenceMatcher(a=source_words, b=target_words, autojunk=True)
+    runs: list[dict[str, Any]] = []
+    transitions: Counter[tuple[int, int]] = Counter()
+    for tag, i1, i2, j1, j2 in matcher.get_opcodes():
+        if tag == "equal":
+            continue
+        source_slice = source_words[i1:i2]
+        target_slice = target_words[j1:j2]
+        runs.append({
+            "tag": tag,
+            "source_word_offset": i1,
+            "target_word_offset": j1,
+            "source_word_count": i2 - i1,
+            "target_word_count": j2 - j1,
+            "source_run_sha256": hashlib.sha256(struct.pack(f"<{len(source_slice)}I", *source_slice) if source_slice else b"").hexdigest(),
+            "target_run_sha256": hashlib.sha256(struct.pack(f"<{len(target_slice)}I", *target_slice) if target_slice else b"").hexdigest(),
+        })
+        if tag == "replace" and len(source_slice) == len(target_slice) and len(source_slice) <= 64:
+            for old, new in zip(source_slice, target_slice):
+                if old != new and (nontrivial_identifier_u32(old) or nontrivial_identifier_u32(new)):
+                    transitions[(old, new)] += 1
+        if len(runs) >= maximum_runs:
+            break
+    return runs, transitions
+
+
+def presentation_surface_triage(report_root: Path) -> list[dict[str, Any]]:
+    root = report_root / PRESENTATION_SURFACE_EVIDENCE_DIR
+    rows: list[dict[str, Any]] = []
+    for row in read_tsv(root / "LIGHTSHAFT_ASSET_CANDIDATES.tsv"):
+        path = row.get("normalized_path", "")
+        folded = path.casefold()
+        if "graphicssetting/" in folded:
+            classification = "render_option_schema_not_scene_evidence"
+        elif row.get("classification") == "identical":
+            classification = "identical_asset_not_restoration_candidate"
+        else:
+            classification = "unresolved_asset_level_candidate"
+        rows.append({
+            "surface": "asset", "normalized_path": path, "member_name": "",
+            "original_status": row.get("classification", ""), "triage_classification": classification,
+            "reason": "Target-only graphics option definitions expose availability but do not prove scene-specific censorship." if "graphicssetting/" in folded else "Path keyword alone is not scene-specific evidence.",
+        })
+    for row in read_tsv(root / "LIGHTSHAFT_EFFECT_MEMBERS.tsv"):
+        path = row.get("normalized_path", "")
+        member = row.get("target_member_name") or row.get("source_member_name") or ""
+        folded_path = path.casefold(); folded_member = member.casefold()
+        if re.search(r"/effect/100[0-9]_pc[0-9]+\.elixir\.gz$", folded_path) and "beam" in folded_member:
+            classification = "gameplay_attack_effect_false_positive"
+            reason = "Player-character combat effect name contains beam; this is not evidence of an occluding cinematic light shaft."
+        elif "/posteffect/pe_pack.elixir.gz" in folded_path:
+            classification = "global_postprocess_candidate_confounded_by_remaster"
+            reason = "Global HDR/DOF/bloom/light-shaft package changed broadly and cannot be replaced wholesale."
+        else:
+            classification = "unresolved_effect_member_candidate"
+            reason = "Requires scene linkage and visual confirmation."
+        rows.append({
+            "surface": "effect_member", "normalized_path": path, "member_name": member,
+            "original_status": row.get("status", ""), "triage_classification": classification, "reason": reason,
+        })
+    for row in read_tsv(root / "LIGHTSHAFT_PRESET_SETTINGS.tsv"):
+        rows.append({
+            "surface": "preset_setting", "normalized_path": row.get("normalized_path", ""),
+            "member_name": row.get("setting_path", ""), "original_status": row.get("delta", ""),
+            "triage_classification": "render_option_schema_not_scene_evidence",
+            "reason": "On/off preset choices are target platform settings, not proof that a specific scene added censorship occlusion.",
+        })
+    return rows
+
+
+def collect_event_identifier_evidence(
+    *, project_root: Path, workspace_root: Path, report_root: Path,
+    candidate_rules_file: Path, maximum_earc_bytes: int, maximum_event_bytes: int,
+) -> tuple[Path, dict[str, Any]]:
+    inventory_summary = load_json(report_root / "SUMMARY.json")
+    if inventory_summary.get("type") != "br_quartet_restoration_research_summary":
+        raise RestorationError(f"Not a Quartet restoration report: {report_root / 'SUMMARY.json'}")
+    presentation_summary_path = report_root / PRESENTATION_SURFACE_EVIDENCE_DIR / "SUMMARY.json"
+    presentation_summary = load_json(presentation_summary_path)
+    if presentation_summary.get("type") != "br_quartet_restoration_presentation_surface_evidence_summary":
+        raise RestorationError(f"Not a presentation-surface report: {presentation_summary_path}")
+
+    differences = load_report_jsons(report_root, "differences")
+    inv_dir = report_root / "inventories"
+    source_inventories = [load_json(path) for path in sorted(inv_dir.glob("*.source.json"))]
+    target_inventories = [load_json(path) for path in sorted(inv_dir.glob("*.target.json"))]
+    source_index = _inventory_index(source_inventories)
+    target_index = _inventory_index(target_inventories)
+    candidates = build_candidate_families(
+        differences=differences, target_inventories=target_inventories,
+        rules=load_candidate_rules(candidate_rules_file),
+    )
+
+    oid_assets: list[dict[str, Any]] = []
+    skipped_rows: list[dict[str, Any]] = []
+    for candidate in candidates:
+        for role, side, paths, index in (
+            ("variant", "target", candidate["asset_files"], target_index),
+            ("counterpart_original", "source", candidate["counterpart_asset_paths"], source_index),
+        ):
+            for asset_path in paths:
+                if not str(asset_path).casefold().endswith(".elixir.gz"):
+                    continue
+                entries = index.get(str(asset_path).casefold(), [])
+                if not entries:
+                    continue
+                try:
+                    members = _read_asset_oid_members(
+                        workspace_root=workspace_root, side=side, entry=entries[0], maximum_earc_bytes=maximum_earc_bytes,
+                    )
+                except RestorationError as exc:
+                    skipped_rows.append({"stage": "oid", "path": asset_path, "side": side, "reason": str(exc)})
+                    continue
+                for member in members:
+                    oid_assets.append({
+                        "candidate_id": candidate["candidate_id"], "family": candidate["family"],
+                        "character_id": candidate["character_id"], "role": role, "side": side,
+                        "asset_path": asset_path, "member_name": member["member_name"], "payload": member["payload"],
+                    })
+
+    numeric_seeds, hash_seeds = build_event_identifier_seeds(oid_assets)
+    all_seeds = [*numeric_seeds, *hash_seeds]
+    event_hit_rows: list[dict[str, Any]] = []
+    event_run_rows: list[dict[str, Any]] = []
+    transition_counter: Counter[tuple[int, int]] = Counter()
+    transition_events: dict[tuple[int, int], set[str]] = defaultdict(set)
+    binding_groups: dict[tuple[str, str], dict[str, Any]] = {}
+    event_count = 0
+
+    for report in differences:
+        if str(report.get("source_archive_group", "")) != "br1_events":
+            continue
+        for entry in report.get("entries", []):
+            if entry.get("classification") != "changed" or entry.get("scope_status") != "in_scope":
+                continue
+            normalized_path = str(entry.get("normalized_path", ""))
+            if Path(normalized_path).suffix.casefold() not in COSTUME_EVENT_EXTENSIONS:
+                continue
+            source_ref = entry.get("source") or {}; target_ref = entry.get("target") or {}
+            source_path = inventory_workspace_file(workspace_root, "source", "br1_events", str(source_ref.get("archive", "")), str(source_ref.get("path", "")))
+            target_path = inventory_workspace_file(workspace_root, "target", "br1_events", str(target_ref.get("archive", "")), str(target_ref.get("path", "")))
+            if not source_path.is_file() or not target_path.is_file():
+                skipped_rows.append({"stage": "event", "path": normalized_path, "side": "both", "reason": "workspace_file_missing"})
+                continue
+            if source_path.stat().st_size > maximum_event_bytes or target_path.stat().st_size > maximum_event_bytes:
+                skipped_rows.append({"stage": "event", "path": normalized_path, "side": "both", "reason": "maximum_event_bytes_exceeded"})
+                continue
+            source_payload = source_path.read_bytes(); target_payload = target_path.read_bytes(); event_count += 1
+            for side, payload in (("source", source_payload), ("target", target_payload)):
+                for seed_row, offsets in aligned_seed_hits(payload, all_seeds):
+                    event_hit_rows.append({
+                        "candidate_id": seed_row["candidate_id"], "family": seed_row["family"],
+                        "character_id": seed_row["character_id"], "role": seed_row["role"],
+                        "seed_id": seed_row["seed_id"], "seed_kind": seed_row.get("seed_kind", "name_hash_u32_le"),
+                        "hypothesis_algorithm": seed_row.get("algorithm", ""), "seed_length": len(seed_row["seed"]),
+                        "pair_id": "br1_events", "normalized_path": normalized_path, "side": side,
+                        "occurrence_count": len(offsets), "first_offsets": ",".join(str(value) for value in offsets),
+                        "review_status": "numeric_identifier_hit_requires_scene_confirmation",
+                    })
+                    key = (normalized_path, str(seed_row["candidate_id"]))
+                    group = binding_groups.setdefault(key, {
+                        "normalized_path": normalized_path, "candidate_id": seed_row["candidate_id"],
+                        "family": seed_row["family"], "character_id": seed_row["character_id"],
+                        "source_variant": set(), "source_counterpart": set(),
+                        "target_variant": set(), "target_counterpart": set(),
+                        "hash_hypotheses": set(),
+                    })
+                    role_key = "variant" if seed_row["role"] == "variant" else "counterpart"
+                    group[f"{side}_{role_key}"].add(seed_row["seed_id"])
+                    if seed_row.get("algorithm"):
+                        group["hash_hypotheses"].add(seed_row["seed_id"])
+            runs, transitions = sequence_word_delta_runs(source_payload, target_payload)
+            for index, run in enumerate(runs):
+                event_run_rows.append({"normalized_path": normalized_path, "run_index": index, **run})
+            transition_counter.update(transitions)
+            for transition in transitions:
+                transition_events[transition].add(normalized_path)
+
+    binding_rows: list[dict[str, Any]] = []
+    for group in binding_groups.values():
+        sv=len(group["source_variant"]); sc=len(group["source_counterpart"])
+        tv=len(group["target_variant"]); tc=len(group["target_counterpart"])
+        if tv and sc:
+            classification="candidate_costume_substitution"
+        elif tv and not sv:
+            classification="candidate_target_only_costume_binding"
+        elif sc and not tc and not tv:
+            classification="candidate_removed_or_reencoded_costume_binding"
+        else:
+            classification="numeric_identifier_present_without_directional_substitution"
+        independent=max(sv+sc, tv+tc)
+        confidence="high" if independent >= 2 and classification.startswith("candidate_") else "medium" if independent else "low"
+        binding_rows.append({
+            "normalized_path":group["normalized_path"],"candidate_id":group["candidate_id"],
+            "family":group["family"],"character_id":group["character_id"],
+            "source_variant_identifier_count":sv,"source_counterpart_identifier_count":sc,
+            "target_variant_identifier_count":tv,"target_counterpart_identifier_count":tc,
+            "hash_hypothesis_hit_count":len(group["hash_hypotheses"]),
+            "classification":classification,"confidence":confidence,
+            "review_status":"manual_scene_costume_state_confirmation_required",
+        })
+
+    transition_rows: list[dict[str, Any]] = []
+    for (old, new), count in transition_counter.most_common(5000):
+        events = sorted(transition_events[(old,new)])
+        event_total = len(events)
+        classification = "likely_global_format_or_opcode_delta" if event_total >= 100 else "repeated_engine_or_content_delta" if event_total >= 10 else "scene_specific_numeric_delta"
+        transition_rows.append({
+            "source_u32_hex":f"0x{old:08x}","target_u32_hex":f"0x{new:08x}",
+            "occurrence_count":count,"event_count":event_total,"first_event_paths":";".join(events[:20]),
+            "classification":classification,"review_status":"numeric_transition_not_censorship_proof",
+        })
+
+    triage_rows = presentation_surface_triage(report_root)
+    evidence_root=report_root/EVENT_IDENTIFIER_EVIDENCE_DIR
+    if evidence_root.exists(): shutil.rmtree(evidence_root)
+    evidence_root.mkdir(parents=True,exist_ok=True)
+    write_tsv(evidence_root/"OID_NUMERIC_IDENTIFIER_SEEDS.tsv", ["seed_id","candidate_id","family","character_id","role","side","asset_path","member_name","seed_kind","seed_offset","seed_length","value_hex","owner_member_count","uniqueness"], [
+        {key:value for key,value in row.items() if key != "seed" and key in {"seed_id","candidate_id","family","character_id","role","side","asset_path","member_name","seed_kind","seed_offset","seed_length","value_hex","owner_member_count","uniqueness"}}
+        for row in sorted(numeric_seeds,key=lambda row:(str(row["candidate_id"]),str(row["role"]),str(row["seed_kind"]),str(row["value_hex"])))
+    ])
+    write_tsv(evidence_root/"NAME_HASH_HYPOTHESES.tsv", ["seed_id","candidate_id","family","character_id","role","side","asset_path","member_name","algorithm","input_form_sha256","input_length","value_hex","review_status"], [
+        {key:value for key,value in row.items() if key != "seed" and key in {"seed_id","candidate_id","family","character_id","role","side","asset_path","member_name","algorithm","input_form_sha256","input_length","value_hex","review_status"}}
+        for row in sorted(hash_seeds,key=lambda row:(str(row["candidate_id"]),str(row["role"]),str(row["algorithm"]),str(row["value_hex"])))
+    ])
+    write_tsv(evidence_root/"EVENT_IDENTIFIER_HITS.tsv", ["candidate_id","family","character_id","role","seed_id","seed_kind","hypothesis_algorithm","seed_length","pair_id","normalized_path","side","occurrence_count","first_offsets","review_status"], sorted(event_hit_rows,key=lambda row:(str(row["normalized_path"]),str(row["candidate_id"]),str(row["side"]),str(row["seed_id"]))))
+    write_tsv(evidence_root/"SCENE_COSTUME_IDENTIFIER_CANDIDATES.tsv", ["normalized_path","candidate_id","family","character_id","source_variant_identifier_count","source_counterpart_identifier_count","target_variant_identifier_count","target_counterpart_identifier_count","hash_hypothesis_hit_count","classification","confidence","review_status"], sorted(binding_rows,key=lambda row:({"high":0,"medium":1,"low":2}.get(str(row["confidence"]),9),str(row["normalized_path"]),str(row["candidate_id"]))))
+    write_tsv(evidence_root/"EVENT_WORD_DELTA_RUNS.tsv", ["normalized_path","run_index","tag","source_word_offset","target_word_offset","source_word_count","target_word_count","source_run_sha256","target_run_sha256"], sorted(event_run_rows,key=lambda row:(str(row["normalized_path"]),int(row["run_index"]))))
+    write_tsv(evidence_root/"EVENT_U32_TRANSITIONS.tsv", ["source_u32_hex","target_u32_hex","occurrence_count","event_count","first_event_paths","classification","review_status"], transition_rows)
+    write_tsv(evidence_root/"PRESENTATION_SURFACE_TRIAGE.tsv", ["surface","normalized_path","member_name","original_status","triage_classification","reason"], sorted(triage_rows,key=lambda row:(str(row["triage_classification"]),str(row["normalized_path"]),str(row["member_name"]))))
+    write_tsv(evidence_root/"EVENT_IDENTIFIER_SCAN_SKIPPED.tsv", ["stage","path","side","reason"], skipped_rows)
+    binding_counts=Counter(str(row["classification"]) for row in binding_rows)
+    triage_counts=Counter(str(row["triage_classification"]) for row in triage_rows)
+    summary={
+        "type":"br_quartet_restoration_event_identifier_evidence_summary","format_version":FORMAT_VERSION,
+        "tool_version":TOOL_VERSION,"source_inventory_tool_version":inventory_summary.get("tool_version"),
+        "source_presentation_surface_tool_version":presentation_summary.get("tool_version"),
+        "status":"numeric_event_identifier_and_presentation_triage_complete_manual_scene_confirmation_required",
+        "costume_candidate_families":len(candidates),"oid_asset_members":len(oid_assets),
+        "numeric_identifier_seed_rows":len(numeric_seeds),"name_hash_hypothesis_rows":len(hash_seeds),
+        "event_files_analyzed":event_count,"event_identifier_hit_rows":len(event_hit_rows),
+        "scene_costume_identifier_candidates":len(binding_rows),"scene_costume_identifier_classifications":dict(sorted(binding_counts.items())),
+        "event_word_delta_runs":len(event_run_rows),"event_u32_transition_rows":len(transition_rows),
+        "presentation_triage_rows":len(triage_rows),"presentation_triage_classifications":dict(sorted(triage_counts.items())),
+        "skipped_rows":len(skipped_rows),
+        "policy":{"installed_games_modified":False,"proprietary_payloads_in_report":False,"raw_oid_payloads_exported":False,"hash_algorithms_confirmed":False,"automatic_censorship_claims":False,"legacy_dlc_in_scope":False,"translation_edits_in_scope":False},
+        "next_action":"Upload this report. Promote only directional costume substitutions backed by numeric identifiers. Treat graphics-option presets and combat beam effects as non-scene evidence; keep global postprocessing deferred. Use repeated event transitions to isolate the EBD record structure before generating any scene-specific costume prototype.",
+    }
+    atomic_json(evidence_root/"SUMMARY.json",summary)
+    output=report_root/EVENT_IDENTIFIER_REPORT_NAME
+    make_report_archive(evidence_root,output)
+    return output,summary
+
+
+
+
+def _anchor_block_is_useful(block: bytes) -> bool:
+    if not block or len(set(block)) < 4:
+        return False
+    if block.count(0) > (len(block) * 3) // 4:
+        return False
+    return True
+
+
+def monotonic_anchor_segments(
+    source: bytes,
+    target: bytes,
+    *,
+    block_size: int = 16,
+    stride: int = 1,
+) -> list[dict[str, int]]:
+    """Return monotonic exact-match segments without exporting matched bytes."""
+    if block_size < 8 or stride < 1:
+        raise RestorationError("Invalid event anchor parameters")
+    if len(source) < block_size or len(target) < block_size:
+        return []
+
+    def unique_offsets(payload: bytes) -> dict[bytes, int | None]:
+        offsets: dict[bytes, int | None] = {}
+        for offset in range(0, len(payload) - block_size + 1, stride):
+            block = payload[offset:offset + block_size]
+            if not _anchor_block_is_useful(block):
+                continue
+            if block in offsets:
+                offsets[block] = None
+            else:
+                offsets[block] = offset
+        return offsets
+
+    source_offsets = unique_offsets(source)
+    target_offsets = unique_offsets(target)
+    pairs = sorted(
+        (source_offset, target_offsets[block])
+        for block, source_offset in source_offsets.items()
+        if source_offset is not None and target_offsets.get(block) is not None
+    )
+    if not pairs:
+        return []
+
+    tails: list[int] = []
+    tail_indices: list[int] = []
+    previous = [-1] * len(pairs)
+    for index, (_source_offset, target_offset) in enumerate(pairs):
+        position = bisect.bisect_left(tails, target_offset)
+        if position == len(tails):
+            tails.append(target_offset)
+            tail_indices.append(index)
+        else:
+            tails[position] = target_offset
+            tail_indices[position] = index
+        if position:
+            previous[index] = tail_indices[position - 1]
+
+    chain: list[tuple[int, int]] = []
+    cursor = tail_indices[-1]
+    while cursor >= 0:
+        chain.append(pairs[cursor])
+        cursor = previous[cursor]
+    chain.reverse()
+
+    segments: list[dict[str, int]] = []
+    for source_offset, target_offset in chain:
+        source_end = source_offset + block_size
+        target_end = target_offset + block_size
+        delta = target_offset - source_offset
+        if segments:
+            current = segments[-1]
+            if (
+                current["delta"] == delta
+                and source_offset <= current["source_end"]
+                and target_offset <= current["target_end"]
+            ):
+                current["source_end"] = max(current["source_end"], source_end)
+                current["target_end"] = max(current["target_end"], target_end)
+                continue
+        segments.append({
+            "source_start": source_offset,
+            "source_end": source_end,
+            "target_start": target_offset,
+            "target_end": target_end,
+            "delta": delta,
+        })
+
+    prefix = common_prefix_length(source, target)
+    suffix = common_suffix_length(source, target)
+    extras: list[dict[str, int]] = []
+    if prefix >= 8:
+        extras.append({
+            "source_start": 0, "source_end": prefix,
+            "target_start": 0, "target_end": prefix, "delta": 0,
+        })
+    if suffix >= 8:
+        source_start = len(source) - suffix
+        target_start = len(target) - suffix
+        extras.append({
+            "source_start": source_start, "source_end": len(source),
+            "target_start": target_start, "target_end": len(target),
+            "delta": target_start - source_start,
+        })
+
+    ordered = sorted([*segments, *extras], key=lambda row: (row["source_start"], row["target_start"], -row["source_end"]))
+    normalized: list[dict[str, int]] = []
+    for row in ordered:
+        if row["source_end"] <= row["source_start"] or row["target_end"] <= row["target_start"]:
+            continue
+        if normalized:
+            previous_row = normalized[-1]
+            if row["source_start"] < previous_row["source_end"] or row["target_start"] < previous_row["target_end"]:
+                if row["delta"] == previous_row["delta"]:
+                    previous_row["source_end"] = max(previous_row["source_end"], row["source_end"])
+                    previous_row["target_end"] = max(previous_row["target_end"], row["target_end"])
+                continue
+            if (
+                row["delta"] == previous_row["delta"]
+                and row["source_start"] <= previous_row["source_end"]
+                and row["target_start"] <= previous_row["target_end"]
+            ):
+                previous_row["source_end"] = row["source_end"]
+                previous_row["target_end"] = row["target_end"]
+                continue
+        normalized.append(dict(row))
+    return normalized
+
+
+def map_source_event_offset(
+    offset: int,
+    segments: Sequence[dict[str, int]],
+    *,
+    source_size: int,
+    target_size: int,
+) -> tuple[int | None, int]:
+    if offset == source_size:
+        return target_size, 0
+    previous: dict[str, int] | None = None
+    for segment in segments:
+        if segment["source_start"] <= offset < segment["source_end"]:
+            return segment["target_start"] + (offset - segment["source_start"]), segment["source_end"] - segment["source_start"]
+        if offset < segment["source_start"]:
+            if previous is not None:
+                source_gap = segment["source_start"] - previous["source_end"]
+                target_gap = segment["target_start"] - previous["target_end"]
+                if source_gap == target_gap and previous["source_end"] <= offset < segment["source_start"]:
+                    return previous["target_end"] + (offset - previous["source_end"]), 0
+            return None, 0
+        previous = segment
+    if previous is not None:
+        source_gap = source_size - previous["source_end"]
+        target_gap = target_size - previous["target_end"]
+        if source_gap == target_gap and previous["source_end"] <= offset < source_size:
+            return previous["target_end"] + (offset - previous["source_end"]), 0
+    return None, 0
+
+
+def event_delta_regions(
+    source: bytes,
+    target: bytes,
+    segments: Sequence[dict[str, int]],
+) -> list[dict[str, int]]:
+    rows: list[dict[str, int]] = []
+    source_cursor = 0
+    target_cursor = 0
+    for segment in segments:
+        if segment["source_start"] > source_cursor or segment["target_start"] > target_cursor:
+            rows.append({
+                "source_start": source_cursor,
+                "source_end": segment["source_start"],
+                "target_start": target_cursor,
+                "target_end": segment["target_start"],
+            })
+        source_cursor = max(source_cursor, segment["source_end"])
+        target_cursor = max(target_cursor, segment["target_end"])
+    if source_cursor < len(source) or target_cursor < len(target):
+        rows.append({
+            "source_start": source_cursor,
+            "source_end": len(source),
+            "target_start": target_cursor,
+            "target_end": len(target),
+        })
+    return [row for row in rows if row["source_end"] > row["source_start"] or row["target_end"] > row["target_start"]]
+
+
+def _event_candidate_positions(length: int, width: int) -> Iterable[int]:
+    maximum = length - width
+    if maximum < 0:
+        return ()
+    if length <= 4096:
+        return range(0, maximum + 1)
+    positions = set(range(0, min(maximum + 1, 1024)))
+    positions.update(range(max(0, maximum - 1024), maximum + 1))
+    positions.update(range(0, maximum + 1, 4))
+    return sorted(positions)
+
+
+def relocation_fields_in_region(
+    source: bytes,
+    target: bytes,
+    region: dict[str, int],
+    segments: Sequence[dict[str, int]],
+) -> list[dict[str, Any]]:
+    source_start = region["source_start"]
+    source_end = region["source_end"]
+    target_start = region["target_start"]
+    target_end = region["target_end"]
+    source_length = source_end - source_start
+    target_length = target_end - target_start
+    candidates: list[dict[str, Any]] = []
+
+    for width in (4, 3, 2):
+        for relative in _event_candidate_positions(source_length, width):
+            source_field_offset = source_start + relative
+            old_value = int.from_bytes(source[source_field_offset:source_field_offset + width], "little")
+            if old_value < 8 or old_value > len(source):
+                continue
+            expected_target, destination_anchor_size = map_source_event_offset(
+                old_value, segments, source_size=len(source), target_size=len(target)
+            )
+            if expected_target is None or expected_target < 0 or expected_target > len(target):
+                continue
+            if expected_target >= (1 << (8 * width)):
+                continue
+            encoded = expected_target.to_bytes(width, "little")
+            target_positions: list[int] = []
+            if source_length == target_length and relative + width <= target_length:
+                candidate_offset = target_start + relative
+                if target[candidate_offset:candidate_offset + width] == encoded:
+                    target_positions.append(candidate_offset)
+            else:
+                approximate = target_start + round(relative * target_length / max(1, source_length))
+                search_start = max(target_start, approximate - 16)
+                search_end = min(target_end - width, approximate + 16)
+                for target_field_offset in range(search_start, search_end + 1):
+                    if target[target_field_offset:target_field_offset + width] == encoded:
+                        target_positions.append(target_field_offset)
+            if len(target_positions) != 1:
+                continue
+            target_field_offset = target_positions[0]
+            new_value = int.from_bytes(target[target_field_offset:target_field_offset + width], "little")
+            if new_value == old_value:
+                continue
+            source_context = (
+                source[max(0, source_field_offset - 8):source_field_offset]
+                + (b"\x00" * width)
+                + source[source_field_offset + width:min(len(source), source_field_offset + width + 8)]
+            )
+            target_context = (
+                target[max(0, target_field_offset - 8):target_field_offset]
+                + (b"\x00" * width)
+                + target[target_field_offset + width:min(len(target), target_field_offset + width + 8)]
+            )
+            candidates.append({
+                "width": width,
+                "source_field_offset": source_field_offset,
+                "target_field_offset": target_field_offset,
+                "source_value": old_value,
+                "target_value": new_value,
+                "expected_target_value": expected_target,
+                "mapping_error": new_value - expected_target,
+                "destination_anchor_size": destination_anchor_size,
+                "source_preceding_u8": source[source_field_offset - 1] if source_field_offset else None,
+                "target_preceding_u8": target[target_field_offset - 1] if target_field_offset else None,
+                "source_following_u8": source[source_field_offset + width] if source_field_offset + width < len(source) else None,
+                "target_following_u8": target[target_field_offset + width] if target_field_offset + width < len(target) else None,
+                "storage_context_sha256": hashlib.sha256(source_context + b"\xff" + target_context).hexdigest(),
+                "classification": "relocated_internal_offset",
+            })
+
+    selected: list[dict[str, Any]] = []
+    source_occupied: set[int] = set()
+    target_occupied: set[int] = set()
+    for row in sorted(candidates, key=lambda item: (-int(item["width"]), -int(item["destination_anchor_size"]), int(item["source_field_offset"]), int(item["target_field_offset"]))):
+        source_range = set(range(int(row["source_field_offset"]), int(row["source_field_offset"]) + int(row["width"])))
+        target_range = set(range(int(row["target_field_offset"]), int(row["target_field_offset"]) + int(row["width"])))
+        if source_range & source_occupied or target_range & target_occupied:
+            continue
+        selected.append(row)
+        source_occupied.update(source_range)
+        target_occupied.update(target_range)
+    return sorted(selected, key=lambda row: (int(row["source_field_offset"]), -int(row["width"])))
+
+
+def _ascii_printable_ratio(payload: bytes) -> float:
+    if not payload:
+        return 0.0
+    printable = sum(byte in (9, 10, 13) or 0x20 <= byte < 0x7F for byte in payload)
+    return printable / len(payload)
+
+
+def _utf16_ascii_ratio(payload: bytes) -> float:
+    if len(payload) < 4:
+        return 0.0
+    pairs = len(payload) // 2
+    matches = 0
+    for offset in range(0, pairs * 2, 2):
+        left, right = payload[offset], payload[offset + 1]
+        if (0x20 <= left < 0x7F and right == 0) or (left == 0 and 0x20 <= right < 0x7F):
+            matches += 1
+    return matches / pairs
+
+
+def _changed_byte_count(source_slice: bytes, target_slice: bytes) -> int:
+    shared = min(len(source_slice), len(target_slice))
+    return sum(source_slice[index] != target_slice[index] for index in range(shared)) + abs(len(source_slice) - len(target_slice))
+
+
+def classify_event_delta_region(
+    source_slice: bytes,
+    target_slice: bytes,
+    pointers: Sequence[dict[str, Any]],
+    *,
+    pointer_changed_bytes: int = 0,
+) -> tuple[str, int, float, float]:
+    changed_bytes = _changed_byte_count(source_slice, target_slice)
+    explained = min(changed_bytes, max(0, pointer_changed_bytes))
+    pointer_coverage = explained / max(1, changed_bytes)
+    ascii_ratio = max(_ascii_printable_ratio(source_slice), _ascii_printable_ratio(target_slice))
+    utf16_ratio = max(_utf16_ascii_ratio(source_slice), _utf16_ascii_ratio(target_slice))
+    unexplained_changed = max(0, changed_bytes - min(changed_bytes, explained))
+    if not source_slice:
+        classification = "inserted_region"
+    elif not target_slice:
+        classification = "removed_region"
+    elif pointers and unexplained_changed == 0:
+        classification = "relocation_pointer_delta"
+    elif pointers and max(len(source_slice), len(target_slice)) <= 64:
+        classification = "mixed_relocation_and_record_delta"
+    elif ascii_ratio >= 0.55 or utf16_ratio >= 0.45:
+        classification = "text_or_string_table_delta"
+    elif max(len(source_slice), len(target_slice)) <= 64:
+        classification = "small_unresolved_record_delta"
+    else:
+        classification = "opaque_binary_delta"
+    return classification, changed_bytes, ascii_ratio, utf16_ratio
+
+
+def small_scalar_transitions(
+    source: bytes,
+    target: bytes,
+    region: dict[str, int],
+    pointers: Sequence[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    source_start = region["source_start"]
+    target_start = region["target_start"]
+    source_length = region["source_end"] - source_start
+    target_length = region["target_end"] - target_start
+    if source_length != target_length or source_length > 64:
+        return []
+    pointer_source_bytes: set[int] = set()
+    pointer_target_bytes: set[int] = set()
+    for pointer in pointers:
+        pointer_source_bytes.update(range(int(pointer["source_field_offset"]), int(pointer["source_field_offset"]) + int(pointer["width"])))
+        pointer_target_bytes.update(range(int(pointer["target_field_offset"]), int(pointer["target_field_offset"]) + int(pointer["width"])))
+    rows: list[dict[str, Any]] = []
+    cursor = 0
+    while cursor < source_length:
+        if source[source_start + cursor] == target[target_start + cursor]:
+            cursor += 1
+            continue
+        run_start = cursor
+        while cursor < source_length and source[source_start + cursor] != target[target_start + cursor]:
+            cursor += 1
+        run_length = cursor - run_start
+        absolute_source = source_start + run_start
+        absolute_target = target_start + run_start
+        overlaps_pointer = any((absolute_source + index) in pointer_source_bytes or (absolute_target + index) in pointer_target_bytes for index in range(run_length))
+        width = run_length if run_length in (1, 2, 3, 4) else 0
+        rows.append({
+            "source_field_offset": absolute_source,
+            "target_field_offset": absolute_target,
+            "width": width,
+            "source_value_hex": f"0x{int.from_bytes(source[absolute_source:absolute_source + width], 'little'):0{width * 2}x}" if width else "",
+            "target_value_hex": f"0x{int.from_bytes(target[absolute_target:absolute_target + width], 'little'):0{width * 2}x}" if width else "",
+            "source_run_sha256": hashlib.sha256(source[absolute_source:absolute_source + run_length]).hexdigest(),
+            "target_run_sha256": hashlib.sha256(target[absolute_target:absolute_target + run_length]).hexdigest(),
+            "run_length": run_length,
+            "source_preceding_u8": source[absolute_source - 1] if absolute_source else None,
+            "target_preceding_u8": target[absolute_target - 1] if absolute_target else None,
+            "source_following_u8": source[absolute_source + run_length] if absolute_source + run_length < len(source) else None,
+            "target_following_u8": target[absolute_target + run_length] if absolute_target + run_length < len(target) else None,
+            "classification": "pointer_fragment_already_explained" if overlaps_pointer else "unresolved_small_scalar_delta",
+        })
+    return rows
+
+
+def analyze_event_structure_pair(
+    source: bytes,
+    target: bytes,
+    *,
+    anchor_block_size: int = 16,
+    anchor_stride: int = 1,
+) -> dict[str, Any]:
+    segments = monotonic_anchor_segments(source, target, block_size=anchor_block_size, stride=anchor_stride)
+    regions = event_delta_regions(source, target, segments)
+    pointer_rows: list[dict[str, Any]] = []
+    region_rows: list[dict[str, Any]] = []
+    scalar_rows: list[dict[str, Any]] = []
+    unresolved_bytes = 0
+    text_bytes = 0
+    relocation_regions = 0
+    identical_gap_bytes = 0
+    for index, region in enumerate(regions):
+        source_slice = source[region["source_start"]:region["source_end"]]
+        target_slice = target[region["target_start"]:region["target_end"]]
+        # Unique-anchor chaining can leave equal gaps between adjacent anchors.
+        # They are mapping artefacts, not binary changes, and must never enter
+        # the restoration candidate pool.
+        if source_slice == target_slice:
+            identical_gap_bytes += len(source_slice)
+            continue
+        pointers = relocation_fields_in_region(source, target, region, segments)
+        pointer_changed_bytes = 0
+        seen_source_bytes: set[int] = set()
+        seen_target_bytes: set[int] = set()
+        for pointer in pointers:
+            for byte_index in range(int(pointer["width"])):
+                source_position = int(pointer["source_field_offset"]) + byte_index
+                target_position = int(pointer["target_field_offset"]) + byte_index
+                if source_position in seen_source_bytes or target_position in seen_target_bytes:
+                    continue
+                seen_source_bytes.add(source_position)
+                seen_target_bytes.add(target_position)
+                if source[source_position] != target[target_position]:
+                    pointer_changed_bytes += 1
+        classification, changed_bytes, ascii_ratio, utf16_ratio = classify_event_delta_region(
+            source_slice, target_slice, pointers, pointer_changed_bytes=pointer_changed_bytes
+        )
+        for row in pointers:
+            pointer_rows.append({"region_index": index, **row})
+        for row in small_scalar_transitions(source, target, region, pointers):
+            scalar_rows.append({"region_index": index, **row})
+        pointer_explained = min(changed_bytes, pointer_changed_bytes)
+        if classification == "relocation_pointer_delta":
+            relocation_regions += 1
+        elif classification == "mixed_relocation_and_record_delta":
+            relocation_regions += 1
+            unresolved_bytes += max(0, changed_bytes - pointer_explained)
+        elif classification == "text_or_string_table_delta":
+            text_bytes += changed_bytes
+        elif classification not in {"inserted_region", "removed_region"}:
+            unresolved_bytes += changed_bytes
+        else:
+            # Inserted/removed printable material is usually string/content growth; opaque material stays unresolved.
+            if ascii_ratio >= 0.55 or utf16_ratio >= 0.45:
+                text_bytes += changed_bytes
+            else:
+                unresolved_bytes += changed_bytes
+        region_rows.append({
+            "region_index": index,
+            **region,
+            "source_length": len(source_slice),
+            "target_length": len(target_slice),
+            "changed_bytes": changed_bytes,
+            "pointer_field_count": len(pointers),
+            "ascii_printable_ratio": round(ascii_ratio, 6),
+            "utf16_ascii_ratio": round(utf16_ratio, 6),
+            "source_sha256": hashlib.sha256(source_slice).hexdigest(),
+            "target_sha256": hashlib.sha256(target_slice).hexdigest(),
+            "classification": classification,
+        })
+
+    matched_bytes = sum(segment["source_end"] - segment["source_start"] for segment in segments) + identical_gap_bytes
+    if unresolved_bytes == 0 and (pointer_rows or text_bytes):
+        classification = "relocation_and_text_dominated"
+        confidence = "high"
+    elif unresolved_bytes == 0:
+        classification = "anchor_gap_artifact_only"
+        confidence = "high"
+    elif unresolved_bytes <= 128 and sum(row["classification"] == "small_unresolved_record_delta" for row in region_rows) <= 8:
+        classification = "focused_unresolved_binary_candidate"
+        confidence = "medium"
+    else:
+        classification = "broad_event_content_or_format_delta"
+        confidence = "low"
+    return {
+        "segments": segments,
+        "regions": region_rows,
+        "pointers": pointer_rows,
+        "scalars": scalar_rows,
+        "matched_bytes": matched_bytes,
+        "anchor_coverage": matched_bytes / max(1, len(source)),
+        "relocation_regions": relocation_regions,
+        "identical_gap_bytes": identical_gap_bytes,
+        "unresolved_bytes": unresolved_bytes,
+        "text_bytes": text_bytes,
+        "classification": classification,
+        "confidence": confidence,
+    }
+
+
+def collect_event_structure_evidence(
+    *,
+    project_root: Path,
+    workspace_root: Path,
+    report_root: Path,
+    maximum_event_bytes: int,
+    anchor_block_size: int,
+    anchor_stride: int,
+) -> tuple[Path, dict[str, Any]]:
+    inventory_summary = load_json(report_root / "SUMMARY.json")
+    if inventory_summary.get("type") != "br_quartet_restoration_research_summary":
+        raise RestorationError(f"Not a Quartet restoration report: {report_root / 'SUMMARY.json'}")
+    identifier_summary_path = report_root / EVENT_IDENTIFIER_EVIDENCE_DIR / "SUMMARY.json"
+    identifier_summary = load_json(identifier_summary_path)
+    if identifier_summary.get("type") != "br_quartet_restoration_event_identifier_evidence_summary":
+        raise RestorationError(f"Not an event-identifier report: {identifier_summary_path}")
+
+    differences = load_report_jsons(report_root, "differences")
+    layout_rows: list[dict[str, Any]] = []
+    anchor_rows: list[dict[str, Any]] = []
+    region_rows: list[dict[str, Any]] = []
+    pointer_rows: list[dict[str, Any]] = []
+    scalar_rows: list[dict[str, Any]] = []
+    skipped_rows: list[dict[str, Any]] = []
+    tag_groups: dict[tuple[Any, ...], dict[str, Any]] = {}
+    analyzed = 0
+
+    for report in differences:
+        if str(report.get("source_archive_group", "")) != "br1_events":
+            continue
+        for entry in report.get("entries", []):
+            if entry.get("classification") != "changed" or entry.get("scope_status") != "in_scope":
+                continue
+            normalized_path = str(entry.get("normalized_path", ""))
+            if Path(normalized_path).suffix.casefold() != ".ebd":
+                continue
+            source_ref = entry.get("source") or {}
+            target_ref = entry.get("target") or {}
+            source_path = inventory_workspace_file(workspace_root, "source", "br1_events", str(source_ref.get("archive", "")), str(source_ref.get("path", "")))
+            target_path = inventory_workspace_file(workspace_root, "target", "br1_events", str(target_ref.get("archive", "")), str(target_ref.get("path", "")))
+            if not source_path.is_file() or not target_path.is_file():
+                skipped_rows.append({"normalized_path": normalized_path, "reason": "workspace_file_missing"})
+                continue
+            if source_path.stat().st_size > maximum_event_bytes or target_path.stat().st_size > maximum_event_bytes:
+                skipped_rows.append({"normalized_path": normalized_path, "reason": "maximum_event_bytes_exceeded"})
+                continue
+            source = source_path.read_bytes()
+            target = target_path.read_bytes()
+            result = analyze_event_structure_pair(source, target, anchor_block_size=anchor_block_size, anchor_stride=anchor_stride)
+            analyzed += 1
+            layout_rows.append({
+                "normalized_path": normalized_path,
+                "source_size": len(source),
+                "target_size": len(target),
+                "size_delta": len(target) - len(source),
+                "anchor_segment_count": len(result["segments"]),
+                "matched_anchor_bytes": result["matched_bytes"],
+                "anchor_coverage": round(result["anchor_coverage"], 6),
+                "delta_region_count": len(result["regions"]),
+                "relocation_pointer_fields": len(result["pointers"]),
+                "unresolved_small_scalar_rows": sum(row["classification"] == "unresolved_small_scalar_delta" for row in result["scalars"]),
+                "text_or_string_changed_bytes": result["text_bytes"],
+                "unresolved_changed_bytes": result["unresolved_bytes"],
+                "classification": result["classification"],
+                "confidence": result["confidence"],
+                "review_status": "event_structure_metadata_not_censorship_proof",
+            })
+            for index, segment in enumerate(result["segments"]):
+                anchor_rows.append({
+                    "normalized_path": normalized_path,
+                    "segment_index": index,
+                    **segment,
+                    "length": segment["source_end"] - segment["source_start"],
+                    "review_status": "exact_anchor_mapping_metadata",
+                })
+            for row in result["regions"]:
+                region_rows.append({"normalized_path": normalized_path, **row, "review_status": "delta_region_not_censorship_proof"})
+            for row in result["pointers"]:
+                exported = {
+                    "normalized_path": normalized_path,
+                    **row,
+                    "source_value_hex": f"0x{int(row['source_value']):0{int(row['width']) * 2}x}",
+                    "target_value_hex": f"0x{int(row['target_value']):0{int(row['width']) * 2}x}",
+                    "expected_target_value_hex": f"0x{int(row['expected_target_value']):0{int(row['width']) * 2}x}",
+                    "source_preceding_u8_hex": "" if row["source_preceding_u8"] is None else f"0x{int(row['source_preceding_u8']):02x}",
+                    "target_preceding_u8_hex": "" if row["target_preceding_u8"] is None else f"0x{int(row['target_preceding_u8']):02x}",
+                    "source_following_u8_hex": "" if row["source_following_u8"] is None else f"0x{int(row['source_following_u8']):02x}",
+                    "target_following_u8_hex": "" if row["target_following_u8"] is None else f"0x{int(row['target_following_u8']):02x}",
+                    "review_status": "confirmed_internal_relocation_not_costume_identifier",
+                }
+                pointer_rows.append(exported)
+                key = (
+                    int(row["width"]), row["source_preceding_u8"], row["target_preceding_u8"],
+                    row["source_following_u8"], row["target_following_u8"], str(row["storage_context_sha256"]),
+                )
+                group = tag_groups.setdefault(key, {
+                    "width": int(row["width"]),
+                    "source_preceding_u8_hex": exported["source_preceding_u8_hex"],
+                    "target_preceding_u8_hex": exported["target_preceding_u8_hex"],
+                    "source_following_u8_hex": exported["source_following_u8_hex"],
+                    "target_following_u8_hex": exported["target_following_u8_hex"],
+                    "storage_context_sha256": row["storage_context_sha256"],
+                    "occurrence_count": 0,
+                    "event_paths": set(),
+                })
+                group["occurrence_count"] += 1
+                group["event_paths"].add(normalized_path)
+            for row in result["scalars"]:
+                scalar_rows.append({
+                    "normalized_path": normalized_path,
+                    **row,
+                    "source_preceding_u8_hex": "" if row["source_preceding_u8"] is None else f"0x{int(row['source_preceding_u8']):02x}",
+                    "target_preceding_u8_hex": "" if row["target_preceding_u8"] is None else f"0x{int(row['target_preceding_u8']):02x}",
+                    "source_following_u8_hex": "" if row["source_following_u8"] is None else f"0x{int(row['source_following_u8']):02x}",
+                    "target_following_u8_hex": "" if row["target_following_u8"] is None else f"0x{int(row['target_following_u8']):02x}",
+                    "review_status": "small_scalar_delta_requires_record_semantics",
+                })
+
+    tag_rows: list[dict[str, Any]] = []
+    for group in tag_groups.values():
+        events = sorted(group.pop("event_paths"))
+        tag_rows.append({
+            **group,
+            "event_count": len(events),
+            "first_event_paths": ";".join(events[:20]),
+            "classification": "repeated_relocation_field_context" if len(events) >= 2 else "single_event_relocation_field_context",
+            "review_status": "relocation_context_not_censorship_proof",
+        })
+
+    scene_rows = sorted(
+        (
+            {
+                "normalized_path": row["normalized_path"],
+                "classification": row["classification"],
+                "confidence": row["confidence"],
+                "relocation_pointer_fields": row["relocation_pointer_fields"],
+                "unresolved_small_scalar_rows": row["unresolved_small_scalar_rows"],
+                "text_or_string_changed_bytes": row["text_or_string_changed_bytes"],
+                "unresolved_changed_bytes": row["unresolved_changed_bytes"],
+                "anchor_coverage": row["anchor_coverage"],
+                "review_status": "manual_scene_and_record_confirmation_required",
+            }
+            for row in layout_rows
+            if row["classification"] == "focused_unresolved_binary_candidate"
+        ),
+        key=lambda row: (int(row["unresolved_changed_bytes"]), -float(row["anchor_coverage"]), str(row["normalized_path"])),
+    )
+
+    evidence_root = report_root / EVENT_STRUCTURE_EVIDENCE_DIR
+    if evidence_root.exists():
+        shutil.rmtree(evidence_root)
+    evidence_root.mkdir(parents=True, exist_ok=True)
+    write_tsv(evidence_root / "EBD_FILE_LAYOUTS.tsv", [
+        "normalized_path","source_size","target_size","size_delta","anchor_segment_count","matched_anchor_bytes","anchor_coverage",
+        "delta_region_count","relocation_pointer_fields","unresolved_small_scalar_rows","text_or_string_changed_bytes","unresolved_changed_bytes",
+        "classification","confidence","review_status",
+    ], sorted(layout_rows, key=lambda row: (str(row["classification"]), int(row["unresolved_changed_bytes"]), str(row["normalized_path"]))))
+    write_tsv(evidence_root / "EBD_ANCHOR_SEGMENTS.tsv", [
+        "normalized_path","segment_index","source_start","source_end","target_start","target_end","delta","length","review_status",
+    ], sorted(anchor_rows, key=lambda row: (str(row["normalized_path"]), int(row["segment_index"]))))
+    write_tsv(evidence_root / "EBD_DELTA_REGIONS.tsv", [
+        "normalized_path","region_index","source_start","source_end","target_start","target_end","source_length","target_length","changed_bytes",
+        "pointer_field_count","ascii_printable_ratio","utf16_ascii_ratio","source_sha256","target_sha256","classification","review_status",
+    ], sorted(region_rows, key=lambda row: (str(row["normalized_path"]), int(row["region_index"]))))
+    write_tsv(evidence_root / "EBD_RELOCATION_FIELDS.tsv", [
+        "normalized_path","region_index","width","source_field_offset","target_field_offset","source_value_hex","target_value_hex","expected_target_value_hex",
+        "mapping_error","destination_anchor_size","source_preceding_u8_hex","target_preceding_u8_hex","source_following_u8_hex","target_following_u8_hex",
+        "storage_context_sha256","classification","review_status",
+    ], sorted(pointer_rows, key=lambda row: (str(row["normalized_path"]), int(row["source_field_offset"]), -int(row["width"]))))
+    write_tsv(evidence_root / "EBD_RELOCATION_CONTEXTS.tsv", [
+        "width","source_preceding_u8_hex","target_preceding_u8_hex","source_following_u8_hex","target_following_u8_hex","storage_context_sha256",
+        "occurrence_count","event_count","first_event_paths","classification","review_status",
+    ], sorted(tag_rows, key=lambda row: (-int(row["event_count"]), -int(row["occurrence_count"]), int(row["width"]), str(row["storage_context_sha256"]))))
+    write_tsv(evidence_root / "EBD_SMALL_SCALAR_TRANSITIONS.tsv", [
+        "normalized_path","region_index","source_field_offset","target_field_offset","width","source_value_hex","target_value_hex","source_run_sha256","target_run_sha256",
+        "run_length","source_preceding_u8_hex","target_preceding_u8_hex","source_following_u8_hex","target_following_u8_hex","classification","review_status",
+    ], sorted(scalar_rows, key=lambda row: (str(row["classification"]), str(row["normalized_path"]), int(row["source_field_offset"]))))
+    write_tsv(evidence_root / "SCENE_BINARY_RECORD_CANDIDATES.tsv", [
+        "normalized_path","classification","confidence","relocation_pointer_fields","unresolved_small_scalar_rows","text_or_string_changed_bytes",
+        "unresolved_changed_bytes","anchor_coverage","review_status",
+    ], scene_rows)
+    write_tsv(evidence_root / "EVENT_STRUCTURE_SCAN_SKIPPED.tsv", ["normalized_path","reason"], skipped_rows)
+
+    layout_counts = Counter(str(row["classification"]) for row in layout_rows)
+    region_counts = Counter(str(row["classification"]) for row in region_rows)
+    scalar_counts = Counter(str(row["classification"]) for row in scalar_rows)
+    summary = {
+        "type": "br_quartet_restoration_event_structure_evidence_summary",
+        "format_version": FORMAT_VERSION,
+        "tool_version": TOOL_VERSION,
+        "source_inventory_tool_version": inventory_summary.get("tool_version"),
+        "source_event_identifier_tool_version": identifier_summary.get("tool_version"),
+        "status": "event_relocation_and_record_structure_evidence_complete_manual_scene_confirmation_required",
+        "ebd_files_analyzed": analyzed,
+        "anchor_segment_rows": len(anchor_rows),
+        "delta_region_rows": len(region_rows),
+        "relocation_pointer_rows": len(pointer_rows),
+        "relocation_context_rows": len(tag_rows),
+        "small_scalar_transition_rows": len(scalar_rows),
+        "focused_scene_binary_record_candidates": len(scene_rows),
+        "file_classifications": dict(sorted(layout_counts.items())),
+        "region_classifications": dict(sorted(region_counts.items())),
+        "small_scalar_classifications": dict(sorted(scalar_counts.items())),
+        "deprecated_word_transition_rows": int(identifier_summary.get("event_u32_transition_rows", 0)),
+        "event_identifier_hit_rows": int(identifier_summary.get("event_identifier_hit_rows", 0)),
+        "skipped_rows": len(skipped_rows),
+        "policy": {
+            "installed_games_modified": False,
+            "proprietary_payloads_in_report": False,
+            "matched_anchor_bytes_exported": False,
+            "event_text_exported": False,
+            "automatic_censorship_claims": False,
+            "word_aligned_transitions_used_as_direct_evidence": False,
+            "legacy_dlc_in_scope": False,
+            "translation_edits_in_scope": False,
+        },
+        "next_action": "Upload this report. Treat confirmed relocated internal offsets as format/string-layout noise, then review only focused non-relocation scalar/record candidates for scene costume-state, alternate costume and occlusion bindings before any event prototype is built.",
+    }
+    atomic_json(evidence_root / "SUMMARY.json", summary)
+    output = report_root / EVENT_STRUCTURE_REPORT_NAME
+    make_report_archive(evidence_root, output)
+    return output, summary
+
+
+def cmd_collect_event_structure(args: argparse.Namespace) -> int:
+    project_root = Path(args.project_root).expanduser().resolve()
+    if not project_root.is_dir():
+        raise RestorationError(f"Project root does not exist: {project_root}")
+    default_workspace = project_root / ".local/build/quartet_restoration"
+    default_reports = project_root / ".local/reports/quartet_restoration"
+    workspace_root = Path(args.workspace_root).expanduser().resolve() if args.workspace_root else default_workspace
+    report_root = Path(args.report_root).expanduser().resolve() if args.report_root else default_reports
+    require_within(workspace_root, default_workspace, "Workspace")
+    require_within(report_root, default_reports, "Report root")
+    output, summary = collect_event_structure_evidence(
+        project_root=project_root,
+        workspace_root=workspace_root,
+        report_root=report_root,
+        maximum_event_bytes=args.maximum_event_bytes,
+        anchor_block_size=args.anchor_block_size,
+        anchor_stride=args.anchor_stride,
+    )
+    print(f"EBD files analyzed: {summary['ebd_files_analyzed']}")
+    print(f"Confirmed relocation pointer rows: {summary['relocation_pointer_rows']}")
+    print(f"Focused binary record candidates: {summary['focused_scene_binary_record_candidates']}")
+    print(f"Report: {output}")
+    return 0
+
+def cmd_collect_event_identifiers(args: argparse.Namespace) -> int:
+    project_root=Path(args.project_root).expanduser().resolve()
+    if not project_root.is_dir(): raise RestorationError(f"Project root does not exist: {project_root}")
+    default_workspace=project_root/".local/build/quartet_restoration"
+    default_reports=project_root/".local/reports/quartet_restoration"
+    workspace_root=Path(args.workspace_root).expanduser().resolve() if args.workspace_root else default_workspace
+    report_root=Path(args.report_root).expanduser().resolve() if args.report_root else default_reports
+    require_within(workspace_root,default_workspace,"Workspace"); require_within(report_root,default_reports,"Report root")
+    module_root=project_root/"titles/blue_reflection/modules/quartet_restoration/mappings"
+    candidate_rules=Path(args.candidate_rules).expanduser().resolve() if args.candidate_rules else module_root/"candidate_rules.tsv"
+    output,summary=collect_event_identifier_evidence(project_root=project_root,workspace_root=workspace_root,report_root=report_root,candidate_rules_file=candidate_rules,maximum_earc_bytes=args.maximum_earc_bytes,maximum_event_bytes=args.maximum_event_bytes)
+    print(f"Numeric OID identifier seeds: {summary['numeric_identifier_seed_rows']}")
+    print(f"Event identifier hits: {summary['event_identifier_hit_rows']}")
+    print(f"Scene costume identifier candidates: {summary['scene_costume_identifier_candidates']}")
+    print(f"Presentation triage rows: {summary['presentation_triage_rows']}")
+    print(f"Report: {output}")
+    return 0
+
+def cmd_collect_presentation_surfaces(args: argparse.Namespace) -> int:
+    project_root = Path(args.project_root).expanduser().resolve()
+    if not project_root.is_dir():
+        raise RestorationError(f"Project root does not exist: {project_root}")
+    default_workspace = project_root / ".local/build/quartet_restoration"
+    default_reports = project_root / ".local/reports/quartet_restoration"
+    workspace_root = Path(args.workspace_root).expanduser().resolve() if args.workspace_root else default_workspace
+    report_root = Path(args.report_root).expanduser().resolve() if args.report_root else default_reports
+    require_within(workspace_root, default_workspace, "Workspace")
+    require_within(report_root, default_reports, "Report root")
+    module_root = project_root / "titles/blue_reflection/modules/quartet_restoration/mappings"
+    candidate_rules = Path(args.candidate_rules).expanduser().resolve() if args.candidate_rules else module_root / "candidate_rules.tsv"
+    effect_rules = Path(args.effect_material_rules).expanduser().resolve() if args.effect_material_rules else module_root / "effect_material_rules.tsv"
+    dimensions = Path(args.restoration_dimensions).expanduser().resolve() if args.restoration_dimensions else module_root / "restoration_dimensions.tsv"
+    output, summary = collect_presentation_surface_evidence(
+        project_root=project_root, workspace_root=workspace_root, report_root=report_root,
+        candidate_rules_file=candidate_rules, effect_rules_file=effect_rules, dimensions_file=dimensions,
+        maximum_earc_bytes=args.maximum_earc_bytes, maximum_payload_bytes=args.maximum_payload_bytes,
+    )
+    print(f"Restoration dimensions in scope: {len(summary['restoration_dimensions'])}")
+    print(f"Scene costume binding candidates: {summary['scene_costume_binding_candidates']}")
+    print(f"Lightshaft preset differences: {summary['lightshaft_preset_setting_differences']}")
+    print(f"Lightshaft/effect member candidates: {summary['lightshaft_effect_member_candidates']}")
+    print(f"Metadata-only report: {output}")
+    print("Validated G1S prototypes remain local and were not installed.")
+    return 0
+
+def cmd_build_g1s_prototypes(args: argparse.Namespace) -> int:
+    project_root = Path(args.project_root).expanduser().resolve()
+    if not project_root.is_dir():
+        raise RestorationError(f"Project root does not exist: {project_root}")
+    default_workspace = project_root / ".local/build/quartet_restoration"
+    default_reports = project_root / ".local/reports/quartet_restoration"
+    workspace_root = Path(args.workspace_root).expanduser().resolve() if args.workspace_root else default_workspace
+    report_root = Path(args.report_root).expanduser().resolve() if args.report_root else default_reports
+    require_within(workspace_root, default_workspace, "Workspace")
+    require_within(report_root, default_reports, "Report root")
+    rules_file = Path(args.effect_material_rules).expanduser().resolve() if args.effect_material_rules else project_root / "titles/blue_reflection/modules/quartet_restoration/mappings/effect_material_rules.tsv"
+    output, summary = build_g1s_prototypes(
+        project_root=project_root,
+        workspace_root=workspace_root,
+        report_root=report_root,
+        rules_file=rules_file,
+        maximum_earc_bytes=args.maximum_earc_bytes,
+        maximum_payload_bytes=args.maximum_payload_bytes,
+    )
+    print(f"Local G1S prototypes built: {summary['prototype_rows']}")
+    print(f"Prototype program transplants: {summary['prototype_program_rows']}")
+    print(f"Validation failures: {summary['validation_failures']}")
+    print(f"Metadata-only report: {output}")
+    print(f"Local prototypes: {summary['local_prototype_root']}")
+    print("Installed game files were not modified.")
+    return 0
+
+def cmd_collect_g1s_envelope(args: argparse.Namespace) -> int:
+    project_root = Path(args.project_root).expanduser().resolve()
+    if not project_root.is_dir():
+        raise RestorationError(f"Project root does not exist: {project_root}")
+    default_workspace = project_root / ".local/build/quartet_restoration"
+    default_reports = project_root / ".local/reports/quartet_restoration"
+    workspace_root = Path(args.workspace_root).expanduser().resolve() if args.workspace_root else default_workspace
+    report_root = Path(args.report_root).expanduser().resolve() if args.report_root else default_reports
+    require_within(workspace_root, default_workspace, "Workspace")
+    require_within(report_root, default_reports, "Report root")
+    rules_file = Path(args.effect_material_rules).expanduser().resolve() if args.effect_material_rules else project_root / "titles/blue_reflection/modules/quartet_restoration/mappings/effect_material_rules.tsv"
+    output, summary = collect_g1s_envelope_evidence(
+        project_root=project_root,
+        workspace_root=workspace_root,
+        report_root=report_root,
+        rules_file=rules_file,
+        maximum_earc_bytes=args.maximum_earc_bytes,
+        maximum_payload_bytes=args.maximum_payload_bytes,
+    )
+    print(f"Ready shader files: {summary['ready_shader_files']}")
+    print(f"DXBC dry-run transplants: {summary['dry_run_transplant_rows']}")
+    print(f"Offset reference candidates: {summary['offset_reference_candidate_rows']}")
+    print(f"Metadata-only report: {output}")
+    print("No prototype G1S or installed game file was written.")
+    return 0
+
+def cmd_collect_dxbc_reflection(args: argparse.Namespace) -> int:
+    project_root = Path(args.project_root).expanduser().resolve()
+    if not project_root.is_dir():
+        raise RestorationError(f"Project root does not exist: {project_root}")
+    default_workspace = project_root / ".local/build/quartet_restoration"
+    default_reports = project_root / ".local/reports/quartet_restoration"
+    workspace_root = Path(args.workspace_root).expanduser().resolve() if args.workspace_root else default_workspace
+    report_root = Path(args.report_root).expanduser().resolve() if args.report_root else default_reports
+    require_within(workspace_root, default_workspace, "Workspace")
+    require_within(report_root, default_reports, "Report root")
+    rules_file = Path(args.effect_material_rules).expanduser().resolve() if args.effect_material_rules else project_root / "titles/blue_reflection/modules/quartet_restoration/mappings/effect_material_rules.tsv"
+    output, summary = collect_dxbc_reflection_evidence(
+        project_root=project_root,
+        workspace_root=workspace_root,
+        report_root=report_root,
+        rules_file=rules_file,
+        maximum_earc_bytes=args.maximum_earc_bytes,
+        maximum_payload_bytes=args.maximum_payload_bytes,
+    )
+    print(f"Direct shader files: {summary['direct_shader_files']}")
+    print(f"DXBC programs: {summary['program_rows']}")
+    print(f"Prototype readiness: {summary['prototype_readiness']}")
+    print(f"Metadata-only DXBC reflection report: {output}")
+    print("Installed games were not modified.")
+    return 0
+
+def cmd_collect_binary_deltas(args: argparse.Namespace) -> int:
+    project_root = Path(args.project_root).expanduser().resolve()
+    if not project_root.is_dir():
+        raise RestorationError(f"Project root does not exist: {project_root}")
+    default_workspace = project_root / ".local/build/quartet_restoration"
+    default_reports = project_root / ".local/reports/quartet_restoration"
+    workspace_root = Path(args.workspace_root).expanduser().resolve() if args.workspace_root else default_workspace
+    report_root = Path(args.report_root).expanduser().resolve() if args.report_root else default_reports
+    require_within(workspace_root, default_workspace, "Workspace")
+    require_within(report_root, default_reports, "Report root")
+    rules_file = Path(args.effect_material_rules).expanduser().resolve() if args.effect_material_rules else project_root / "titles/blue_reflection/modules/quartet_restoration/mappings/effect_material_rules.tsv"
+    output, summary = collect_binary_delta_evidence(
+        project_root=project_root,
+        workspace_root=workspace_root,
+        report_root=report_root,
+        rules_file=rules_file,
+        maximum_earc_bytes=args.maximum_earc_bytes,
+        maximum_payload_bytes=args.maximum_payload_bytes,
+    )
+    print(f"Focused payload pairs: {summary['focused_payload_pairs']}")
+    print(f"DXBC program structures: {summary['dxbc_program_rows']}")
+    print(f"Instruction deltas: {summary['dxbc_instruction_delta_rows']}")
+    print(f"Prototype candidates: {summary['prototype_candidate_rows']}")
+    print(f"Metadata-only binary-delta report: {output}")
+    print("Installed games were not modified.")
+    return 0
+
+def cmd_collect_shader_effects(args: argparse.Namespace) -> int:
+    project_root = Path(args.project_root).expanduser().resolve()
+    if not project_root.is_dir():
+        raise RestorationError(f"Project root does not exist: {project_root}")
+    default_workspace = project_root / ".local/build/quartet_restoration"
+    default_reports = project_root / ".local/reports/quartet_restoration"
+    workspace_root = (
+        Path(args.workspace_root).expanduser().resolve()
+        if args.workspace_root else default_workspace
+    )
+    report_root = (
+        Path(args.report_root).expanduser().resolve()
+        if args.report_root else default_reports
+    )
+    require_within(workspace_root, default_workspace, "Workspace")
+    require_within(report_root, default_reports, "Report root")
+    rules_file = (
+        Path(args.effect_material_rules).expanduser().resolve()
+        if args.effect_material_rules else project_root
+        / "titles/blue_reflection/modules/quartet_restoration/mappings/effect_material_rules.tsv"
+    )
+    output, summary = collect_shader_effect_evidence(
+        project_root=project_root,
+        workspace_root=workspace_root,
+        report_root=report_root,
+        rules_file=rules_file,
+        maximum_earc_bytes=args.maximum_earc_bytes,
+        maximum_payload_bytes=args.maximum_payload_bytes,
+    )
+    print(f"Render payload rows: {summary['render_payload_rows']}")
+    print(f"Embedded DXBC programs: {summary['embedded_dxbc_program_rows']}")
+    print(f"Technical token differences: {summary['technical_token_difference_rows']}")
+    print(f"Focused review rows: {summary['focused_review_rows']}")
+    print(f"Metadata-only shader/effect report: {output}")
+    print("Installed games were not modified.")
+    return 0
+
+def cmd_collect_material_deltas(args: argparse.Namespace) -> int:
+    project_root = Path(args.project_root).expanduser().resolve()
+    if not project_root.is_dir():
+        raise RestorationError(f"Project root does not exist: {project_root}")
+    default_workspace = project_root / ".local/build/quartet_restoration"
+    default_reports = project_root / ".local/reports/quartet_restoration"
+    workspace_root = (
+        Path(args.workspace_root).expanduser().resolve()
+        if args.workspace_root else default_workspace
+    )
+    report_root = (
+        Path(args.report_root).expanduser().resolve()
+        if args.report_root else default_reports
+    )
+    require_within(workspace_root, default_workspace, "Workspace")
+    require_within(report_root, default_reports, "Report root")
+    candidate_rules_file = (
+        Path(args.candidate_rules).expanduser().resolve()
+        if args.candidate_rules else project_root
+        / "titles/blue_reflection/modules/quartet_restoration/mappings/candidate_rules.tsv"
+    )
+    effect_rules_file = (
+        Path(args.effect_material_rules).expanduser().resolve()
+        if args.effect_material_rules else project_root
+        / "titles/blue_reflection/modules/quartet_restoration/mappings/effect_material_rules.tsv"
+    )
+    output, summary = collect_material_delta_evidence(
+        project_root=project_root,
+        workspace_root=workspace_root,
+        report_root=report_root,
+        candidate_rules_file=candidate_rules_file,
+        effect_rules_file=effect_rules_file,
+        maximum_earc_bytes=args.maximum_earc_bytes,
+    )
+    print(f"Semantic parameter differences: {summary['semantic_parameter_difference_rows']}")
+    print(f"Three-way variant rows: {summary['three_way_variant_rows']}")
+    print(f"Focused material review rows: {summary['focused_review_rows']}")
+    print(f"Metadata-only material delta report: {output}")
+    print("Installed games were not modified.")
+    return 0
+
+def cmd_collect_material_parameters(args: argparse.Namespace) -> int:
+    project_root = Path(args.project_root).expanduser().resolve()
+    if not project_root.is_dir():
+        raise RestorationError(f"Project root does not exist: {project_root}")
+    default_workspace = project_root / ".local/build/quartet_restoration"
+    default_reports = project_root / ".local/reports/quartet_restoration"
+    workspace_root = (
+        Path(args.workspace_root).expanduser().resolve()
+        if args.workspace_root else default_workspace
+    )
+    report_root = (
+        Path(args.report_root).expanduser().resolve()
+        if args.report_root else default_reports
+    )
+    require_within(workspace_root, default_workspace, "Workspace")
+    require_within(report_root, default_reports, "Report root")
+    candidate_rules_file = (
+        Path(args.candidate_rules).expanduser().resolve()
+        if args.candidate_rules else project_root
+        / "titles/blue_reflection/modules/quartet_restoration/mappings/candidate_rules.tsv"
+    )
+    effect_rules_file = (
+        Path(args.effect_material_rules).expanduser().resolve()
+        if args.effect_material_rules else project_root
+        / "titles/blue_reflection/modules/quartet_restoration/mappings/effect_material_rules.tsv"
+    )
+    output, summary = collect_material_parameter_evidence(
+        project_root=project_root,
+        workspace_root=workspace_root,
+        report_root=report_root,
+        candidate_rules_file=candidate_rules_file,
+        effect_rules_file=effect_rules_file,
+        maximum_earc_bytes=args.maximum_earc_bytes,
+    )
+    print(f"Parsed G1M payloads: {summary['parsed_g1m_payloads']}")
+    print(f"Shader parameter differences: {summary['g1m_shader_parameter_differences']}")
+    print(f"Technical parameter differences: {summary['technical_parameter_differences']}")
+    print(f"Metadata-only material report: {output}")
+    print("Installed games were not modified.")
+    return 0
+
+def cmd_collect_structural(args: argparse.Namespace) -> int:
+    project_root = Path(args.project_root).expanduser().resolve()
+    if not project_root.is_dir():
+        raise RestorationError(f"Project root does not exist: {project_root}")
+    default_workspace = project_root / ".local/build/quartet_restoration"
+    default_reports = project_root / ".local/reports/quartet_restoration"
+    workspace_root = (
+        Path(args.workspace_root).expanduser().resolve()
+        if args.workspace_root
+        else default_workspace
+    )
+    report_root = (
+        Path(args.report_root).expanduser().resolve()
+        if args.report_root
+        else default_reports
+    )
+    require_within(workspace_root, default_workspace, "Workspace")
+    require_within(report_root, default_reports, "Report root")
+    candidate_rules_file = (
+        Path(args.candidate_rules).expanduser().resolve()
+        if args.candidate_rules
+        else project_root
+        / "titles/blue_reflection/modules/quartet_restoration/mappings/candidate_rules.tsv"
+    )
+    effect_rules_file = (
+        Path(args.effect_material_rules).expanduser().resolve()
+        if args.effect_material_rules
+        else project_root
+        / "titles/blue_reflection/modules/quartet_restoration/mappings/effect_material_rules.tsv"
+    )
+    output, summary = collect_structural_evidence(
+        project_root=project_root,
+        workspace_root=workspace_root,
+        report_root=report_root,
+        candidate_rules_file=candidate_rules_file,
+        effect_rules_file=effect_rules_file,
+        maximum_raw_bytes=args.maximum_raw_scan_bytes,
+        maximum_earc_bytes=args.maximum_earc_bytes,
+    )
+    print(f"Parsed EARC archives: {summary['parsed_earc_archives']}")
+    print(f"Scene/effect member differences: {summary['scene_effect_member_differences']}")
+    print(f"Derived identifier hits: {summary['derived_identifier_hit_rows']}")
+    print(f"Metadata-only structural report: {output}")
+    print("Installed games were not modified.")
+    return 0
+
+def cmd_collect_scene_effects(args: argparse.Namespace) -> int:
+    project_root = Path(args.project_root).expanduser().resolve()
+    if not project_root.is_dir():
+        raise RestorationError(f"Project root does not exist: {project_root}")
+    default_workspace = project_root / ".local/build/quartet_restoration"
+    default_reports = project_root / ".local/reports/quartet_restoration"
+    workspace_root = (
+        Path(args.workspace_root).expanduser().resolve()
+        if args.workspace_root
+        else default_workspace
+    )
+    report_root = (
+        Path(args.report_root).expanduser().resolve()
+        if args.report_root
+        else default_reports
+    )
+    require_within(workspace_root, default_workspace, "Workspace")
+    require_within(report_root, default_reports, "Report root")
+    rules_file = (
+        Path(args.effect_material_rules).expanduser().resolve()
+        if args.effect_material_rules
+        else project_root
+        / "titles/blue_reflection/modules/quartet_restoration/mappings/effect_material_rules.tsv"
+    )
+    output, summary = collect_scene_effect_evidence(
+        project_root=project_root,
+        workspace_root=workspace_root,
+        report_root=report_root,
+        rules_file=rules_file,
+        maximum_raw_bytes=args.maximum_raw_scan_bytes,
+    )
+    print(f"Scene/effect/material candidates: {summary['candidate_files']}")
+    print(f"Technical token differences: {summary['technical_token_differences']}")
+    print(f"Metadata-only scene/effect report: {output}")
+    print("Installed games were not modified.")
+    return 0
+
+def cmd_collect_evidence(args: argparse.Namespace) -> int:
+    project_root = Path(args.project_root).expanduser().resolve()
+    if not project_root.is_dir():
+        raise RestorationError(f"Project root does not exist: {project_root}")
+    default_workspace = project_root / ".local/build/quartet_restoration"
+    default_reports = project_root / ".local/reports/quartet_restoration"
+    workspace_root = (
+        Path(args.workspace_root).expanduser().resolve()
+        if args.workspace_root
+        else default_workspace
+    )
+    report_root = (
+        Path(args.report_root).expanduser().resolve()
+        if args.report_root
+        else default_reports
+    )
+    require_within(workspace_root, default_workspace, "Workspace")
+    require_within(report_root, default_reports, "Report root")
+    candidate_rules = (
+        Path(args.candidate_rules).expanduser().resolve()
+        if args.candidate_rules
+        else project_root
+        / "titles/blue_reflection/modules/quartet_restoration/mappings/candidate_rules.tsv"
+    )
+    output, summary = collect_reference_evidence(
+        project_root=project_root,
+        workspace_root=workspace_root,
+        report_root=report_root,
+        candidate_rules_file=candidate_rules,
+        maximum_scan_bytes=args.maximum_scan_bytes,
+    )
+    print(f"Candidate families: {summary['candidate_families']}")
+    print(f"External reference hits: {summary['external_reference_hit_rows']}")
+    print(f"Event reference files: {summary['event_reference_files']}")
+    print(f"Metadata-only reference report: {output}")
+    print("Installed games were not modified.")
+    return 0
+
+def run_project(args: argparse.Namespace) -> int:
+    project_root = Path(args.project_root).expanduser().resolve()
+    original_root = Path(args.original_root).expanduser().resolve()
+    quartet_root = Path(args.quartet_root).expanduser().resolve()
+    gust_pak = Path(args.gust_pak).expanduser().resolve()
+    for label, path in (
+        ("project root", project_root),
+        ("Original root", original_root),
+        ("Quartet root", quartet_root),
+    ):
+        if not path.is_dir():
+            raise RestorationError(f"{label} does not exist: {path}")
+    if not gust_pak.is_file() or not os.access(gust_pak, os.X_OK):
+        raise RestorationError(f"gust_pak is missing or not executable: {gust_pak}")
+
+    default_workspace = project_root / ".local/build/quartet_restoration"
+    default_reports = project_root / ".local/reports/quartet_restoration"
+    workspace_root = Path(args.workspace_root).expanduser().resolve() if args.workspace_root else default_workspace
+    report_root = Path(args.report_root).expanduser().resolve() if args.report_root else default_reports
+    require_within(workspace_root, default_workspace, "Workspace")
+    require_within(report_root, default_reports, "Report root")
+    for game_root in (original_root, quartet_root):
+        if is_relative_to(workspace_root, game_root) or is_relative_to(report_root, game_root):
+            raise RestorationError("Generated workspace/report paths must not be inside an installed game")
+
+    equivalence = Path(args.archive_equivalence).expanduser().resolve() if args.archive_equivalence else project_root / "config/quartet_archive_equivalence.tsv"
+    path_rules_file = Path(args.path_rules).expanduser().resolve() if args.path_rules else project_root / "titles/blue_reflection/modules/quartet_restoration/mappings/path_rules.tsv"
+    source_rules = load_path_rules(path_rules_file, "source")
+    target_rules = load_path_rules(path_rules_file, "target")
+    rows = read_tsv(equivalence)
+    if not rows:
+        raise RestorationError(f"No archive equivalence rows: {equivalence}")
+
+    gust_sha = sha256_file(gust_pak)
+    report_root.mkdir(parents=True, exist_ok=True)
+    inventories_root = report_root / "inventories"
+    differences_root = report_root / "differences"
+    pair_results: list[dict[str, Any]] = []
+    differences: list[dict[str, Any]] = []
+
+    for row in rows:
+        pair_id = row.get("pair_id", "")
+        category = row.get("category", "")
+        if not pair_id:
+            raise RestorationError("Archive equivalence row has no pair_id")
+        source_archives = discover_archives(original_root, row["source_archive_glob"])
+        target_archives = discover_archives(quartet_root, row["target_archive_glob"])
+        if not source_archives:
+            raise RestorationError(
+                f"No Original archives matched {row['source_archive_glob']} ({pair_id})"
+            )
+        if not target_archives:
+            raise RestorationError(
+                f"No Quartet archives matched {row['target_archive_glob']} ({pair_id})"
+            )
+        print(f"[{pair_id}] Original archives: {len(source_archives)}; Quartet archives: {len(target_archives)}")
+
+        source_extractions = [
+            extract_archive(
+                archive=archive,
+                game_root=original_root,
+                gust_pak=gust_pak,
+                gust_pak_sha256=gust_sha,
+                pair_id=pair_id,
+                side="source",
+                workspace_root=workspace_root,
+                timeout_seconds=args.timeout,
+            )
+            for archive in source_archives
+        ]
+        target_extractions = [
+            extract_archive(
+                archive=archive,
+                game_root=quartet_root,
+                gust_pak=gust_pak,
+                gust_pak_sha256=gust_sha,
+                pair_id=pair_id,
+                side="target",
+                workspace_root=workspace_root,
+                timeout_seconds=args.timeout,
+            )
+            for archive in target_archives
+        ]
+
+        source_inventory = inventory_side(
+            target_id=row["source_target"],
+            pair_id=pair_id,
+            side="source",
+            extractions=source_extractions,
+            path_rules=source_rules,
+        )
+        target_inventory = inventory_side(
+            target_id=row["target_target"],
+            pair_id=pair_id,
+            side="target",
+            extractions=target_extractions,
+            path_rules=target_rules,
+        )
+        source_output = inventories_root / f"{pair_id}.source.json"
+        target_output = inventories_root / f"{pair_id}.target.json"
+        atomic_json(source_output, source_inventory)
+        atomic_json(target_output, target_inventory)
+
+        difference = compare_inventories(source_inventory, target_inventory)
+        difference["category"] = category
+        difference_output = differences_root / f"{pair_id}.json"
+        atomic_json(difference_output, difference)
+        differences.append(difference)
+        pair_results.append(
+            {
+                "pair_id": pair_id,
+                "category": category,
+                "source_inventory": source_inventory,
+                "target_inventory": target_inventory,
+                "difference": difference,
+            }
+        )
+        print(f"[{pair_id}] {json.dumps(difference['summary']['classifications'], sort_keys=True)}")
+
+    active_review_count, focused_review_count, deferred_review_count = write_review_queues(
+        report_root / "REVIEW_QUEUE.tsv",
+        report_root / "FOCUSED_REVIEW_QUEUE.tsv",
+        report_root / "DEFERRED_QUEUE.tsv",
+        differences,
+    )
+    write_archive_inventory(report_root / "ARCHIVE_INVENTORY.tsv", pair_results)
+    aggregate_classes: Counter[str] = Counter()
+    aggregate_priorities: Counter[str] = Counter()
+    aggregate_scopes: Counter[str] = Counter()
+    total_source_files = 0
+    total_target_files = 0
+    for result in pair_results:
+        aggregate_classes.update(result["difference"]["summary"]["classifications"])
+        aggregate_priorities.update(result["difference"]["summary"]["manual_review_priorities"])
+        aggregate_scopes.update(result["difference"]["summary"].get("scope_statuses", {}))
+        total_source_files += result["source_inventory"]["summary"]["files"]
+        total_target_files += result["target_inventory"]["summary"]["files"]
+    summary = {
+        "type": "br_quartet_restoration_research_summary",
+        "format_version": FORMAT_VERSION,
+        "tool_version": TOOL_VERSION,
+        "status": "inventory_complete_manual_review_required",
+        "source_target": "blue_reflection_original",
+        "target_target": "blue_reflection_quartet",
+        "pair_count": len(pair_results),
+        "source_files": total_source_files,
+        "target_files": total_target_files,
+        "classifications": dict(sorted(aggregate_classes.items())),
+        "manual_review_priorities": dict(sorted(aggregate_priorities.items())),
+        "scope_statuses": dict(sorted(aggregate_scopes.items())),
+        "active_review_entries": active_review_count,
+        "focused_review_entries": focused_review_count,
+        "focused_review_threshold": 60,
+        "deferred_review_entries": deferred_review_count,
+        "censorship_candidates": 0,
+        "restoration_registry_candidates_created": 0,
+        "policy": {
+            "installed_games_modified": False,
+            "proprietary_assets_in_report": False,
+            "legacy_dlc_in_scope": False,
+            "automatic_censorship_claims": False,
+        },
+        "normalization_profile": "quartet_namespace_and_language_consolidation_v1",
+        "next_action": "Run workstreams/quartet_restoration/02_collect_reference_evidence.sh, then upload the metadata-only reference-evidence archive.",
+    }
+    atomic_json(report_root / "SUMMARY.json", summary)
+    report_archive = report_root / GENERATED_REPORT_NAME
+    make_report_archive(report_root, report_archive)
+    print(f"\nMetadata-only report: {report_archive}")
+    print("Installed games were read only; extracted files remain under .local/build/quartet_restoration.")
+    return 0
+
+
+def cmd_compare(args: argparse.Namespace) -> int:
+    source = load_json(Path(args.source_inventory).expanduser().resolve())
+    target = load_json(Path(args.target_inventory).expanduser().resolve())
+    report = compare_inventories(source, target)
+    output = Path(args.output).expanduser().resolve()
+    atomic_json(output, report)
+    print(f"Difference report: {output}")
+    return 0
+
+
+
+
+def derive_scene_identifier_seeds(effect_material_rules_file: Path) -> list[dict[str, Any]]:
+    """Derive metadata-only scene identifiers from focused field-container rules."""
+    rows: list[dict[str, Any]] = []
+    seen: set[tuple[str, str, str]] = set()
+    for rule in read_tsv(effect_material_rules_file):
+        if rule.get("status") != "active" or rule.get("evidence_kind") != "scene_container":
+            continue
+        path_glob = str(rule.get("normalized_path_glob", ""))
+        field_match = re.search(r"(?:^|/)(s\d{2,3}_[A-Za-z0-9_]+)(?:/|$)", path_glob)
+        if not field_match:
+            continue
+        full = field_match.group(1)
+        number_match = re.match(r"s(\d{2,3})(?:_|$)", full, re.IGNORECASE)
+        scene_number = int(number_match.group(1)) if number_match else -1
+        variants = [
+            ("full_ascii", full.encode("ascii"), "high"),
+            ("full_utf16le", full.encode("utf-16le"), "high"),
+            ("full_utf16be", full.encode("utf-16be"), "high"),
+            ("short_ascii", full.split("_", 1)[0].encode("ascii"), "medium"),
+        ]
+        if scene_number >= 0:
+            variants.extend([
+                ("scene_number_u16le", struct.pack("<H", scene_number), "weak"),
+                ("scene_number_u32le", struct.pack("<I", scene_number), "weak"),
+            ])
+        for encoding, payload, confidence in variants:
+            key = (str(rule.get("rule_id", "")), encoding, payload.hex())
+            if not payload or key in seen:
+                continue
+            seen.add(key)
+            rows.append({
+                "seed_id": f"sceneseed_{sha256_text('|'.join(key))[:18]}",
+                "rule_id": str(rule.get("rule_id", "")),
+                "domain": str(rule.get("domain", "")),
+                "field_identifier": full,
+                "scene_number": scene_number if scene_number >= 0 else "",
+                "encoding": encoding,
+                "seed": payload,
+                "seed_length": len(payload),
+                "confidence": confidence,
+                "review_status": "scene_identifier_seed_not_event_binding_proof",
+            })
+    return sorted(rows, key=lambda row: (str(row["rule_id"]), str(row["encoding"]), str(row["seed_id"])))
+
+
+def scan_scene_identifier_hits(payload: bytes, seeds: Sequence[dict[str, Any]]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for seed in seeds:
+        needle = bytes(seed["seed"])
+        offsets: list[int] = []
+        cursor = 0
+        while needle and cursor <= len(payload) - len(needle):
+            found = payload.find(needle, cursor)
+            if found < 0:
+                break
+            offsets.append(found)
+            cursor = found + max(1, len(needle))
+            if len(offsets) >= 256:
+                break
+        if not offsets:
+            continue
+        rows.append({
+            "seed_id": seed["seed_id"],
+            "rule_id": seed["rule_id"],
+            "domain": seed["domain"],
+            "field_identifier": seed["field_identifier"],
+            "encoding": seed["encoding"],
+            "confidence": seed["confidence"],
+            "hit_count": len(offsets),
+            "first_offsets": ";".join(str(value) for value in offsets[:20]),
+            "classification": "exact_scene_identifier_hit" if seed["confidence"] == "high" else "supporting_scene_identifier_hit",
+            "review_status": "identifier_hit_requires_event_family_confirmation",
+        })
+    return rows
+
+
+def event_region_context_metadata(
+    source: bytes,
+    target: bytes,
+    region: dict[str, Any],
+    *,
+    context_bytes: int = 16,
+) -> dict[str, Any]:
+    source_start = int(region["source_start"])
+    source_end = int(region["source_end"])
+    target_start = int(region["target_start"])
+    target_end = int(region["target_end"])
+    source_before = source[max(0, source_start - context_bytes):source_start]
+    source_after = source[source_end:min(len(source), source_end + context_bytes)]
+    target_before = target[max(0, target_start - context_bytes):target_start]
+    target_after = target[target_end:min(len(target), target_end + context_bytes)]
+    source_context = source_before + b"\xff" + source_after
+    target_context = target_before + b"\xff" + target_after
+    return {
+        "source_context_sha256": hashlib.sha256(source_context).hexdigest(),
+        "target_context_sha256": hashlib.sha256(target_context).hexdigest(),
+        "source_context_prefix_length": len(source_before),
+        "source_context_suffix_length": len(source_after),
+        "target_context_prefix_length": len(target_before),
+        "target_context_suffix_length": len(target_after),
+        "delta_signature_sha256": hashlib.sha256(
+            f"{region['source_length']}|{region['target_length']}|{region['source_sha256']}|{region['target_sha256']}".encode("ascii")
+        ).hexdigest(),
+        "context_signature_sha256": hashlib.sha256(source_context + b"\xfe" + target_context).hexdigest(),
+    }
+
+
+def event_process_header_metadata(source: bytes, target: bytes, in_scope_ebm_count: int) -> dict[str, Any]:
+    def words(payload: bytes) -> list[int]:
+        return [struct.unpack_from("<I", payload, offset)[0] for offset in range(0, min(len(payload), 32) - 3, 4)]
+    source_words = words(source)
+    target_words = words(target)
+    source_count = source_words[0] if source_words else -1
+    target_count = target_words[0] if target_words else -1
+    return {
+        "source_size": len(source),
+        "target_size": len(target),
+        "size_delta": len(target) - len(source),
+        "source_header_u32": ";".join(f"0x{value:08x}" for value in source_words),
+        "target_header_u32": ";".join(f"0x{value:08x}" for value in target_words),
+        "source_leading_count": source_count,
+        "target_leading_count": target_count,
+        "in_scope_ebm_count": in_scope_ebm_count,
+        "count_matches_in_scope_ebm": source_count == target_count == in_scope_ebm_count,
+        "classification": "event_process_count_matches_event_family_inventory" if source_count == target_count == in_scope_ebm_count else "event_process_header_count_unresolved",
+        "review_status": "count_correlation_not_record_index_mapping_proof",
+    }
+
+
+def collect_event_record_evidence(
+    *,
+    project_root: Path,
+    workspace_root: Path,
+    report_root: Path,
+    effect_material_rules_file: Path,
+    maximum_event_bytes: int,
+    anchor_block_size: int,
+    anchor_stride: int,
+) -> tuple[Path, dict[str, Any]]:
+    structure_summary_path = report_root / EVENT_STRUCTURE_EVIDENCE_DIR / "SUMMARY.json"
+    structure_summary = load_json(structure_summary_path)
+    if structure_summary.get("type") != "br_quartet_restoration_event_structure_evidence_summary":
+        raise RestorationError(f"Not an event-structure report: {structure_summary_path}")
+    if not effect_material_rules_file.is_file():
+        raise RestorationError(f"Missing effect/material rules: {effect_material_rules_file}")
+
+    differences = load_report_jsons(report_root, "differences")
+    in_scope_ebm_count = sum(
+        1
+        for report in differences
+        if str(report.get("source_archive_group", "")) == "br1_events"
+        for item in report.get("entries", [])
+        if item.get("scope_status") == "in_scope"
+        and Path(str(item.get("normalized_path", ""))).suffix.casefold() == ".ebm"
+        and bool(item.get("source"))
+    )
+    seeds = derive_scene_identifier_seeds(effect_material_rules_file)
+    exported_seed_rows = [{key: value for key, value in row.items() if key != "seed"} for row in seeds]
+
+    correction_rows: list[dict[str, Any]] = []
+    region_rows: list[dict[str, Any]] = []
+    hit_rows: list[dict[str, Any]] = []
+    event_process_rows: list[dict[str, Any]] = []
+    event_process_region_rows: list[dict[str, Any]] = []
+    skipped_rows: list[dict[str, Any]] = []
+    analyzed = 0
+    raw_focused = int(structure_summary.get("focused_scene_binary_record_candidates", 0))
+
+    for report in differences:
+        if str(report.get("source_archive_group", "")) != "br1_events":
+            continue
+        for entry in report.get("entries", []):
+            if entry.get("classification") != "changed" or entry.get("scope_status") != "in_scope":
+                continue
+            normalized_path = str(entry.get("normalized_path", ""))
+            extension = Path(normalized_path).suffix.casefold()
+            if extension not in {".ebd", ".epd", ".bsb"}:
+                continue
+            source_ref = entry.get("source") or {}
+            target_ref = entry.get("target") or {}
+            source_path = inventory_workspace_file(workspace_root, "source", "br1_events", str(source_ref.get("archive", "")), str(source_ref.get("path", "")))
+            target_path = inventory_workspace_file(workspace_root, "target", "br1_events", str(target_ref.get("archive", "")), str(target_ref.get("path", "")))
+            if not source_path.is_file() or not target_path.is_file():
+                skipped_rows.append({"normalized_path": normalized_path, "reason": "workspace_file_missing"})
+                continue
+            if source_path.stat().st_size > maximum_event_bytes or target_path.stat().st_size > maximum_event_bytes:
+                skipped_rows.append({"normalized_path": normalized_path, "reason": "maximum_event_bytes_exceeded"})
+                continue
+            source = source_path.read_bytes()
+            target = target_path.read_bytes()
+            analyzed += 1
+
+            source_hits = scan_scene_identifier_hits(source, seeds)
+            target_hits = scan_scene_identifier_hits(target, seeds)
+            for side, hits in (("source", source_hits), ("target", target_hits)):
+                for row in hits:
+                    hit_rows.append({"normalized_path": normalized_path, "side": side, **row})
+
+            if extension == ".epd" and normalized_path == "event/eventprocess/eventprocessdataall.epd":
+                event_process_rows.append({"normalized_path": normalized_path, **event_process_header_metadata(source, target, in_scope_ebm_count)})
+
+            if extension != ".ebd" and normalized_path != "event/eventprocess/eventprocessdataall.epd":
+                continue
+            result = analyze_event_structure_pair(source, target, anchor_block_size=anchor_block_size, anchor_stride=anchor_stride)
+            correction_rows.append({
+                "normalized_path": normalized_path,
+                "extension": extension,
+                "identical_anchor_gap_bytes_removed": result.get("identical_gap_bytes", 0),
+                "corrected_delta_region_count": len(result["regions"]),
+                "corrected_unresolved_changed_bytes": result["unresolved_bytes"],
+                "corrected_small_scalar_rows": sum(row["classification"] == "unresolved_small_scalar_delta" for row in result["scalars"]),
+                "corrected_anchor_coverage": round(result["anchor_coverage"], 6),
+                "corrected_classification": result["classification"],
+                "confidence": result["confidence"],
+                "review_status": "corrected_structure_metadata_not_censorship_proof",
+            })
+            for region in result["regions"]:
+                metadata = event_region_context_metadata(source, target, region)
+                row = {
+                    "normalized_path": normalized_path,
+                    "extension": extension,
+                    "region_index": region["region_index"],
+                    "source_start": region["source_start"],
+                    "target_start": region["target_start"],
+                    "source_length": region["source_length"],
+                    "target_length": region["target_length"],
+                    "changed_bytes": region["changed_bytes"],
+                    "classification": region["classification"],
+                    "source_sha256": region["source_sha256"],
+                    "target_sha256": region["target_sha256"],
+                    **metadata,
+                    "review_status": "record_context_metadata_not_censorship_proof",
+                }
+                if normalized_path == "event/eventprocess/eventprocessdataall.epd":
+                    event_process_region_rows.append(dict(row))
+                else:
+                    region_rows.append(row)
+
+    cluster_groups: dict[tuple[Any, ...], dict[str, Any]] = {}
+    for row in region_rows:
+        key = (
+            row["source_length"], row["target_length"], row["source_sha256"], row["target_sha256"],
+            row["source_context_sha256"], row["target_context_sha256"], row["classification"],
+        )
+        group = cluster_groups.setdefault(key, {
+            "cluster_id": f"eventcluster_{sha256_text('|'.join(str(value) for value in key))[:18]}",
+            "source_length": row["source_length"], "target_length": row["target_length"],
+            "changed_bytes": row["changed_bytes"], "classification": row["classification"],
+            "delta_signature_sha256": row["delta_signature_sha256"], "context_signature_sha256": row["context_signature_sha256"],
+            "occurrence_count": 0, "event_paths": set(),
+        })
+        group["occurrence_count"] += 1
+        group["event_paths"].add(row["normalized_path"])
+
+    cluster_rows: list[dict[str, Any]] = []
+    cluster_by_context: dict[str, dict[str, Any]] = {}
+    for group in cluster_groups.values():
+        paths = sorted(group.pop("event_paths"))
+        event_count = len(paths)
+        if event_count >= 20:
+            classification = "widespread_format_or_compiler_delta"
+            priority = "deferred"
+        elif event_count >= 3:
+            classification = "repeated_event_record_delta"
+            priority = "low"
+        else:
+            classification = "rare_event_record_delta"
+            priority = "medium"
+        exported = {
+            **group,
+            "event_count": event_count,
+            "first_event_paths": ";".join(paths[:20]),
+            "cluster_classification": classification,
+            "review_priority": priority,
+            "review_status": "cluster_frequency_not_censorship_proof",
+        }
+        cluster_rows.append(exported)
+        cluster_by_context[str(exported["context_signature_sha256"])] = exported
+
+    exact_scene_paths: dict[str, set[str]] = defaultdict(set)
+    supporting_scene_paths: dict[str, set[str]] = defaultdict(set)
+    for row in hit_rows:
+        destination = exact_scene_paths if row["confidence"] == "high" else supporting_scene_paths
+        destination[str(row["normalized_path"])].add(str(row["rule_id"]))
+
+    candidate_rows: list[dict[str, Any]] = []
+    regions_by_path: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for row in region_rows:
+        regions_by_path[str(row["normalized_path"])].append(row)
+    correction_by_path = {str(row["normalized_path"]): row for row in correction_rows}
+    for normalized_path in sorted(set(exact_scene_paths) | set(supporting_scene_paths)):
+        path_regions = regions_by_path.get(normalized_path, [])
+        clusters = [cluster_by_context.get(str(row["context_signature_sha256"])) for row in path_regions]
+        clusters = [row for row in clusters if row]
+        rare = sum(row["cluster_classification"] == "rare_event_record_delta" for row in clusters)
+        repeated = sum(row["cluster_classification"] == "repeated_event_record_delta" for row in clusters)
+        widespread = sum(row["cluster_classification"] == "widespread_format_or_compiler_delta" for row in clusters)
+        exact_rules = sorted(exact_scene_paths.get(normalized_path, set()))
+        supporting_rules = sorted(supporting_scene_paths.get(normalized_path, set()))
+        classification = "exact_scene_link_with_rare_record_delta" if exact_rules and rare else (
+            "exact_scene_link_only" if exact_rules else "supporting_scene_link_only"
+        )
+        priority = "critical" if classification == "exact_scene_link_with_rare_record_delta" else ("high" if exact_rules else "low")
+        corrected = correction_by_path.get(normalized_path, {})
+        candidate_rows.append({
+            "normalized_path": normalized_path,
+            "exact_scene_rules": ";".join(exact_rules),
+            "supporting_scene_rules": ";".join(supporting_rules),
+            "rare_delta_clusters": rare,
+            "repeated_delta_clusters": repeated,
+            "widespread_delta_clusters": widespread,
+            "corrected_unresolved_changed_bytes": corrected.get("corrected_unresolved_changed_bytes", ""),
+            "classification": classification,
+            "review_priority": priority,
+            "review_status": "manual_scene_confirmation_required_before_event_prototype",
+        })
+
+    evidence_root = report_root / EVENT_RECORD_EVIDENCE_DIR
+    if evidence_root.exists():
+        shutil.rmtree(evidence_root)
+    evidence_root.mkdir(parents=True, exist_ok=True)
+    write_tsv(evidence_root / "EVENT_STRUCTURE_CORRECTION.tsv", [
+        "normalized_path","extension","identical_anchor_gap_bytes_removed","corrected_delta_region_count","corrected_unresolved_changed_bytes",
+        "corrected_small_scalar_rows","corrected_anchor_coverage","corrected_classification","confidence","review_status",
+    ], sorted(correction_rows, key=lambda row: (str(row["corrected_classification"]), int(row["corrected_unresolved_changed_bytes"]), str(row["normalized_path"]))))
+    write_tsv(evidence_root / "SCENE_IDENTIFIER_SEEDS.tsv", [
+        "seed_id","rule_id","domain","field_identifier","scene_number","encoding","seed_length","confidence","review_status",
+    ], exported_seed_rows)
+    write_tsv(evidence_root / "SCENE_IDENTIFIER_HITS.tsv", [
+        "normalized_path","side","seed_id","rule_id","domain","field_identifier","encoding","confidence","hit_count","first_offsets","classification","review_status",
+    ], sorted(hit_rows, key=lambda row: (str(row["normalized_path"]), str(row["side"]), str(row["rule_id"]), str(row["encoding"]))))
+    write_tsv(evidence_root / "EVENT_RECORD_CONTEXTS.tsv", [
+        "normalized_path","extension","region_index","source_start","target_start","source_length","target_length","changed_bytes","classification",
+        "source_sha256","target_sha256","source_context_sha256","target_context_sha256","source_context_prefix_length","source_context_suffix_length",
+        "target_context_prefix_length","target_context_suffix_length","delta_signature_sha256","context_signature_sha256","review_status",
+    ], sorted(region_rows, key=lambda row: (str(row["normalized_path"]), int(row["region_index"]))))
+    write_tsv(evidence_root / "EVENT_DELTA_SIGNATURE_CLUSTERS.tsv", [
+        "cluster_id","source_length","target_length","changed_bytes","classification","delta_signature_sha256","context_signature_sha256",
+        "occurrence_count","event_count","first_event_paths","cluster_classification","review_priority","review_status",
+    ], sorted(cluster_rows, key=lambda row: (str(row["review_priority"]), int(row["event_count"]), str(row["cluster_id"]))))
+    write_tsv(evidence_root / "EVENT_PROCESS_LAYOUT.tsv", [
+        "normalized_path","source_size","target_size","size_delta","source_header_u32","target_header_u32","source_leading_count","target_leading_count",
+        "in_scope_ebm_count","count_matches_in_scope_ebm","classification","review_status",
+    ], event_process_rows)
+    write_tsv(evidence_root / "EVENT_PROCESS_DELTA_REGIONS.tsv", [
+        "normalized_path","extension","region_index","source_start","target_start","source_length","target_length","changed_bytes","classification",
+        "source_sha256","target_sha256","source_context_sha256","target_context_sha256","source_context_prefix_length","source_context_suffix_length",
+        "target_context_prefix_length","target_context_suffix_length","delta_signature_sha256","context_signature_sha256","review_status",
+    ], event_process_region_rows)
+    write_tsv(evidence_root / "SCENE_LINKED_EVENT_CANDIDATES.tsv", [
+        "normalized_path","exact_scene_rules","supporting_scene_rules","rare_delta_clusters","repeated_delta_clusters","widespread_delta_clusters",
+        "corrected_unresolved_changed_bytes","classification","review_priority","review_status",
+    ], sorted(candidate_rows, key=lambda row: (str(row["review_priority"]), str(row["normalized_path"]))))
+    write_tsv(evidence_root / "EVENT_RECORD_SCAN_SKIPPED.tsv", ["normalized_path","reason"], skipped_rows)
+
+    corrected_counts = Counter(str(row["corrected_classification"]) for row in correction_rows)
+    cluster_counts = Counter(str(row["cluster_classification"]) for row in cluster_rows)
+    candidate_counts = Counter(str(row["classification"]) for row in candidate_rows)
+    summary = {
+        "type": "br_quartet_restoration_event_record_evidence_summary",
+        "format_version": FORMAT_VERSION,
+        "tool_version": TOOL_VERSION,
+        "source_event_structure_tool_version": structure_summary.get("tool_version"),
+        "status": "corrected_event_record_and_scene_linkage_evidence_complete_manual_scene_confirmation_required",
+        "event_binaries_analyzed": analyzed,
+        "raw_stage14_focused_candidates": raw_focused,
+        "corrected_ebd_and_eventprocess_rows": len(correction_rows),
+        "corrected_classifications": dict(sorted(corrected_counts.items())),
+        "identical_anchor_gap_bytes_removed": sum(int(row["identical_anchor_gap_bytes_removed"]) for row in correction_rows),
+        "record_context_rows": len(region_rows),
+        "delta_signature_clusters": len(cluster_rows),
+        "delta_cluster_classifications": dict(sorted(cluster_counts.items())),
+        "scene_identifier_seed_rows": len(exported_seed_rows),
+        "scene_identifier_hit_rows": len(hit_rows),
+        "exact_scene_identifier_hit_rows": sum(row["confidence"] == "high" for row in hit_rows),
+        "scene_linked_event_candidates": len(candidate_rows),
+        "scene_linked_candidate_classifications": dict(sorted(candidate_counts.items())),
+        "event_process_layout_rows": len(event_process_rows),
+        "event_process_count_matches_in_scope_ebm": any(bool(row["count_matches_in_scope_ebm"]) for row in event_process_rows),
+        "in_scope_ebm_count": in_scope_ebm_count,
+        "skipped_rows": len(skipped_rows),
+        "policy": {
+            "installed_games_modified": False,
+            "proprietary_payloads_in_report": False,
+            "event_text_exported": False,
+            "raw_record_context_bytes_exported": False,
+            "scene_identifiers_are_binding_proof": False,
+            "automatic_censorship_claims": False,
+            "event_prototype_generated": False,
+            "legacy_dlc_in_scope": False,
+            "translation_edits_in_scope": False,
+        },
+        "next_action": "Upload this report. Use exact scene-linked event families and rare non-widespread record clusters to select manual pool/shower/bathroom scene checks. Do not build an event patch from short/numeric scene hits or globally repeated deltas.",
+    }
+    atomic_json(evidence_root / "SUMMARY.json", summary)
+    output = report_root / EVENT_RECORD_REPORT_NAME
+    make_report_archive(evidence_root, output)
+    return output, summary
+
+
+def cmd_collect_event_records(args: argparse.Namespace) -> int:
+    project_root = Path(args.project_root).expanduser().resolve()
+    if not project_root.is_dir():
+        raise RestorationError(f"Project root does not exist: {project_root}")
+    default_workspace = project_root / ".local/build/quartet_restoration"
+    default_reports = project_root / ".local/reports/quartet_restoration"
+    workspace_root = Path(args.workspace_root).expanduser().resolve() if args.workspace_root else default_workspace
+    report_root = Path(args.report_root).expanduser().resolve() if args.report_root else default_reports
+    require_within(workspace_root, default_workspace, "Workspace")
+    require_within(report_root, default_reports, "Report root")
+    module_root = project_root / "titles/blue_reflection/modules/quartet_restoration/mappings"
+    effect_rules = Path(args.effect_material_rules).expanduser().resolve() if args.effect_material_rules else module_root / "effect_material_rules.tsv"
+    output, summary = collect_event_record_evidence(
+        project_root=project_root,
+        workspace_root=workspace_root,
+        report_root=report_root,
+        effect_material_rules_file=effect_rules,
+        maximum_event_bytes=args.maximum_event_bytes,
+        anchor_block_size=args.anchor_block_size,
+        anchor_stride=args.anchor_stride,
+    )
+    print(f"Event binaries analyzed: {summary['event_binaries_analyzed']}")
+    print(f"Corrected event rows: {summary['corrected_ebd_and_eventprocess_rows']}")
+    print(f"Scene-linked event candidates: {summary['scene_linked_event_candidates']}")
+    print(f"Report: {output}")
+    return 0
+
+
+EVENT_TECHNICAL_IDENTIFIER_PATTERNS: tuple[tuple[str, re.Pattern[bytes]], ...] = (
+    ("field_identifier", re.compile(rb"(?<![A-Za-z0-9_])s\d{2,3}_[A-Za-z0-9_]{2,80}(?![A-Za-z0-9_])", re.IGNORECASE)),
+    ("character_object_identifier", re.compile(rb"(?<![A-Za-z0-9_])(?:pc|npc)\d{2,3}_[A-Za-z0-9_]{2,80}(?![A-Za-z0-9_])", re.IGNORECASE)),
+    ("item_identifier", re.compile(rb"(?<![A-Za-z0-9_])item_[A-Za-z0-9_]{2,80}(?![A-Za-z0-9_])", re.IGNORECASE)),
+    ("event_identifier", re.compile(rb"(?<![A-Za-z0-9_])event(?:_message)?_[a-z]{2}\d{2}_\d{3}(?![A-Za-z0-9_])", re.IGNORECASE)),
+    ("render_identifier", re.compile(rb"(?<![A-Za-z0-9_])(?:heightfog|lightshaft|sunshaft|godray|cwater2?|swater|PostEffect[A-Za-z0-9_]+)(?![A-Za-z0-9_])", re.IGNORECASE)),
+)
+EVENT_FOCUSED_IDENTIFIER_KEYWORDS = (
+    "bath", "shower", "pool", "water", "steam", "vapor", "mist", "fog",
+    "shaft", "godray", "bloom", "flare", "glare", "swimsuit", "bathtowel",
+    "towel", "rfl", "udw", "tng", "nkd", "wet", "transluc", "opacity", "alpha",
+)
+
+
+def event_message_to_data_path(normalized_path: str) -> str:
+    """Map an event_message_*.ebm path to its sibling event_*.ebd path."""
+    path = normalized_path.replace("\\", "/")
+    if not path.casefold().endswith(".ebm"):
+        return ""
+    name = PurePosixPath(path).name
+    if not name.casefold().startswith("event_message_"):
+        return ""
+    sibling = "event_" + name[len("event_message_"):-4] + ".ebd"
+    return str(PurePosixPath(path).with_name(sibling))
+
+
+def extract_event_technical_identifiers(payload: bytes) -> list[dict[str, Any]]:
+    """Extract strict ASCII technical identifiers without exporting dialogue text."""
+    grouped: dict[tuple[str, str], list[int]] = defaultdict(list)
+    for identifier_kind, pattern in EVENT_TECHNICAL_IDENTIFIER_PATTERNS:
+        for match in pattern.finditer(payload):
+            try:
+                token = match.group(0).decode("ascii")
+            except UnicodeDecodeError:
+                continue
+            key = (identifier_kind, token)
+            if len(grouped[key]) < 64:
+                grouped[key].append(match.start())
+    rows: list[dict[str, Any]] = []
+    for (identifier_kind, token), offsets in sorted(grouped.items(), key=lambda item: (item[0][0], item[0][1].casefold())):
+        folded = token.casefold()
+        rows.append({
+            "identifier_kind": identifier_kind,
+            "technical_identifier": token,
+            "hit_count": len(offsets),
+            "first_offsets": ";".join(str(value) for value in offsets[:20]),
+            "focused_surface_term": any(keyword in folded for keyword in EVENT_FOCUSED_IDENTIFIER_KEYWORDS),
+            "review_status": "technical_identifier_only_not_scene_binding_proof",
+        })
+    return rows
+
+
+def _event_cluster_counts(report_root: Path) -> dict[str, Counter[str]]:
+    contexts_path = report_root / EVENT_RECORD_EVIDENCE_DIR / "EVENT_RECORD_CONTEXTS.tsv"
+    clusters_path = report_root / EVENT_RECORD_EVIDENCE_DIR / "EVENT_DELTA_SIGNATURE_CLUSTERS.tsv"
+    if not contexts_path.is_file() or not clusters_path.is_file():
+        return {}
+    classifications = {
+        (row.get("delta_signature_sha256", ""), row.get("context_signature_sha256", "")): row.get("cluster_classification", "")
+        for row in read_tsv(clusters_path)
+    }
+    result: dict[str, Counter[str]] = defaultdict(Counter)
+    for row in read_tsv(contexts_path):
+        key = (row.get("delta_signature_sha256", ""), row.get("context_signature_sha256", ""))
+        classification = classifications.get(key, "unclustered_event_record_delta")
+        result[row.get("normalized_path", "")][classification] += 1
+    return dict(result)
+
+
+def collect_event_family_evidence(
+    *,
+    project_root: Path,
+    workspace_root: Path,
+    report_root: Path,
+    effect_material_rules_file: Path,
+    maximum_payload_bytes: int,
+) -> tuple[Path, dict[str, Any]]:
+    record_summary_path = report_root / EVENT_RECORD_EVIDENCE_DIR / "SUMMARY.json"
+    record_summary = load_json(record_summary_path)
+    if record_summary.get("type") != "br_quartet_restoration_event_record_evidence_summary":
+        raise RestorationError(f"Not an event-record report: {record_summary_path}")
+    if not effect_material_rules_file.is_file():
+        raise RestorationError(f"Missing effect/material rules: {effect_material_rules_file}")
+
+    reports = load_report_jsons(report_root, "differences")
+    event_report = next((row for row in reports if str(row.get("source_archive_group", "")) == "br1_events"), None)
+    if event_report is None:
+        raise RestorationError("Missing br1_events difference report")
+    entries = {str(row.get("normalized_path", "")): row for row in event_report.get("entries", [])}
+    seeds = derive_scene_identifier_seeds(effect_material_rules_file)
+    correction_path = report_root / EVENT_RECORD_EVIDENCE_DIR / "EVENT_STRUCTURE_CORRECTION.tsv"
+    correction_by_path = {row.get("normalized_path", ""): row for row in read_tsv(correction_path)} if correction_path.is_file() else {}
+    cluster_counts = _event_cluster_counts(report_root)
+
+    family_rows: list[dict[str, Any]] = []
+    identifier_rows: list[dict[str, Any]] = []
+    scene_hit_rows: list[dict[str, Any]] = []
+    control_identifier_rows: list[dict[str, Any]] = []
+    focused_rows: list[dict[str, Any]] = []
+    skipped_rows: list[dict[str, Any]] = []
+    ordered_family_paths: list[str] = []
+
+    ebm_entries = [
+        row for row in event_report.get("entries", [])
+        if row.get("scope_status") == "in_scope"
+        and str(row.get("normalized_path", "")).casefold().endswith(".ebm")
+        and "/event_jp/" in str(row.get("normalized_path", "")).casefold()
+        and bool(row.get("source")) and bool(row.get("target"))
+    ]
+    ebm_entries.sort(key=lambda row: str(row.get("normalized_path", "")).casefold())
+
+    for entry in ebm_entries:
+        ebm_path = str(entry.get("normalized_path", ""))
+        ebd_path = event_message_to_data_path(ebm_path)
+        ordered_family_paths.append(ebm_path)
+        ebd_entry = entries.get(ebd_path, {})
+        source_ref = entry.get("source") or {}
+        target_ref = entry.get("target") or {}
+        source_file = inventory_workspace_file(workspace_root, "source", "br1_events", str(source_ref.get("archive", "")), str(source_ref.get("path", "")))
+        target_file = inventory_workspace_file(workspace_root, "target", "br1_events", str(target_ref.get("archive", "")), str(target_ref.get("path", "")))
+        if not source_file.is_file() or not target_file.is_file():
+            skipped_rows.append({"normalized_path": ebm_path, "reason": "event_message_workspace_file_missing"})
+            continue
+        if source_file.stat().st_size > maximum_payload_bytes or target_file.stat().st_size > maximum_payload_bytes:
+            skipped_rows.append({"normalized_path": ebm_path, "reason": "maximum_payload_bytes_exceeded"})
+            continue
+        source = source_file.read_bytes()
+        target = target_file.read_bytes()
+        side_identifiers = {
+            "source": extract_event_technical_identifiers(source),
+            "target": extract_event_technical_identifiers(target),
+        }
+        token_presence: dict[tuple[str, str], set[str]] = defaultdict(set)
+        for side, rows in side_identifiers.items():
+            for row in rows:
+                token_presence[(str(row["identifier_kind"]), str(row["technical_identifier"]))].add(side)
+                identifier_rows.append({
+                    "event_message_path": ebm_path,
+                    "event_data_path": ebd_path,
+                    "side": side,
+                    **row,
+                })
+        exact_rules: set[str] = set()
+        supporting_rules: set[str] = set()
+        for side, payload in (("source", source), ("target", target)):
+            for hit in scan_scene_identifier_hits(payload, seeds):
+                if hit["confidence"] == "high":
+                    exact_rules.add(str(hit["rule_id"]))
+                else:
+                    supporting_rules.add(str(hit["rule_id"]))
+                scene_hit_rows.append({
+                    "event_message_path": ebm_path,
+                    "event_data_path": ebd_path,
+                    "side": side,
+                    **hit,
+                })
+        focused_ids = sorted({token for (kind, token), sides in token_presence.items() if any(keyword in token.casefold() for keyword in EVENT_FOCUSED_IDENTIFIER_KEYWORDS)}, key=str.casefold)
+        target_only_ids = sorted({token for (kind, token), sides in token_presence.items() if sides == {"target"}}, key=str.casefold)
+        source_only_ids = sorted({token for (kind, token), sides in token_presence.items() if sides == {"source"}}, key=str.casefold)
+        focused_target_only = [token for token in target_only_ids if any(keyword in token.casefold() for keyword in EVENT_FOCUSED_IDENTIFIER_KEYWORDS)]
+        corrected = correction_by_path.get(ebd_path, {})
+        counts = cluster_counts.get(ebd_path, Counter())
+        ebd_classification = str(ebd_entry.get("classification", "missing")) if ebd_entry else "missing"
+        if exact_rules and ebd_classification == "changed":
+            classification, priority = "exact_scene_binding_with_event_delta", "critical"
+        elif exact_rules:
+            classification, priority = "exact_scene_binding_without_event_delta", "high"
+        elif focused_target_only and ebd_classification == "changed":
+            classification, priority = "target_only_presentation_identifier_with_event_delta", "high"
+        elif focused_ids and ebd_classification == "changed":
+            classification, priority = "focused_technical_identifier_with_event_delta", "medium"
+        elif focused_ids:
+            classification, priority = "focused_technical_identifier_without_event_delta", "low"
+        else:
+            classification, priority = "event_family_without_direct_scene_binding", "deferred"
+        family = {
+            "event_family_id": f"eventfamily_{sha256_text(ebm_path.casefold())[:18]}",
+            "event_message_path": ebm_path,
+            "event_data_path": ebd_path,
+            "event_message_classification": str(entry.get("classification", "")),
+            "event_data_classification": ebd_classification,
+            "exact_scene_rules": ";".join(sorted(exact_rules)),
+            "supporting_scene_rules": ";".join(sorted(supporting_rules)),
+            "focused_technical_identifiers": ";".join(focused_ids[:32]),
+            "target_only_technical_identifiers": ";".join(target_only_ids[:32]),
+            "source_only_technical_identifiers": ";".join(source_only_ids[:32]),
+            "rare_delta_regions": counts.get("rare_event_record_delta", 0),
+            "repeated_delta_regions": counts.get("repeated_event_record_delta", 0),
+            "widespread_delta_regions": counts.get("widespread_format_or_compiler_delta", 0),
+            "corrected_unresolved_changed_bytes": corrected.get("corrected_unresolved_changed_bytes", ""),
+            "classification": classification,
+            "review_priority": priority,
+            "review_status": "direct_technical_binding_requires_manual_scene_confirmation" if priority != "deferred" else "no_direct_binding_deferred",
+        }
+        family_rows.append(family)
+        if priority != "deferred":
+            focused_rows.append(family)
+
+    # Scan event-control files separately; these can provide a direct field/event name
+    # without being tied to a single message family.
+    for entry in event_report.get("entries", []):
+        normalized_path = str(entry.get("normalized_path", ""))
+        extension = Path(normalized_path).suffix.casefold()
+        if entry.get("scope_status") != "in_scope" or extension not in {".epd", ".bsb"}:
+            continue
+        for side in ("source", "target"):
+            ref = entry.get(side) or {}
+            if not ref:
+                continue
+            path = inventory_workspace_file(workspace_root, side, "br1_events", str(ref.get("archive", "")), str(ref.get("path", "")))
+            if not path.is_file() or path.stat().st_size > maximum_payload_bytes:
+                continue
+            payload = path.read_bytes()
+            for row in extract_event_technical_identifiers(payload):
+                control_identifier_rows.append({"normalized_path": normalized_path, "side": side, **row})
+            for hit in scan_scene_identifier_hits(payload, seeds):
+                scene_hit_rows.append({"event_message_path": "", "event_data_path": normalized_path, "side": side, **hit})
+
+    order_sha = sha256_text("\n".join(ordered_family_paths)) if ordered_family_paths else ""
+    process_layout_path = report_root / EVENT_RECORD_EVIDENCE_DIR / "EVENT_PROCESS_LAYOUT.tsv"
+    process_layout = read_tsv(process_layout_path) if process_layout_path.is_file() else []
+    process_order_rows: list[dict[str, Any]] = []
+    for row in process_layout:
+        count = int(row.get("source_leading_count", "-1") or -1)
+        matches = count == len(ordered_family_paths) and bool(ordered_family_paths)
+        process_order_rows.append({
+            "normalized_path": row.get("normalized_path", ""),
+            "event_process_count": count,
+            "ordered_event_message_count": len(ordered_family_paths),
+            "normalized_path_order_sha256": order_sha,
+            "count_matches_ordered_event_messages": matches,
+            "ordering_rule": "normalized_event_message_path_casefold",
+            "classification": "count_and_inventory_order_hypothesis" if matches else "event_process_order_unresolved",
+            "review_status": "ordering_is_not_record_index_mapping_proof",
+        })
+
+    evidence_root = report_root / EVENT_FAMILY_EVIDENCE_DIR
+    if evidence_root.exists():
+        shutil.rmtree(evidence_root)
+    evidence_root.mkdir(parents=True, exist_ok=True)
+    write_tsv(evidence_root / "EVENT_FAMILY_PAIRS.tsv", [
+        "event_family_id","event_message_path","event_data_path","event_message_classification","event_data_classification",
+        "exact_scene_rules","supporting_scene_rules","focused_technical_identifiers","target_only_technical_identifiers",
+        "source_only_technical_identifiers","rare_delta_regions","repeated_delta_regions","widespread_delta_regions",
+        "corrected_unresolved_changed_bytes","classification","review_priority","review_status",
+    ], family_rows)
+    write_tsv(evidence_root / "EVENT_MESSAGE_TECHNICAL_IDENTIFIERS.tsv", [
+        "event_message_path","event_data_path","side","identifier_kind","technical_identifier","hit_count","first_offsets",
+        "focused_surface_term","review_status",
+    ], identifier_rows)
+    write_tsv(evidence_root / "EVENT_MESSAGE_SCENE_IDENTIFIER_HITS.tsv", [
+        "event_message_path","event_data_path","side","seed_id","rule_id","domain","field_identifier","encoding","confidence",
+        "hit_count","first_offsets","classification","review_status",
+    ], scene_hit_rows)
+    write_tsv(evidence_root / "EVENT_CONTROL_TECHNICAL_IDENTIFIERS.tsv", [
+        "normalized_path","side","identifier_kind","technical_identifier","hit_count","first_offsets","focused_surface_term","review_status",
+    ], control_identifier_rows)
+    write_tsv(evidence_root / "EVENT_PROCESS_ORDER_HYPOTHESIS.tsv", [
+        "normalized_path","event_process_count","ordered_event_message_count","normalized_path_order_sha256",
+        "count_matches_ordered_event_messages","ordering_rule","classification","review_status",
+    ], process_order_rows)
+    write_tsv(evidence_root / "FOCUSED_EVENT_FAMILY_REVIEW.tsv", [
+        "event_family_id","event_message_path","event_data_path","event_message_classification","event_data_classification",
+        "exact_scene_rules","supporting_scene_rules","focused_technical_identifiers","target_only_technical_identifiers",
+        "source_only_technical_identifiers","rare_delta_regions","repeated_delta_regions","widespread_delta_regions",
+        "corrected_unresolved_changed_bytes","classification","review_priority","review_status",
+    ], sorted(focused_rows, key=lambda row: ({"critical":0,"high":1,"medium":2,"low":3}.get(str(row["review_priority"]),9), str(row["event_message_path"]))))
+    write_tsv(evidence_root / "EVENT_FAMILY_SCAN_SKIPPED.tsv", ["normalized_path","reason"], skipped_rows)
+
+    classifications = Counter(str(row["classification"]) for row in family_rows)
+    priority_counts = Counter(str(row["review_priority"]) for row in focused_rows)
+    summary = {
+        "type": "br_quartet_restoration_event_family_evidence_summary",
+        "format_version": FORMAT_VERSION,
+        "tool_version": TOOL_VERSION,
+        "source_event_record_tool_version": record_summary.get("tool_version"),
+        "status": "event_message_family_and_technical_identifier_evidence_complete_manual_scene_confirmation_required",
+        "event_message_families": len(family_rows),
+        "event_message_to_event_data_pairs": sum(row["event_data_classification"] != "missing" for row in family_rows),
+        "technical_identifier_rows": len(identifier_rows),
+        "focused_technical_identifier_rows": sum(bool(row["focused_surface_term"]) for row in identifier_rows),
+        "scene_identifier_hit_rows": len(scene_hit_rows),
+        "exact_scene_identifier_hit_rows": sum(row.get("confidence") == "high" for row in scene_hit_rows),
+        "event_control_identifier_rows": len(control_identifier_rows),
+        "focused_event_family_rows": len(focused_rows),
+        "family_classifications": dict(sorted(classifications.items())),
+        "focused_priorities": dict(sorted(priority_counts.items())),
+        "event_process_order_hypothesis_rows": len(process_order_rows),
+        "skipped_rows": len(skipped_rows),
+        "policy": {
+            "installed_games_modified": False,
+            "proprietary_payloads_in_report": False,
+            "dialogue_text_exported": False,
+            "technical_identifiers_exported": True,
+            "event_process_order_is_record_mapping_proof": False,
+            "automatic_censorship_claims": False,
+            "event_prototype_generated": False,
+            "legacy_dlc_in_scope": False,
+            "translation_edits_in_scope": False,
+        },
+        "next_action": "Upload this report. Promote only exact field identifiers or strict target-only presentation identifiers; if none exist, proceed to EBD opcode/record-format inference rather than building an event prototype from numeric scene hits.",
+    }
+    atomic_json(evidence_root / "SUMMARY.json", summary)
+    output = report_root / EVENT_FAMILY_REPORT_NAME
+    make_report_archive(evidence_root, output)
+    return output, summary
+
+
+def cmd_collect_event_families(args: argparse.Namespace) -> int:
+    project_root = Path(args.project_root).expanduser().resolve()
+    if not project_root.is_dir():
+        raise RestorationError(f"Project root does not exist: {project_root}")
+    default_workspace = project_root / ".local/build/quartet_restoration"
+    default_reports = project_root / ".local/reports/quartet_restoration"
+    workspace_root = Path(args.workspace_root).expanduser().resolve() if args.workspace_root else default_workspace
+    report_root = Path(args.report_root).expanduser().resolve() if args.report_root else default_reports
+    require_within(workspace_root, default_workspace, "Workspace")
+    require_within(report_root, default_reports, "Report root")
+    module_root = project_root / "titles/blue_reflection/modules/quartet_restoration/mappings"
+    effect_rules = Path(args.effect_material_rules).expanduser().resolve() if args.effect_material_rules else module_root / "effect_material_rules.tsv"
+    output, summary = collect_event_family_evidence(
+        project_root=project_root,
+        workspace_root=workspace_root,
+        report_root=report_root,
+        effect_material_rules_file=effect_rules,
+        maximum_payload_bytes=args.maximum_payload_bytes,
+    )
+    print(f"Event-message families: {summary['event_message_families']}")
+    print(f"Exact scene identifier hits: {summary['exact_scene_identifier_hit_rows']}")
+    print(f"Focused event families: {summary['focused_event_family_rows']}")
+    print(f"Report: {output}")
+    return 0
+
+
+EVENT_RECORD_LAYOUTS: tuple[dict[str, Any], ...] = (
+    {"layout_id":"u16_opcode_u16_total","header_size":4,"opcode_offset":0,"opcode_width":2,"size_offset":2,"size_width":2,"size_mode":"total","flags_offset":None,"flags_width":0,"alignment":1},
+    {"layout_id":"u16_total_u16_opcode","header_size":4,"opcode_offset":2,"opcode_width":2,"size_offset":0,"size_width":2,"size_mode":"total","flags_offset":None,"flags_width":0,"alignment":1},
+    {"layout_id":"u16_opcode_u16_payload","header_size":4,"opcode_offset":0,"opcode_width":2,"size_offset":2,"size_width":2,"size_mode":"payload","flags_offset":None,"flags_width":0,"alignment":1},
+    {"layout_id":"u16_payload_u16_opcode","header_size":4,"opcode_offset":2,"opcode_width":2,"size_offset":0,"size_width":2,"size_mode":"payload","flags_offset":None,"flags_width":0,"alignment":1},
+    {"layout_id":"u32_opcode_u32_total","header_size":8,"opcode_offset":0,"opcode_width":4,"size_offset":4,"size_width":4,"size_mode":"total","flags_offset":None,"flags_width":0,"alignment":1},
+    {"layout_id":"u32_total_u32_opcode","header_size":8,"opcode_offset":4,"opcode_width":4,"size_offset":0,"size_width":4,"size_mode":"total","flags_offset":None,"flags_width":0,"alignment":1},
+    {"layout_id":"u32_opcode_u32_payload","header_size":8,"opcode_offset":0,"opcode_width":4,"size_offset":4,"size_width":4,"size_mode":"payload","flags_offset":None,"flags_width":0,"alignment":1},
+    {"layout_id":"u32_payload_u32_opcode","header_size":8,"opcode_offset":4,"opcode_width":4,"size_offset":0,"size_width":4,"size_mode":"payload","flags_offset":None,"flags_width":0,"alignment":1},
+    {"layout_id":"u16_opcode_u16_flags_u32_total","header_size":8,"opcode_offset":0,"opcode_width":2,"size_offset":4,"size_width":4,"size_mode":"total","flags_offset":2,"flags_width":2,"alignment":1},
+    {"layout_id":"u32_total_u16_opcode_u16_flags","header_size":8,"opcode_offset":4,"opcode_width":2,"size_offset":0,"size_width":4,"size_mode":"total","flags_offset":6,"flags_width":2,"alignment":1},
+    {"layout_id":"u8_opcode_u8_total","header_size":2,"opcode_offset":0,"opcode_width":1,"size_offset":1,"size_width":1,"size_mode":"total","flags_offset":None,"flags_width":0,"alignment":1},
+    {"layout_id":"u8_total_u8_opcode","header_size":2,"opcode_offset":1,"opcode_width":1,"size_offset":0,"size_width":1,"size_mode":"total","flags_offset":None,"flags_width":0,"alignment":1},
+)
+
+
+def _read_unsigned_le(payload: bytes, offset: int, width: int) -> int:
+    if width not in {1, 2, 4} or offset < 0 or offset + width > len(payload):
+        raise ValueError("invalid little-endian field")
+    return int.from_bytes(payload[offset:offset + width], "little", signed=False)
+
+
+def parse_event_record_stream(
+    payload: bytes,
+    *,
+    start_offset: int,
+    layout: dict[str, Any],
+    maximum_records: int = 200000,
+) -> dict[str, Any]:
+    """Conservatively parse a size-framed record hypothesis.
+
+    This is hypothesis testing only.  A successful parse does not prove EBD
+    semantics or identify a costume/effect opcode.
+    """
+    header_size = int(layout["header_size"])
+    if start_offset < 0 or start_offset + header_size > len(payload):
+        return {"records": [], "coverage": 0.0, "consumed": 0, "trailing_bytes": max(0, len(payload) - start_offset), "failure": "start_out_of_range"}
+    records: list[dict[str, Any]] = []
+    offset = start_offset
+    failure = ""
+    while offset + header_size <= len(payload) and len(records) < maximum_records:
+        try:
+            opcode = _read_unsigned_le(payload, offset + int(layout["opcode_offset"]), int(layout["opcode_width"]))
+            size_value = _read_unsigned_le(payload, offset + int(layout["size_offset"]), int(layout["size_width"]))
+            flags_offset = layout.get("flags_offset")
+            flags = _read_unsigned_le(payload, offset + int(flags_offset), int(layout.get("flags_width", 0))) if flags_offset is not None else None
+        except ValueError:
+            failure = "header_out_of_range"
+            break
+        total_size = size_value if layout["size_mode"] == "total" else size_value + header_size
+        if total_size < header_size:
+            failure = "record_smaller_than_header"
+            break
+        end = offset + total_size
+        if end > len(payload):
+            failure = "record_exceeds_payload"
+            break
+        record = payload[offset:end]
+        records.append({
+            "record_index": len(records),
+            "offset": offset,
+            "opcode": opcode,
+            "flags": flags,
+            "size_field": size_value,
+            "total_size": total_size,
+            "sha256": hashlib.sha256(record).hexdigest(),
+        })
+        alignment = max(1, int(layout.get("alignment", 1)))
+        offset = end if alignment == 1 else ((end + alignment - 1) // alignment) * alignment
+        if offset > len(payload):
+            failure = "alignment_exceeds_payload"
+            break
+    if len(records) >= maximum_records:
+        failure = "maximum_records_reached"
+    consumed = max(0, min(len(payload), offset) - start_offset)
+    denominator = max(1, len(payload) - start_offset)
+    return {
+        "records": records,
+        "coverage": consumed / denominator,
+        "consumed": consumed,
+        "trailing_bytes": max(0, len(payload) - offset),
+        "failure": failure,
+        "exact_eof": offset == len(payload),
+    }
+
+
+def event_record_start_offsets(maximum: int = 64) -> list[int]:
+    values = {0, 1, 2, 3}
+    values.update(range(4, maximum + 1, 4))
+    return sorted(values)
+
+
+def infer_event_record_layouts(
+    samples: Sequence[tuple[str, str, bytes]],
+    *,
+    maximum_start_offset: int = 64,
+) -> list[dict[str, Any]]:
+    """Rank conservative explicit-size record layouts across sample EBDs."""
+    aggregates: dict[tuple[str, int, str], dict[str, Any]] = {}
+    starts = event_record_start_offsets(maximum_start_offset)
+    for path, side, payload in samples:
+        for layout in EVENT_RECORD_LAYOUTS:
+            for start in starts:
+                parsed = parse_event_record_stream(payload, start_offset=start, layout=layout)
+                record_count = len(parsed["records"])
+                if record_count < 3 or parsed["coverage"] < 0.50:
+                    continue
+                key = (str(layout["layout_id"]), start, side)
+                group = aggregates.setdefault(key, {
+                    "layout_id": layout["layout_id"], "start_offset": start, "side": side,
+                    "file_count": 0, "exact_eof_files": 0, "coverages": [], "record_counts": [],
+                    "trailing_bytes": [], "sample_paths": [],
+                })
+                group["file_count"] += 1
+                group["exact_eof_files"] += int(bool(parsed["exact_eof"]))
+                group["coverages"].append(float(parsed["coverage"]))
+                group["record_counts"].append(record_count)
+                group["trailing_bytes"].append(int(parsed["trailing_bytes"]))
+                if len(group["sample_paths"]) < 12:
+                    group["sample_paths"].append(path)
+    rows: list[dict[str, Any]] = []
+    for group in aggregates.values():
+        coverages = sorted(group.pop("coverages"))
+        counts = sorted(group.pop("record_counts"))
+        trailing = sorted(group.pop("trailing_bytes"))
+        middle = len(coverages) // 2
+        median_coverage = coverages[middle]
+        median_records = counts[len(counts)//2]
+        median_trailing = trailing[len(trailing)//2]
+        exact_ratio = group["exact_eof_files"] / group["file_count"]
+        rows.append({
+            **group,
+            "median_coverage": round(median_coverage, 6),
+            "median_record_count": median_records,
+            "median_trailing_bytes": median_trailing,
+            "exact_eof_ratio": round(exact_ratio, 6),
+            "first_sample_paths": ";".join(group.pop("sample_paths")),
+            "hypothesis_score": round(group["file_count"] * (0.5 + median_coverage) * (0.5 + exact_ratio), 6),
+            "review_status": "framing_hypothesis_not_opcode_semantics_proof",
+        })
+    return sorted(rows, key=lambda row: (-float(row["hypothesis_score"]), -int(row["file_count"]), str(row["layout_id"]), int(row["start_offset"])))
+
+
+def choose_common_event_layout(hypotheses: Sequence[dict[str, Any]], sample_counts: dict[str, int]) -> dict[str, Any] | None:
+    by_key: dict[tuple[str, int], dict[str, dict[str, Any]]] = defaultdict(dict)
+    for row in hypotheses:
+        by_key[(str(row["layout_id"]), int(row["start_offset"]))][str(row["side"])] = row
+    candidates: list[tuple[float, dict[str, Any]]] = []
+    for (layout_id, start), sides in by_key.items():
+        if "source" not in sides or "target" not in sides:
+            continue
+        src, tgt = sides["source"], sides["target"]
+        # A framing hypothesis must explain most files and terminate cleanly.
+        # Partial parses with attractive median coverage are easy to obtain from
+        # arbitrary binary data and must never be promoted to an opcode model.
+        minimum_source = 2 if sample_counts.get("source", 0) < 6 else max(5, math.ceil(sample_counts["source"] * 0.50))
+        minimum_target = 2 if sample_counts.get("target", 0) < 6 else max(5, math.ceil(sample_counts["target"] * 0.50))
+        if int(src["file_count"]) < minimum_source or int(tgt["file_count"]) < minimum_target:
+            continue
+        if min(float(src["median_coverage"]), float(tgt["median_coverage"])) < 0.98:
+            continue
+        if min(float(src.get("exact_eof_ratio", 0.0)), float(tgt.get("exact_eof_ratio", 0.0))) < 0.50:
+            continue
+        layout = next(item for item in EVENT_RECORD_LAYOUTS if item["layout_id"] == layout_id)
+        score = min(float(src["hypothesis_score"]), float(tgt["hypothesis_score"]))
+        candidates.append((score, {**layout, "start_offset": start, "source_support": src["file_count"], "target_support": tgt["file_count"], "source_median_coverage": src["median_coverage"], "target_median_coverage": tgt["median_coverage"]}))
+    return max(candidates, key=lambda item: item[0])[1] if candidates else None
+
+
+def compare_event_record_sequences(source_records: Sequence[dict[str, Any]], target_records: Sequence[dict[str, Any]]) -> list[dict[str, Any]]:
+    source_keys = [(row["opcode"], row["total_size"], row["sha256"]) for row in source_records]
+    target_keys = [(row["opcode"], row["total_size"], row["sha256"]) for row in target_records]
+    matcher = difflib.SequenceMatcher(a=source_keys, b=target_keys, autojunk=False)
+    rows: list[dict[str, Any]] = []
+    for tag, i1, i2, j1, j2 in matcher.get_opcodes():
+        if tag == "equal":
+            continue
+        left = list(source_records[i1:i2])
+        right = list(target_records[j1:j2])
+        for index in range(max(len(left), len(right))):
+            src = left[index] if index < len(left) else None
+            tgt = right[index] if index < len(right) else None
+            if src and tgt:
+                classification = "changed_record_same_opcode" if src["opcode"] == tgt["opcode"] else "opcode_substitution_candidate"
+            elif src:
+                classification = "record_removed_in_quartet"
+            else:
+                classification = "record_added_in_quartet"
+            rows.append({
+                "sequence_tag": tag,
+                "source_record_index": src["record_index"] if src else "",
+                "target_record_index": tgt["record_index"] if tgt else "",
+                "source_opcode": f"0x{int(src['opcode']):08x}" if src else "",
+                "target_opcode": f"0x{int(tgt['opcode']):08x}" if tgt else "",
+                "source_record_size": src["total_size"] if src else "",
+                "target_record_size": tgt["total_size"] if tgt else "",
+                "source_record_sha256": src["sha256"] if src else "",
+                "target_record_sha256": tgt["sha256"] if tgt else "",
+                "source_previous_opcode": f"0x{int(source_records[src['record_index']-1]['opcode']):08x}" if src and src["record_index"] > 0 else "",
+                "target_previous_opcode": f"0x{int(target_records[tgt['record_index']-1]['opcode']):08x}" if tgt and tgt["record_index"] > 0 else "",
+                "source_next_opcode": f"0x{int(source_records[src['record_index']+1]['opcode']):08x}" if src and src["record_index"] + 1 < len(source_records) else "",
+                "target_next_opcode": f"0x{int(target_records[tgt['record_index']+1]['opcode']):08x}" if tgt and tgt["record_index"] + 1 < len(target_records) else "",
+                "classification": classification,
+                "review_status": "record_delta_requires_opcode_semantics_and_scene_confirmation",
+            })
+    return rows
+
+
+def collect_event_opcode_evidence(
+    *,
+    project_root: Path,
+    workspace_root: Path,
+    report_root: Path,
+    maximum_event_bytes: int,
+    discovery_files: int,
+    maximum_start_offset: int,
+) -> tuple[Path, dict[str, Any]]:
+    family_summary_path = report_root / EVENT_FAMILY_EVIDENCE_DIR / "SUMMARY.json"
+    family_summary = load_json(family_summary_path)
+    if family_summary.get("type") != "br_quartet_restoration_event_family_evidence_summary":
+        raise RestorationError(f"Not an event-family report: {family_summary_path}")
+    family_rows_path = report_root / EVENT_FAMILY_EVIDENCE_DIR / "EVENT_FAMILY_PAIRS.tsv"
+    family_rows = read_tsv(family_rows_path)
+    family_by_ebd = {row.get("event_data_path", ""): row for row in family_rows}
+
+    reports = load_report_jsons(report_root, "differences")
+    event_report = next((row for row in reports if str(row.get("source_archive_group", "")) == "br1_events"), None)
+    if event_report is None:
+        raise RestorationError("Missing br1_events difference report")
+    ebd_entries = [row for row in event_report.get("entries", []) if row.get("scope_status") == "in_scope" and str(row.get("normalized_path", "")).casefold().endswith(".ebd") and bool(row.get("source")) and bool(row.get("target"))]
+    ebd_entries.sort(key=lambda row: str(row.get("normalized_path", "")).casefold())
+
+    samples: list[tuple[str, str, bytes]] = []
+    payload_cache: dict[tuple[str, str], bytes] = {}
+    skipped_rows: list[dict[str, Any]] = []
+    prefix_rows: list[dict[str, Any]] = []
+    for entry in ebd_entries:
+        path = str(entry.get("normalized_path", ""))
+        for side in ("source", "target"):
+            ref = entry.get(side) or {}
+            file_path = inventory_workspace_file(workspace_root, side, "br1_events", str(ref.get("archive", "")), str(ref.get("path", "")))
+            if not file_path.is_file():
+                skipped_rows.append({"normalized_path": path, "side": side, "reason": "workspace_file_missing"})
+                continue
+            if file_path.stat().st_size > maximum_event_bytes:
+                skipped_rows.append({"normalized_path": path, "side": side, "reason": "maximum_event_bytes_exceeded"})
+                continue
+            payload = file_path.read_bytes()
+            payload_cache[(path, side)] = payload
+            prefix = payload[:32]
+            prefix_rows.append({
+                "normalized_path": path, "side": side, "size": len(payload),
+                "prefix_length": len(prefix), "prefix_hex": prefix.hex(),
+                "prefix_sha256": hashlib.sha256(prefix).hexdigest(),
+                "leading_u32": ";".join(f"0x{struct.unpack_from('<I', prefix, off)[0]:08x}" for off in range(0, len(prefix)-3, 4)),
+                "classification": str(entry.get("classification", "")),
+                "review_status": "header_profile_not_format_proof",
+            })
+    # Deterministic balanced discovery set: unchanged and changed EBDs are both useful.
+    selected_paths = [str(row.get("normalized_path", "")) for row in ebd_entries if (str(row.get("normalized_path", "")), "source") in payload_cache][:max(1, discovery_files)]
+    for path in selected_paths:
+        for side in ("source", "target"):
+            payload = payload_cache.get((path, side))
+            if payload is not None:
+                samples.append((path, side, payload))
+    sample_counts = Counter(side for _path, side, _payload in samples)
+    hypothesis_rows = infer_event_record_layouts(samples, maximum_start_offset=maximum_start_offset)
+    selected_layout = choose_common_event_layout(hypothesis_rows, dict(sample_counts))
+
+    parse_rows: list[dict[str, Any]] = []
+    opcode_counts: Counter[tuple[str, int, int]] = Counter()
+    delta_rows: list[dict[str, Any]] = []
+    focused_by_event: dict[str, dict[str, Any]] = {}
+    if selected_layout is not None:
+        for entry in ebd_entries:
+            path = str(entry.get("normalized_path", ""))
+            source = payload_cache.get((path, "source"))
+            target = payload_cache.get((path, "target"))
+            if source is None or target is None:
+                continue
+            parsed_by_side: dict[str, dict[str, Any]] = {}
+            for side, payload in (("source", source), ("target", target)):
+                parsed = parse_event_record_stream(payload, start_offset=int(selected_layout["start_offset"]), layout=selected_layout)
+                parsed_by_side[side] = parsed
+                parse_rows.append({
+                    "normalized_path": path, "side": side, "layout_id": selected_layout["layout_id"],
+                    "start_offset": selected_layout["start_offset"], "payload_size": len(payload),
+                    "record_count": len(parsed["records"]), "coverage": round(float(parsed["coverage"]), 6),
+                    "trailing_bytes": parsed["trailing_bytes"], "exact_eof": parsed["exact_eof"], "failure": parsed["failure"],
+                    "classification": "high_coverage_record_parse" if parsed["coverage"] >= 0.90 and len(parsed["records"]) >= 3 else "partial_or_failed_record_parse",
+                    "review_status": "record_framing_hypothesis_not_opcode_semantics_proof",
+                })
+                for record in parsed["records"]:
+                    opcode_counts[(side, int(record["opcode"]), int(record["total_size"]))] += 1
+            if str(entry.get("classification", "")) != "changed":
+                continue
+            if min(float(parsed_by_side["source"]["coverage"]), float(parsed_by_side["target"]["coverage"])) < 0.90:
+                continue
+            event_deltas = compare_event_record_sequences(parsed_by_side["source"]["records"], parsed_by_side["target"]["records"])
+            family = family_by_ebd.get(path, {})
+            for row in event_deltas:
+                delta_rows.append({"normalized_path": path, "event_message_path": family.get("event_message_path", ""), **row})
+            rare_candidate_count = len(event_deltas)
+            if event_deltas:
+                focused_by_event[path] = {
+                    "normalized_path": path,
+                    "event_message_path": family.get("event_message_path", ""),
+                    "event_message_classification": family.get("event_message_classification", ""),
+                    "event_data_classification": family.get("event_data_classification", ""),
+                    "record_delta_rows": len(event_deltas),
+                    "source_record_count": len(parsed_by_side["source"]["records"]),
+                    "target_record_count": len(parsed_by_side["target"]["records"]),
+                    "source_coverage": round(float(parsed_by_side["source"]["coverage"]), 6),
+                    "target_coverage": round(float(parsed_by_side["target"]["coverage"]), 6),
+                    "classification": "compact_control_delta_with_identical_message" if family.get("event_message_classification") == "identical" and rare_candidate_count <= 8 else "parsed_event_record_delta",
+                    "review_priority": "high" if family.get("event_message_classification") == "identical" and rare_candidate_count <= 8 else ("medium" if rare_candidate_count <= 16 else "low"),
+                    "review_status": "opcode_semantics_and_in_game_scene_confirmation_required",
+                }
+
+    opcode_rows = [
+        {"side": side, "opcode": f"0x{opcode:08x}", "record_size": size, "occurrence_count": count,
+         "review_status": "frequency_not_opcode_meaning_proof"}
+        for (side, opcode, size), count in sorted(opcode_counts.items(), key=lambda item: (item[0][0], item[0][1], item[0][2]))
+    ]
+    cluster_groups: dict[tuple[str, ...], dict[str, Any]] = {}
+    for row in delta_rows:
+        key = tuple(str(row.get(field, "")) for field in ("classification","source_opcode","target_opcode","source_record_size","target_record_size","source_previous_opcode","target_previous_opcode","source_next_opcode","target_next_opcode"))
+        group = cluster_groups.setdefault(key, {
+            "cluster_id": f"opcodecluster_{sha256_text('|'.join(key))[:18]}",
+            "classification": row["classification"], "source_opcode": row["source_opcode"], "target_opcode": row["target_opcode"],
+            "source_record_size": row["source_record_size"], "target_record_size": row["target_record_size"],
+            "source_previous_opcode": row["source_previous_opcode"], "target_previous_opcode": row["target_previous_opcode"],
+            "source_next_opcode": row["source_next_opcode"], "target_next_opcode": row["target_next_opcode"],
+            "occurrence_count": 0, "event_paths": set(),
+        })
+        group["occurrence_count"] += 1
+        group["event_paths"].add(row["normalized_path"])
+    cluster_rows: list[dict[str, Any]] = []
+    rare_cluster_keys: set[tuple[str, ...]] = set()
+    for key, group in cluster_groups.items():
+        paths = sorted(group.pop("event_paths"))
+        event_count = len(paths)
+        if event_count >= 20:
+            classification = "widespread_opcode_or_format_delta"
+            priority = "deferred"
+        elif event_count >= 3:
+            classification = "repeated_opcode_delta"
+            priority = "low"
+        else:
+            classification = "rare_opcode_delta"
+            priority = "high"
+            rare_cluster_keys.add(key)
+        cluster_rows.append({**group, "event_count": event_count, "first_event_paths": ";".join(paths[:20]), "cluster_classification": classification, "review_priority": priority, "review_status": "frequency_not_censorship_proof"})
+
+    # Refine per-event rare counts after clustering.
+    for row in delta_rows:
+        key = tuple(str(row.get(field, "")) for field in ("classification","source_opcode","target_opcode","source_record_size","target_record_size","source_previous_opcode","target_previous_opcode","source_next_opcode","target_next_opcode"))
+        if row["normalized_path"] in focused_by_event and key in rare_cluster_keys:
+            focused_by_event[row["normalized_path"]]["rare_opcode_delta_rows"] = focused_by_event[row["normalized_path"]].get("rare_opcode_delta_rows", 0) + 1
+    focused_rows = sorted(focused_by_event.values(), key=lambda row: ({"high":0,"medium":1,"low":2}.get(str(row["review_priority"]),9), int(row["record_delta_rows"]), str(row["normalized_path"])))
+
+    evidence_root = report_root / EVENT_OPCODE_EVIDENCE_DIR
+    if evidence_root.exists():
+        shutil.rmtree(evidence_root)
+    evidence_root.mkdir(parents=True, exist_ok=True)
+    write_tsv(evidence_root / "EBD_PREFIX_PROFILES.tsv", ["normalized_path","side","size","prefix_length","prefix_hex","prefix_sha256","leading_u32","classification","review_status"], prefix_rows)
+    write_tsv(evidence_root / "EBD_RECORD_LAYOUT_HYPOTHESES.tsv", ["layout_id","start_offset","side","file_count","exact_eof_files","median_coverage","median_record_count","median_trailing_bytes","exact_eof_ratio","first_sample_paths","hypothesis_score","review_status"], hypothesis_rows)
+    write_tsv(evidence_root / "EBD_RECORD_PARSE.tsv", ["normalized_path","side","layout_id","start_offset","payload_size","record_count","coverage","trailing_bytes","exact_eof","failure","classification","review_status"], parse_rows)
+    write_tsv(evidence_root / "EBD_OPCODE_FREQUENCY.tsv", ["side","opcode","record_size","occurrence_count","review_status"], opcode_rows)
+    write_tsv(evidence_root / "EBD_RECORD_DELTAS.tsv", ["normalized_path","event_message_path","sequence_tag","source_record_index","target_record_index","source_opcode","target_opcode","source_record_size","target_record_size","source_record_sha256","target_record_sha256","source_previous_opcode","target_previous_opcode","source_next_opcode","target_next_opcode","classification","review_status"], delta_rows)
+    write_tsv(evidence_root / "EBD_RECORD_DELTA_CLUSTERS.tsv", ["cluster_id","classification","source_opcode","target_opcode","source_record_size","target_record_size","source_previous_opcode","target_previous_opcode","source_next_opcode","target_next_opcode","occurrence_count","event_count","first_event_paths","cluster_classification","review_priority","review_status"], sorted(cluster_rows, key=lambda row: ({"high":0,"low":1,"deferred":2}.get(str(row["review_priority"]),9), -int(row["event_count"]), str(row["cluster_id"]))))
+    write_tsv(evidence_root / "FOCUSED_EVENT_OPCODE_REVIEW.tsv", ["normalized_path","event_message_path","event_message_classification","event_data_classification","record_delta_rows","rare_opcode_delta_rows","source_record_count","target_record_count","source_coverage","target_coverage","classification","review_priority","review_status"], focused_rows)
+    write_tsv(evidence_root / "EVENT_OPCODE_SCAN_SKIPPED.tsv", ["normalized_path","side","reason"], skipped_rows)
+
+    summary = {
+        "type": "br_quartet_restoration_event_opcode_evidence_summary",
+        "format_version": FORMAT_VERSION,
+        "tool_version": TOOL_VERSION,
+        "source_event_family_tool_version": family_summary.get("tool_version"),
+        "status": "event_record_framing_and_opcode_hypothesis_complete_manual_format_confirmation_required",
+        "event_data_pairs": len(ebd_entries),
+        "discovery_sample_files_per_side": dict(sample_counts),
+        "record_layout_hypothesis_rows": len(hypothesis_rows),
+        "selected_common_layout": ({key: selected_layout[key] for key in ("layout_id","start_offset","header_size","opcode_offset","opcode_width","size_offset","size_width","size_mode","source_support","target_support","source_median_coverage","target_median_coverage")} if selected_layout else None),
+        "parsed_file_rows": len(parse_rows),
+        "opcode_frequency_rows": len(opcode_rows),
+        "record_delta_rows": len(delta_rows),
+        "record_delta_clusters": len(cluster_rows),
+        "rare_opcode_delta_clusters": sum(row["cluster_classification"] == "rare_opcode_delta" for row in cluster_rows),
+        "focused_event_rows": len(focused_rows),
+        "skipped_rows": len(skipped_rows),
+        "prior_exact_scene_identifier_hits": int(family_summary.get("exact_scene_identifier_hit_rows", 0)),
+        "policy": {
+            "installed_games_modified": False,
+            "proprietary_record_payloads_exported": False,
+            "record_hashes_and_numeric_opcodes_exported": True,
+            "selected_layout_is_format_proof": False,
+            "opcode_values_have_assigned_semantics": False,
+            "automatic_censorship_claims": False,
+            "event_prototype_generated": False,
+            "legacy_dlc_in_scope": False,
+            "translation_edits_in_scope": False,
+        },
+        "next_action": "Upload this report. If one explicit-size layout is stable on both Original and Quartet, use rare changed records plus identical EBM families to infer argument schemas; otherwise move to grammar induction without generating an event patch.",
+    }
+    atomic_json(evidence_root / "SUMMARY.json", summary)
+    output = report_root / EVENT_OPCODE_REPORT_NAME
+    make_report_archive(evidence_root, output)
+    return output, summary
+
+
+def cmd_collect_event_opcodes(args: argparse.Namespace) -> int:
+    project_root = Path(args.project_root).expanduser().resolve()
+    if not project_root.is_dir():
+        raise RestorationError(f"Project root does not exist: {project_root}")
+    default_workspace = project_root / ".local/build/quartet_restoration"
+    default_reports = project_root / ".local/reports/quartet_restoration"
+    workspace_root = Path(args.workspace_root).expanduser().resolve() if args.workspace_root else default_workspace
+    report_root = Path(args.report_root).expanduser().resolve() if args.report_root else default_reports
+    require_within(workspace_root, default_workspace, "Workspace")
+    require_within(report_root, default_reports, "Report root")
+    output, summary = collect_event_opcode_evidence(
+        project_root=project_root, workspace_root=workspace_root, report_root=report_root,
+        maximum_event_bytes=args.maximum_event_bytes, discovery_files=args.discovery_files,
+        maximum_start_offset=args.maximum_start_offset,
+    )
+    selected = summary.get("selected_common_layout") or {}
+    print(f"EBD pairs: {summary['event_data_pairs']}")
+    print(f"Selected layout: {selected.get('layout_id', 'none')}")
+    print(f"Record delta rows: {summary['record_delta_rows']}")
+    print(f"Focused event rows: {summary['focused_event_rows']}")
+    print(f"Report: {output}")
+    return 0
+
+
+EVENT_SCHEMA_FOCUSED_KEYWORDS: tuple[str, ...] = (
+    "costume", "cloth", "wear", "dress", "uniform", "swimsuit", "bathtowel",
+    "towel", "underwear", "rfl", "udw", "tng", "nkd", "steam", "vapor",
+    "mist", "fog", "lightshaft", "godray", "shaft", "bloom", "flare", "glare",
+    "water", "wet", "alpha", "opacity", "transluc", "transparent", "refract",
+    "pool", "shower", "bath",
+)
+
+
+def _classify_length_prefixed_text(raw: bytes) -> tuple[str, str]:
+    """Classify a NUL-terminated length-prefixed token without leaking dialogue.
+
+    The second return value is exported only for compact ASCII technical
+    identifiers. Localized/non-technical content is represented by a hash.
+    """
+    if not raw or raw[-1] != 0:
+        return "not_text", ""
+    body = raw[:-1]
+    if not body:
+        return "empty_string", ""
+    if all(0x20 <= byte <= 0x7E for byte in body):
+        value = body.decode("ascii")
+        if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_./:<>\-]{0,127}", value):
+            return "ascii_technical_identifier", value
+        return "ascii_text_redacted", ""
+    for encoding, label in (("cp932", "cp932_text_redacted"), ("utf-8", "utf8_text_redacted")):
+        try:
+            value = body.decode(encoding)
+        except UnicodeDecodeError:
+            continue
+        if value and sum(ch.isprintable() for ch in value) / len(value) >= 0.90:
+            return label, ""
+    return "not_text", ""
+
+
+def read_length_prefixed_text(payload: bytes, offset: int, *, maximum_length: int = 1024) -> dict[str, Any] | None:
+    if offset < 0 or offset + 5 > len(payload):
+        return None
+    length = struct.unpack_from("<I", payload, offset)[0]
+    if length < 1 or length > maximum_length or offset + 4 + length > len(payload):
+        return None
+    raw = payload[offset + 4:offset + 4 + length]
+    token_class, technical_identifier = _classify_length_prefixed_text(raw)
+    if token_class == "not_text":
+        return None
+    return {
+        "prefix_offset": offset,
+        "data_offset": offset + 4,
+        "end_offset": offset + 4 + length,
+        "byte_length": length,
+        "token_class": token_class,
+        "technical_identifier": technical_identifier,
+        "content_sha256": hashlib.sha256(raw).hexdigest(),
+    }
+
+
+def scan_length_prefixed_text(payload: bytes, *, maximum_length: int = 1024, maximum_tokens: int = 20000) -> list[dict[str, Any]]:
+    """Find plausible unaligned u32-length-prefixed text tokens.
+
+    Gust's observed EBD header places the second length field immediately after
+    a five-byte string, so alignment cannot be assumed. The high two length
+    bytes must be zero under the bounded metadata-token policy, which avoids a
+    costly full u32 decode at almost every byte.
+    """
+    rows: list[dict[str, Any]] = []
+    offset = 0
+    while offset + 5 <= len(payload) and len(rows) < maximum_tokens:
+        if payload[offset + 2] or payload[offset + 3]:
+            offset += 1
+            continue
+        length = payload[offset] | (payload[offset + 1] << 8)
+        if length < 1 or length > maximum_length or offset + 4 + length > len(payload):
+            offset += 1
+            continue
+        token = read_length_prefixed_text(payload, offset, maximum_length=maximum_length)
+        if token is None:
+            offset += 1
+            continue
+        rows.append(token)
+        # Sequential length-prefixed fields are common. Advancing to the end
+        # also prevents nested false positives inside localized strings.
+        offset = int(token["end_offset"])
+    return rows
+
+
+def parse_ebd_header_schema(payload: bytes) -> dict[str, Any]:
+    result: dict[str, Any] = {
+        "declared_count": "", "reserved_u32": "", "header_end": "",
+        "first_field_class": "", "first_field_identifier": "", "first_field_length": "",
+        "second_field_class": "", "second_field_length": "", "second_field_sha256": "",
+        "classification": "unrecognized_header",
+    }
+    if len(payload) < 8:
+        return result
+    result["declared_count"] = struct.unpack_from("<I", payload, 0)[0]
+    result["reserved_u32"] = struct.unpack_from("<I", payload, 4)[0]
+    first = read_length_prefixed_text(payload, 8)
+    if first is None:
+        return result
+    second = read_length_prefixed_text(payload, int(first["end_offset"]))
+    result.update({
+        "first_field_class": first["token_class"],
+        "first_field_identifier": first["technical_identifier"],
+        "first_field_length": first["byte_length"],
+    })
+    if second is None:
+        result["header_end"] = first["end_offset"]
+        result["classification"] = "single_length_prefixed_field_after_fixed_prefix"
+        return result
+    result.update({
+        "second_field_class": second["token_class"],
+        "second_field_length": second["byte_length"],
+        "second_field_sha256": second["content_sha256"],
+        "header_end": second["end_offset"],
+    })
+    if first["technical_identifier"] == "name" and int(result["reserved_u32"]) == 0:
+        result["classification"] = "observed_ebd_name_description_header"
+    else:
+        result["classification"] = "two_length_prefixed_fields_after_fixed_prefix"
+    return result
+
+
+def _event_schema_token_signature(row: dict[str, Any]) -> tuple[str, str, int, str]:
+    return (
+        str(row.get("token_class", "")),
+        str(row.get("technical_identifier", "")),
+        int(row.get("byte_length", 0)),
+        str(row.get("content_sha256", "")),
+    )
+
+
+def compare_event_schema_tokens(source: Sequence[dict[str, Any]], target: Sequence[dict[str, Any]]) -> list[dict[str, Any]]:
+    left = [_event_schema_token_signature(row) for row in source]
+    right = [_event_schema_token_signature(row) for row in target]
+    matcher = difflib.SequenceMatcher(a=left, b=right, autojunk=False)
+    rows: list[dict[str, Any]] = []
+    for tag, i1, i2, j1, j2 in matcher.get_opcodes():
+        if tag == "equal":
+            continue
+        source_rows = list(source[i1:i2])
+        target_rows = list(target[j1:j2])
+        source_ids = sorted({str(row.get("technical_identifier", "")) for row in source_rows if row.get("technical_identifier")}, key=str.casefold)
+        target_ids = sorted({str(row.get("technical_identifier", "")) for row in target_rows if row.get("technical_identifier")}, key=str.casefold)
+        rows.append({
+            "sequence_tag": tag,
+            "source_token_start": i1,
+            "source_token_end": i2,
+            "target_token_start": j1,
+            "target_token_end": j2,
+            "source_token_count": len(source_rows),
+            "target_token_count": len(target_rows),
+            "source_technical_identifiers": ";".join(source_ids[:64]),
+            "target_technical_identifiers": ";".join(target_ids[:64]),
+            "source_localized_token_count": sum(str(row.get("token_class", "")).endswith("_redacted") for row in source_rows),
+            "target_localized_token_count": sum(str(row.get("token_class", "")).endswith("_redacted") for row in target_rows),
+            "source_token_sequence_sha256": sha256_text("|".join("/".join(map(str, item)) for item in left[i1:i2])),
+            "target_token_sequence_sha256": sha256_text("|".join("/".join(map(str, item)) for item in right[j1:j2])),
+            "classification": "length_prefixed_schema_token_delta",
+            "review_status": "token_delta_not_event_semantics_proof",
+        })
+    return rows
+
+
+def _strict_opcode_hypothesis_correction(report_root: Path) -> tuple[list[dict[str, Any]], bool]:
+    summary_path = report_root / EVENT_OPCODE_EVIDENCE_DIR / "SUMMARY.json"
+    hypotheses_path = report_root / EVENT_OPCODE_EVIDENCE_DIR / "EBD_RECORD_LAYOUT_HYPOTHESES.tsv"
+    summary = load_json(summary_path)
+    selected = summary.get("selected_common_layout") or {}
+    if not selected:
+        return [{
+            "layout_id": "", "start_offset": "", "source_support_ratio": 0,
+            "target_support_ratio": 0, "source_exact_eof_ratio": 0,
+            "target_exact_eof_ratio": 0, "accepted_under_strict_gate": False,
+            "classification": "no_selected_explicit_size_layout",
+            "review_status": "proceed_to_self_describing_schema_evidence",
+        }], True
+    hypotheses = read_tsv(hypotheses_path)
+    matching = {
+        row.get("side", ""): row for row in hypotheses
+        if row.get("layout_id") == str(selected.get("layout_id", ""))
+        and int(row.get("start_offset", "-1") or -1) == int(selected.get("start_offset", -2))
+    }
+    sample_counts = summary.get("discovery_sample_files_per_side") or {}
+    src = matching.get("source", {})
+    tgt = matching.get("target", {})
+    source_support_ratio = int(src.get("file_count", 0) or 0) / max(1, int(sample_counts.get("source", 0) or 0))
+    target_support_ratio = int(tgt.get("file_count", 0) or 0) / max(1, int(sample_counts.get("target", 0) or 0))
+    source_eof = float(src.get("exact_eof_ratio", 0) or 0)
+    target_eof = float(tgt.get("exact_eof_ratio", 0) or 0)
+    source_coverage = float(src.get("median_coverage", 0) or 0)
+    target_coverage = float(tgt.get("median_coverage", 0) or 0)
+    accepted = (
+        source_support_ratio >= 0.50 and target_support_ratio >= 0.50
+        and source_eof >= 0.50 and target_eof >= 0.50
+        and source_coverage >= 0.98 and target_coverage >= 0.98
+    )
+    return [{
+        "layout_id": selected.get("layout_id", ""),
+        "start_offset": selected.get("start_offset", ""),
+        "source_support_ratio": round(source_support_ratio, 6),
+        "target_support_ratio": round(target_support_ratio, 6),
+        "source_exact_eof_ratio": round(source_eof, 6),
+        "target_exact_eof_ratio": round(target_eof, 6),
+        "source_median_coverage": round(source_coverage, 6),
+        "target_median_coverage": round(target_coverage, 6),
+        "accepted_under_strict_gate": accepted,
+        "classification": "strict_explicit_size_layout_candidate" if accepted else "rejected_spurious_partial_parse",
+        "review_status": "layout_still_requires_format_confirmation" if accepted else "stage_17_opcode_rows_superseded",
+    }], not accepted
+
+
+def collect_event_schema_evidence(
+    *,
+    project_root: Path,
+    workspace_root: Path,
+    report_root: Path,
+    maximum_event_bytes: int,
+    maximum_token_length: int,
+) -> tuple[Path, dict[str, Any]]:
+    family_summary_path = report_root / EVENT_FAMILY_EVIDENCE_DIR / "SUMMARY.json"
+    family_summary = load_json(family_summary_path)
+    if family_summary.get("type") != "br_quartet_restoration_event_family_evidence_summary":
+        raise RestorationError(f"Not an event-family report: {family_summary_path}")
+    opcode_summary_path = report_root / EVENT_OPCODE_EVIDENCE_DIR / "SUMMARY.json"
+    opcode_summary = load_json(opcode_summary_path)
+    if opcode_summary.get("type") != "br_quartet_restoration_event_opcode_evidence_summary":
+        raise RestorationError(f"Not an event-opcode report: {opcode_summary_path}")
+    family_rows = read_tsv(report_root / EVENT_FAMILY_EVIDENCE_DIR / "EVENT_FAMILY_PAIRS.tsv")
+    family_by_ebd = {row.get("event_data_path", ""): row for row in family_rows}
+    correction_rows, opcode_rejected = _strict_opcode_hypothesis_correction(report_root)
+
+    reports = load_report_jsons(report_root, "differences")
+    event_report = next((row for row in reports if str(row.get("source_archive_group", "")) == "br1_events"), None)
+    if event_report is None:
+        raise RestorationError("Missing br1_events difference report")
+    entries = [
+        row for row in event_report.get("entries", [])
+        if row.get("scope_status") == "in_scope"
+        and str(row.get("normalized_path", "")).casefold().endswith(".ebd")
+        and "/event_jp/" in str(row.get("normalized_path", "")).casefold()
+        and bool(row.get("source")) and bool(row.get("target"))
+    ]
+    entries.sort(key=lambda row: str(row.get("normalized_path", "")).casefold())
+
+    header_rows: list[dict[str, Any]] = []
+    scalar_rows: list[dict[str, Any]] = []
+    token_rows: list[dict[str, Any]] = []
+    count_rows: list[dict[str, Any]] = []
+    delta_rows: list[dict[str, Any]] = []
+    focused_rows: list[dict[str, Any]] = []
+    skipped_rows: list[dict[str, Any]] = []
+    family_groups: dict[tuple[str, str], dict[str, Any]] = {}
+    technical_frequency: Counter[tuple[str, str]] = Counter()
+    changed_pairs = 0
+    recognized_headers = 0
+
+    for entry in entries:
+        normalized_path = str(entry.get("normalized_path", ""))
+        side_payloads: dict[str, bytes] = {}
+        side_headers: dict[str, dict[str, Any]] = {}
+        side_tokens: dict[str, list[dict[str, Any]]] = {}
+        for side in ("source", "target"):
+            ref = entry.get(side) or {}
+            file_path = inventory_workspace_file(workspace_root, side, "br1_events", str(ref.get("archive", "")), str(ref.get("path", "")))
+            if not file_path.is_file():
+                skipped_rows.append({"normalized_path": normalized_path, "side": side, "reason": "workspace_file_missing"})
+                continue
+            if file_path.stat().st_size > maximum_event_bytes:
+                skipped_rows.append({"normalized_path": normalized_path, "side": side, "reason": "maximum_event_bytes_exceeded"})
+                continue
+            payload = file_path.read_bytes()
+            header = parse_ebd_header_schema(payload)
+            tokens = scan_length_prefixed_text(payload, maximum_length=maximum_token_length)
+            side_payloads[side] = payload
+            side_headers[side] = header
+            side_tokens[side] = tokens
+            recognized_headers += int(header["classification"] == "observed_ebd_name_description_header")
+            header_rows.append({
+                "normalized_path": normalized_path, "side": side, "payload_size": len(payload),
+                **header, "review_status": "header_shape_not_full_ebd_schema_proof",
+            })
+            header_end = int(header.get("header_end") or 0)
+            for index in range(8):
+                offset = header_end + index * 4
+                if header_end <= 0 or offset + 4 > len(payload):
+                    break
+                value = struct.unpack_from("<I", payload, offset)[0]
+                relation = []
+                if value == len(payload): relation.append("equals_file_size")
+                if value == len(payload) - offset: relation.append("equals_remaining_from_field")
+                if value == len(payload) - (offset + 4): relation.append("equals_remaining_after_field")
+                if value < len(payload): relation.append("within_file_range")
+                scalar_rows.append({
+                    "normalized_path": normalized_path, "side": side, "header_end": header_end,
+                    "relative_index": index, "field_offset": offset, "value_u32": value,
+                    "value_hex": f"0x{value:08x}", "relationship": ";".join(relation),
+                    "review_status": "unaligned_header_scalar_probe_not_semantics_proof",
+                })
+            for index, token in enumerate(tokens):
+                technical = str(token.get("technical_identifier", ""))
+                if technical:
+                    technical_frequency[(side, technical)] += 1
+                token_rows.append({
+                    "normalized_path": normalized_path, "side": side, "token_index": index,
+                    **token, "review_status": "localized_content_redacted_technical_ascii_only",
+                })
+            declared = int(header.get("declared_count") or 0)
+            count_rows.append({
+                "normalized_path": normalized_path, "side": side, "declared_count": declared,
+                "length_prefixed_token_count": len(tokens),
+                "technical_identifier_count": sum(bool(row.get("technical_identifier")) for row in tokens),
+                "name_identifier_count": sum(row.get("technical_identifier") == "name" for row in tokens),
+                "declared_minus_token_count": declared - len(tokens),
+                "classification": "count_relationship_observation",
+                "review_status": "count_relationship_not_table_semantics_proof",
+            })
+            schema_components = [header["classification"]]
+            for token in tokens[:64]:
+                technical = str(token.get("technical_identifier", ""))
+                schema_components.append(f"{token['token_class']}:{technical or '<redacted>'}:{token['byte_length']}")
+            schema_signature = sha256_text("|".join(schema_components))
+            key = (side, schema_signature)
+            group = family_groups.setdefault(key, {
+                "side": side, "schema_signature": schema_signature,
+                "header_classification": header["classification"], "file_count": 0,
+                "first_paths": [], "declared_counts": [], "token_counts": [],
+            })
+            group["file_count"] += 1
+            group["declared_counts"].append(declared)
+            group["token_counts"].append(len(tokens))
+            if len(group["first_paths"]) < 20:
+                group["first_paths"].append(normalized_path)
+
+        if "source" not in side_payloads or "target" not in side_payloads:
+            continue
+        if str(entry.get("classification", "")) != "changed":
+            continue
+        changed_pairs += 1
+        pair_deltas = compare_event_schema_tokens(side_tokens["source"], side_tokens["target"])
+        for row in pair_deltas:
+            delta_rows.append({"normalized_path": normalized_path, **row})
+        source_ids = {str(row.get("technical_identifier", "")) for row in side_tokens["source"] if row.get("technical_identifier")}
+        target_ids = {str(row.get("technical_identifier", "")) for row in side_tokens["target"] if row.get("technical_identifier")}
+        target_only = sorted(target_ids - source_ids, key=str.casefold)
+        source_only = sorted(source_ids - target_ids, key=str.casefold)
+        focused_target = [value for value in target_only if any(word in value.casefold() for word in EVENT_SCHEMA_FOCUSED_KEYWORDS)]
+        focused_source = [value for value in source_only if any(word in value.casefold() for word in EVENT_SCHEMA_FOCUSED_KEYWORDS)]
+        source_header = side_headers["source"]
+        target_header = side_headers["target"]
+        family = family_by_ebd.get(normalized_path, {})
+        count_delta = int(target_header.get("declared_count") or 0) - int(source_header.get("declared_count") or 0)
+        if focused_target or focused_source:
+            classification, priority = "focused_presentation_identifier_schema_delta", "critical"
+        elif family.get("event_message_classification") == "identical" and pair_deltas and abs(count_delta) <= 8:
+            classification, priority = "compact_schema_delta_with_identical_message", "high"
+        elif pair_deltas and abs(count_delta) <= 8:
+            classification, priority = "compact_length_prefixed_schema_delta", "medium"
+        elif pair_deltas:
+            classification, priority = "broad_schema_or_content_delta", "low"
+        else:
+            classification, priority = "binary_delta_without_length_prefixed_token_delta", "deferred"
+        if priority != "deferred":
+            focused_rows.append({
+                "normalized_path": normalized_path,
+                "event_message_path": family.get("event_message_path", ""),
+                "event_message_classification": family.get("event_message_classification", ""),
+                "source_declared_count": source_header.get("declared_count", ""),
+                "target_declared_count": target_header.get("declared_count", ""),
+                "declared_count_delta": count_delta,
+                "source_token_count": len(side_tokens["source"]),
+                "target_token_count": len(side_tokens["target"]),
+                "token_delta_regions": len(pair_deltas),
+                "source_only_technical_identifiers": ";".join(source_only[:64]),
+                "target_only_technical_identifiers": ";".join(target_only[:64]),
+                "classification": classification,
+                "review_priority": priority,
+                "review_status": "schema_delta_requires_field_semantics_and_scene_confirmation",
+            })
+
+    schema_family_rows: list[dict[str, Any]] = []
+    for group in family_groups.values():
+        counts = sorted(group.pop("declared_counts"))
+        token_counts = sorted(group.pop("token_counts"))
+        paths = group.pop("first_paths")
+        schema_family_rows.append({
+            **group,
+            "median_declared_count": counts[len(counts)//2] if counts else "",
+            "median_token_count": token_counts[len(token_counts)//2] if token_counts else "",
+            "first_paths": ";".join(paths),
+            "review_status": "schema_signature_groups_token_shapes_not_full_semantics",
+        })
+    frequency_rows = [
+        {"side": side, "technical_identifier": value, "occurrence_count": count,
+         "focused_keyword": any(word in value.casefold() for word in EVENT_SCHEMA_FOCUSED_KEYWORDS),
+         "review_status": "technical_identifier_frequency_not_binding_proof"}
+        for (side, value), count in sorted(technical_frequency.items(), key=lambda item: (item[0][0], item[0][1].casefold()))
+    ]
+    focused_rows.sort(key=lambda row: ({"critical":0,"high":1,"medium":2,"low":3}.get(str(row["review_priority"]),9), str(row["normalized_path"])))
+
+    evidence_root = report_root / EVENT_SCHEMA_EVIDENCE_DIR
+    if evidence_root.exists():
+        shutil.rmtree(evidence_root)
+    evidence_root.mkdir(parents=True, exist_ok=True)
+    write_tsv(evidence_root / "EVENT_OPCODE_HYPOTHESIS_CORRECTION.tsv", ["layout_id","start_offset","source_support_ratio","target_support_ratio","source_exact_eof_ratio","target_exact_eof_ratio","source_median_coverage","target_median_coverage","accepted_under_strict_gate","classification","review_status"], correction_rows)
+    write_tsv(evidence_root / "EBD_HEADER_SCHEMA.tsv", ["normalized_path","side","payload_size","declared_count","reserved_u32","header_end","first_field_class","first_field_identifier","first_field_length","second_field_class","second_field_length","second_field_sha256","classification","review_status"], header_rows)
+    write_tsv(evidence_root / "EBD_HEADER_SCALARS.tsv", ["normalized_path","side","header_end","relative_index","field_offset","value_u32","value_hex","relationship","review_status"], scalar_rows)
+    write_tsv(evidence_root / "EBD_LENGTH_PREFIXED_TOKENS.tsv", ["normalized_path","side","token_index","prefix_offset","data_offset","end_offset","byte_length","token_class","technical_identifier","content_sha256","review_status"], token_rows)
+    write_tsv(evidence_root / "EBD_TECHNICAL_IDENTIFIER_FREQUENCY.tsv", ["side","technical_identifier","occurrence_count","focused_keyword","review_status"], frequency_rows)
+    write_tsv(evidence_root / "EBD_DECLARED_COUNT_TESTS.tsv", ["normalized_path","side","declared_count","length_prefixed_token_count","technical_identifier_count","name_identifier_count","declared_minus_token_count","classification","review_status"], count_rows)
+    write_tsv(evidence_root / "EBD_SCHEMA_FAMILIES.tsv", ["side","schema_signature","header_classification","file_count","median_declared_count","median_token_count","first_paths","review_status"], sorted(schema_family_rows, key=lambda row: (row["side"], -int(row["file_count"]), row["schema_signature"])))
+    write_tsv(evidence_root / "EBD_SCHEMA_TOKEN_DELTAS.tsv", ["normalized_path","sequence_tag","source_token_start","source_token_end","target_token_start","target_token_end","source_token_count","target_token_count","source_technical_identifiers","target_technical_identifiers","source_localized_token_count","target_localized_token_count","source_token_sequence_sha256","target_token_sequence_sha256","classification","review_status"], delta_rows)
+    write_tsv(evidence_root / "FOCUSED_EVENT_SCHEMA_REVIEW.tsv", ["normalized_path","event_message_path","event_message_classification","source_declared_count","target_declared_count","declared_count_delta","source_token_count","target_token_count","token_delta_regions","source_only_technical_identifiers","target_only_technical_identifiers","classification","review_priority","review_status"], focused_rows)
+    write_tsv(evidence_root / "EVENT_SCHEMA_SCAN_SKIPPED.tsv", ["normalized_path","side","reason"], skipped_rows)
+
+    summary = {
+        "type": "br_quartet_restoration_event_schema_evidence_summary",
+        "format_version": FORMAT_VERSION,
+        "tool_version": TOOL_VERSION,
+        "source_event_opcode_tool_version": opcode_summary.get("tool_version"),
+        "status": "self_describing_ebd_header_and_length_prefixed_schema_evidence_complete",
+        "canonical_event_pairs": len(entries),
+        "changed_event_pairs": changed_pairs,
+        "header_rows": len(header_rows),
+        "recognized_name_description_headers": recognized_headers,
+        "length_prefixed_token_rows": len(token_rows),
+        "technical_identifier_frequency_rows": len(frequency_rows),
+        "schema_family_rows": len(schema_family_rows),
+        "schema_token_delta_rows": len(delta_rows),
+        "focused_event_rows": len(focused_rows),
+        "skipped_rows": len(skipped_rows),
+        "prior_opcode_layout_rejected": opcode_rejected,
+        "prior_opcode_delta_rows_superseded": int(opcode_summary.get("record_delta_rows", 0)) if opcode_rejected else 0,
+        "policy": {
+            "installed_games_modified": False,
+            "raw_ebd_or_ebm_payloads_exported": False,
+            "localized_or_dialogue_text_exported": False,
+            "technical_ascii_identifiers_exported": True,
+            "localized_tokens_represented_by_hash_only": True,
+            "explicit_size_opcode_layout_treated_as_format_proof": False,
+            "event_prototype_generated": False,
+            "automatic_censorship_claims": False,
+            "legacy_dlc_in_scope": False,
+            "translation_edits_in_scope": False,
+        },
+        "next_action": "Upload this report. Use stable name/description headers, declared-count relationships and compact token deltas to infer the actual EBD object/table grammar. Do not generate an event patch from superseded stage-17 opcode rows.",
+    }
+    atomic_json(evidence_root / "SUMMARY.json", summary)
+    output = report_root / EVENT_SCHEMA_REPORT_NAME
+    make_report_archive(evidence_root, output)
+    return output, summary
+
+
+def cmd_collect_event_schema(args: argparse.Namespace) -> int:
+    project_root = Path(args.project_root).expanduser().resolve()
+    if not project_root.is_dir():
+        raise RestorationError(f"Project root does not exist: {project_root}")
+    default_workspace = project_root / ".local/build/quartet_restoration"
+    default_reports = project_root / ".local/reports/quartet_restoration"
+    workspace_root = Path(args.workspace_root).expanduser().resolve() if args.workspace_root else default_workspace
+    report_root = Path(args.report_root).expanduser().resolve() if args.report_root else default_reports
+    require_within(workspace_root, default_workspace, "Workspace")
+    require_within(report_root, default_reports, "Report root")
+    output, summary = collect_event_schema_evidence(
+        project_root=project_root,
+        workspace_root=workspace_root,
+        report_root=report_root,
+        maximum_event_bytes=args.maximum_event_bytes,
+        maximum_token_length=args.maximum_token_length,
+    )
+    print(f"Canonical EBD pairs: {summary['canonical_event_pairs']}")
+    print(f"Recognized headers: {summary['recognized_name_description_headers']}")
+    print(f"Schema token deltas: {summary['schema_token_delta_rows']}")
+    print(f"Focused events: {summary['focused_event_rows']}")
+    print(f"Prior opcode layout rejected: {summary['prior_opcode_layout_rejected']}")
+    print(f"Report: {output}")
+    return 0
+
+
+# Stage 19: profile the stable post-header tagged-word grammar without assigning
+# gameplay semantics.  Stage 18 proved the universal count/reserved/name/説明
+# header, but its free unaligned token scan also admitted false positives (for
+# example the leading count value 1 as a one-byte empty string).  The helpers
+# below therefore operate only on the 4-byte stream beginning at header_end.
+
+
+def classify_ebd_u32_word(value: int) -> str:
+    if value == 0:
+        return "zero"
+    if value == 0xFFFFFFFF:
+        return "minus_one"
+    high_u16 = (value >> 16) & 0xFFFF
+    if 0x7000 <= high_u16 <= 0x7FFF:
+        return "high_u16_tag_candidate"
+    if value <= 0xFFFF:
+        return "small_scalar"
+    return "opaque_u32"
+
+
+def structural_ebd_word_token(value: int) -> str:
+    kind = classify_ebd_u32_word(value)
+    if kind == "high_u16_tag_candidate":
+        return f"T{(value >> 16) & 0xFFFF:04x}:{value & 0xFFFF:04x}"
+    if kind == "small_scalar":
+        if value <= 3:
+            return f"S{value}"
+        if value <= 0xF:
+            return "S4_15"
+        if value <= 0xFF:
+            return "S16_255"
+        return "S256_65535"
+    if kind == "zero":
+        return "S0"
+    if kind == "minus_one":
+        return "M1"
+    return f"O{(value >> 24) & 0xFF:02x}"
+
+
+def classify_ebd_post_header_family(words: Sequence[int], trailing_bytes: int) -> str:
+    if trailing_bytes:
+        suffix = "_with_trailing_bytes"
+    else:
+        suffix = ""
+    if len(words) >= 6 and list(words[:6]) == [1, 0x7F000000, 1, 1, 0x7F000000, 1]:
+        return "minimal_dual_7f_stub" + suffix
+    if len(words) >= 5 and list(words[1:5]) == [0x75400009, 0x77000001, 1, 0x7540000A]:
+        return "common_tagged_prefix_7540_7700" + suffix
+    if words and any(classify_ebd_u32_word(value) == "high_u16_tag_candidate" for value in words[:16]):
+        return "other_tagged_prefix" + suffix
+    return "unclassified_post_header_stream" + suffix
+
+
+def profile_ebd_post_header_words(payload: bytes, header_end: int, *, maximum_words: int = 1_000_000) -> dict[str, Any]:
+    if header_end <= 0 or header_end > len(payload):
+        return {"words": [], "atoms": [], "word_count": 0, "trailing_bytes": 0, "family": "missing_header"}
+    available = len(payload) - header_end
+    word_count = min(available // 4, maximum_words)
+    words = list(struct.unpack_from(f"<{word_count}I", payload, header_end)) if word_count else []
+    trailing = available - word_count * 4
+    tag_indices = [index for index, value in enumerate(words) if classify_ebd_u32_word(value) == "high_u16_tag_candidate"]
+    atoms: list[dict[str, Any]] = []
+    for atom_index, word_index in enumerate(tag_indices):
+        value = words[word_index]
+        next_index = tag_indices[atom_index + 1] if atom_index + 1 < len(tag_indices) else len(words)
+        between = words[word_index + 1:next_index]
+        small_values = [item for item in between if item <= 0xFFFF or item == 0xFFFFFFFF]
+        opaque_count = len(between) - len(small_values)
+        small_hex = [f"0x{item:08x}" for item in small_values[:8]]
+        signature = sha256_text("|".join([
+            f"0x{value:08x}", str(next_index - word_index - 1), ",".join(small_hex), str(opaque_count)
+        ]))
+        atoms.append({
+            "atom_index": atom_index,
+            "word_index": word_index,
+            "byte_offset": header_end + word_index * 4,
+            "tag_value": value,
+            "tag_value_hex": f"0x{value:08x}",
+            "tag_high_u16_hex": f"0x{(value >> 16) & 0xFFFF:04x}",
+            "tag_operand_u16": value & 0xFFFF,
+            "gap_words_to_next_tag": next_index - word_index - 1,
+            "small_scalar_values": ";".join(small_hex),
+            "small_scalar_count": len(small_values),
+            "opaque_gap_word_count": opaque_count,
+            "is_7f_sentinel_candidate": value == 0x7F000000,
+            "atom_signature_sha256": signature,
+        })
+    return {
+        "words": words,
+        "atoms": atoms,
+        "word_count": word_count,
+        "trailing_bytes": trailing,
+        "family": classify_ebd_post_header_family(words, trailing),
+        "first_words_hex": ";".join(f"0x{value:08x}" for value in words[:12]),
+        "first_words_sha256": sha256_text("|".join(f"{value:08x}" for value in words[:32])),
+        "tag_count": len(atoms),
+        "sentinel_count": sum(value == 0x7F000000 for value in words),
+    }
+
+
+def _ebd_tag_atom_signature(atom: dict[str, Any]) -> tuple[str, int, str, int]:
+    return (
+        str(atom.get("tag_value_hex", "")),
+        int(atom.get("gap_words_to_next_tag", 0)),
+        str(atom.get("small_scalar_values", "")),
+        int(atom.get("opaque_gap_word_count", 0)),
+    )
+
+
+def compare_ebd_tag_atoms(source: Sequence[dict[str, Any]], target: Sequence[dict[str, Any]]) -> list[dict[str, Any]]:
+    left = [_ebd_tag_atom_signature(row) for row in source]
+    right = [_ebd_tag_atom_signature(row) for row in target]
+    matcher = difflib.SequenceMatcher(a=left, b=right, autojunk=False)
+    rows: list[dict[str, Any]] = []
+    for tag, i1, i2, j1, j2 in matcher.get_opcodes():
+        if tag == "equal":
+            continue
+        source_rows = list(source[i1:i2])
+        target_rows = list(target[j1:j2])
+        source_tags = [str(row.get("tag_value_hex", "")) for row in source_rows]
+        target_tags = [str(row.get("tag_value_hex", "")) for row in target_rows]
+        if tag == "replace" and len(source_rows) == len(target_rows):
+            classification = "changed_tagged_atoms"
+        elif tag == "insert":
+            classification = "added_tagged_atoms_in_quartet"
+        elif tag == "delete":
+            classification = "removed_tagged_atoms_in_quartet"
+        else:
+            classification = "tagged_atom_sequence_replacement"
+        rows.append({
+            "sequence_tag": tag,
+            "source_atom_start": i1,
+            "source_atom_end": i2,
+            "target_atom_start": j1,
+            "target_atom_end": j2,
+            "source_atom_count": len(source_rows),
+            "target_atom_count": len(target_rows),
+            "source_first_word_index": source_rows[0].get("word_index", "") if source_rows else "",
+            "target_first_word_index": target_rows[0].get("word_index", "") if target_rows else "",
+            "source_tag_values": ";".join(source_tags[:32]),
+            "target_tag_values": ";".join(target_tags[:32]),
+            "source_atom_sequence_sha256": sha256_text("|".join("/".join(map(str, item)) for item in left[i1:i2])),
+            "target_atom_sequence_sha256": sha256_text("|".join("/".join(map(str, item)) for item in right[j1:j2])),
+            "classification": classification,
+            "review_status": "tag_grammar_delta_not_opcode_or_censorship_semantics_proof",
+        })
+    return rows
+
+
+def collect_event_tag_grammar_evidence(
+    *,
+    project_root: Path,
+    workspace_root: Path,
+    report_root: Path,
+    maximum_event_bytes: int,
+    maximum_words: int,
+) -> tuple[Path, dict[str, Any]]:
+    schema_summary_path = report_root / EVENT_SCHEMA_EVIDENCE_DIR / "SUMMARY.json"
+    schema_summary = load_json(schema_summary_path)
+    if schema_summary.get("type") != "br_quartet_restoration_event_schema_evidence_summary":
+        raise RestorationError(f"Not an event-schema report: {schema_summary_path}")
+    family_summary_path = report_root / EVENT_FAMILY_EVIDENCE_DIR / "SUMMARY.json"
+    family_summary = load_json(family_summary_path)
+    if family_summary.get("type") != "br_quartet_restoration_event_family_evidence_summary":
+        raise RestorationError(f"Not an event-family report: {family_summary_path}")
+    family_rows = read_tsv(report_root / EVENT_FAMILY_EVIDENCE_DIR / "EVENT_FAMILY_PAIRS.tsv")
+    family_by_ebd = {row.get("event_data_path", ""): row for row in family_rows}
+
+    stage18_tokens = read_tsv(report_root / EVENT_SCHEMA_EVIDENCE_DIR / "EBD_LENGTH_PREFIXED_TOKENS.tsv")
+    stage18_deltas = read_tsv(report_root / EVENT_SCHEMA_EVIDENCE_DIR / "EBD_SCHEMA_TOKEN_DELTAS.tsv")
+    stage18_focused = read_tsv(report_root / EVENT_SCHEMA_EVIDENCE_DIR / "FOCUSED_EVENT_SCHEMA_REVIEW.tsv")
+    offset_zero_rows = sum(int(row.get("prefix_offset", -1) or -1) == 0 for row in stage18_tokens)
+    one_character_ids = sum(len(str(row.get("technical_identifier", ""))) == 1 for row in stage18_tokens if row.get("technical_identifier"))
+    correction_rows = [
+        {"metric":"stage18_length_prefixed_token_rows","value":len(stage18_tokens),"classification":"heuristic_free_scan_observation","review_status":"not_promoted_to_ebd_grammar"},
+        {"metric":"offset_zero_count_as_string_false_positive_rows","value":offset_zero_rows,"classification":"confirmed_free_scan_false_positive","review_status":"excluded_from_stage19"},
+        {"metric":"single_character_technical_identifier_rows","value":one_character_ids,"classification":"free_scan_noise_indicator","review_status":"not_used_as_binding_or_schema_evidence"},
+        {"metric":"stage18_token_delta_rows","value":len(stage18_deltas),"classification":"heuristic_token_delta_rows","review_status":"require_tag_grammar_confirmation"},
+        {"metric":"stage18_focused_event_rows","value":len(stage18_focused),"classification":"provisional_review_queue","review_status":"not_event_patch_candidates"},
+    ]
+
+    reports = load_report_jsons(report_root, "differences")
+    event_report = next((row for row in reports if str(row.get("source_archive_group", "")) == "br1_events"), None)
+    if event_report is None:
+        raise RestorationError("Missing br1_events difference report")
+    entries = [
+        row for row in event_report.get("entries", [])
+        if row.get("scope_status") == "in_scope"
+        and str(row.get("normalized_path", "")).casefold().endswith(".ebd")
+        and "/event_jp/" in str(row.get("normalized_path", "")).casefold()
+        and bool(row.get("source")) and bool(row.get("target"))
+    ]
+    entries.sort(key=lambda row: str(row.get("normalized_path", "")).casefold())
+
+    profile_rows: list[dict[str, Any]] = []
+    atom_rows: list[dict[str, Any]] = []
+    delta_rows: list[dict[str, Any]] = []
+    focused_rows: list[dict[str, Any]] = []
+    skipped_rows: list[dict[str, Any]] = []
+    tag_frequency: Counter[tuple[str, int]] = Counter()
+    tag_files: defaultdict[tuple[str, int], set[str]] = defaultdict(set)
+    high16_frequency: Counter[tuple[str, int]] = Counter()
+    high16_files: defaultdict[tuple[str, int], set[str]] = defaultdict(set)
+    transition_frequency: Counter[tuple[str, int, int, int]] = Counter()
+    transition_files: defaultdict[tuple[str, int, int, int], set[str]] = defaultdict(set)
+    family_counts: Counter[tuple[str, str]] = Counter()
+    changed_pairs = 0
+    changed_pairs_with_tag_deltas = 0
+
+    for entry in entries:
+        normalized_path = str(entry.get("normalized_path", ""))
+        side_profiles: dict[str, dict[str, Any]] = {}
+        for side in ("source", "target"):
+            ref = entry.get(side) or {}
+            file_path = inventory_workspace_file(workspace_root, side, "br1_events", str(ref.get("archive", "")), str(ref.get("path", "")))
+            if not file_path.is_file():
+                skipped_rows.append({"normalized_path":normalized_path,"side":side,"reason":"workspace_file_missing"})
+                continue
+            if file_path.stat().st_size > maximum_event_bytes:
+                skipped_rows.append({"normalized_path":normalized_path,"side":side,"reason":"maximum_event_bytes_exceeded"})
+                continue
+            payload = file_path.read_bytes()
+            header = parse_ebd_header_schema(payload)
+            header_end = int(header.get("header_end") or 0)
+            if header.get("classification") != "observed_ebd_name_description_header":
+                skipped_rows.append({"normalized_path":normalized_path,"side":side,"reason":"recognized_ebd_header_missing"})
+                continue
+            profile = profile_ebd_post_header_words(payload, header_end, maximum_words=maximum_words)
+            side_profiles[side] = profile
+            family_counts[(side, str(profile["family"]))] += 1
+            profile_rows.append({
+                "normalized_path":normalized_path,"side":side,"payload_size":len(payload),
+                "declared_count":header.get("declared_count", ""),"header_end":header_end,
+                "post_header_word_count":profile["word_count"],"post_header_trailing_bytes":profile["trailing_bytes"],
+                "post_header_family":profile["family"],"first_words_hex":profile["first_words_hex"],
+                "first_words_sha256":profile["first_words_sha256"],"tag_candidate_count":profile["tag_count"],
+                "sentinel_7f_count":profile["sentinel_count"],
+                "review_status":"post_header_family_is_structural_observation_not_semantics",
+            })
+            atoms = profile["atoms"]
+            for atom in atoms:
+                atom_rows.append({"normalized_path":normalized_path,"side":side,**atom,"review_status":"high_u16_tag_candidate_not_opcode_semantics"})
+                value = int(atom["tag_value"])
+                high = (value >> 16) & 0xFFFF
+                tag_frequency[(side, value)] += 1
+                tag_files[(side, value)].add(normalized_path)
+                high16_frequency[(side, high)] += 1
+                high16_files[(side, high)].add(normalized_path)
+            for left, right in zip(atoms, atoms[1:]):
+                key = (side, int(left["tag_value"]), int(right["tag_value"]), int(left["gap_words_to_next_tag"]))
+                transition_frequency[key] += 1
+                transition_files[key].add(normalized_path)
+
+        if "source" not in side_profiles or "target" not in side_profiles or str(entry.get("classification", "")) != "changed":
+            continue
+        changed_pairs += 1
+        pair_deltas = compare_ebd_tag_atoms(side_profiles["source"]["atoms"], side_profiles["target"]["atoms"])
+        if pair_deltas:
+            changed_pairs_with_tag_deltas += 1
+        for row in pair_deltas:
+            delta_rows.append({"normalized_path":normalized_path,**row})
+        family = family_by_ebd.get(normalized_path, {})
+        atom_changes = sum(int(row["source_atom_count"]) + int(row["target_atom_count"]) for row in pair_deltas)
+        family_changed = side_profiles["source"]["family"] != side_profiles["target"]["family"]
+        if family.get("event_message_classification") == "identical" and pair_deltas and len(pair_deltas) <= 8 and atom_changes <= 32:
+            classification, priority = "compact_tag_grammar_delta_with_identical_message", "high"
+        elif pair_deltas and len(pair_deltas) <= 8 and atom_changes <= 32:
+            classification, priority = "compact_tag_grammar_delta", "medium"
+        elif family_changed:
+            classification, priority = "post_header_family_change", "medium"
+        elif pair_deltas:
+            classification, priority = "broad_tag_grammar_delta", "low"
+        else:
+            classification, priority = "binary_delta_without_tag_grammar_delta", "deferred"
+        if priority != "deferred":
+            focused_rows.append({
+                "normalized_path":normalized_path,
+                "event_message_path":family.get("event_message_path", ""),
+                "event_message_classification":family.get("event_message_classification", ""),
+                "source_post_header_family":side_profiles["source"]["family"],
+                "target_post_header_family":side_profiles["target"]["family"],
+                "source_tag_count":side_profiles["source"]["tag_count"],
+                "target_tag_count":side_profiles["target"]["tag_count"],
+                "tag_delta_regions":len(pair_deltas),"changed_atom_span":atom_changes,
+                "classification":classification,"review_priority":priority,
+                "review_status":"tag_grammar_delta_requires_field_semantics_and_scene_confirmation",
+            })
+
+    tag_frequency_rows = []
+    for (side, value), count in sorted(tag_frequency.items(), key=lambda item:(item[0][0],-item[1],item[0][1])):
+        paths = sorted(tag_files[(side, value)])
+        tag_frequency_rows.append({
+            "side":side,"tag_value_hex":f"0x{value:08x}","tag_high_u16_hex":f"0x{(value>>16)&0xFFFF:04x}",
+            "tag_operand_u16":value & 0xFFFF,"occurrence_count":count,"file_count":len(paths),
+            "first_paths":";".join(paths[:20]),"classification":"recurring_high_u16_tag_candidate",
+            "review_status":"frequency_not_opcode_meaning_proof",
+        })
+    high16_rows = []
+    for (side, high), count in sorted(high16_frequency.items(), key=lambda item:(item[0][0],-item[1],item[0][1])):
+        paths = sorted(high16_files[(side, high)])
+        high16_rows.append({
+            "side":side,"tag_high_u16_hex":f"0x{high:04x}","occurrence_count":count,"file_count":len(paths),
+            "first_paths":";".join(paths[:20]),"classification":"high_u16_tag_family_candidate",
+            "review_status":"family_frequency_not_type_or_opcode_semantics_proof",
+        })
+    transition_rows = []
+    for (side, left, right, gap), count in sorted(transition_frequency.items(), key=lambda item:(item[0][0],-item[1],item[0][1],item[0][2],item[0][3])):
+        paths = sorted(transition_files[(side,left,right,gap)])
+        transition_rows.append({
+            "side":side,"source_tag_value_hex":f"0x{left:08x}","target_tag_value_hex":f"0x{right:08x}",
+            "gap_words":gap,"occurrence_count":count,"file_count":len(paths),"first_paths":";".join(paths[:20]),
+            "classification":"adjacent_tag_candidate_transition","review_status":"transition_not_record_boundary_or_semantics_proof",
+        })
+    family_rows_out = [
+        {"side":side,"post_header_family":family,"file_count":count,"review_status":"family_frequency_not_full_schema_proof"}
+        for (side,family),count in sorted(family_counts.items(),key=lambda item:(item[0][0],-item[1],item[0][1]))
+    ]
+    focused_rows.sort(key=lambda row:({"high":0,"medium":1,"low":2}.get(str(row["review_priority"]),9),int(row["tag_delta_regions"]),str(row["normalized_path"])))
+
+    evidence_root = report_root / EVENT_TAG_GRAMMAR_EVIDENCE_DIR
+    if evidence_root.exists():
+        shutil.rmtree(evidence_root)
+    evidence_root.mkdir(parents=True, exist_ok=True)
+    write_tsv(evidence_root / "EVENT_SCHEMA_TOKEN_SCAN_CORRECTION.tsv", ["metric","value","classification","review_status"], correction_rows)
+    write_tsv(evidence_root / "EBD_POST_HEADER_PROFILES.tsv", ["normalized_path","side","payload_size","declared_count","header_end","post_header_word_count","post_header_trailing_bytes","post_header_family","first_words_hex","first_words_sha256","tag_candidate_count","sentinel_7f_count","review_status"], profile_rows)
+    write_tsv(evidence_root / "EBD_POST_HEADER_FAMILY_FREQUENCY.tsv", ["side","post_header_family","file_count","review_status"], family_rows_out)
+    write_tsv(evidence_root / "EBD_TAG_WORD_FREQUENCY.tsv", ["side","tag_value_hex","tag_high_u16_hex","tag_operand_u16","occurrence_count","file_count","first_paths","classification","review_status"], tag_frequency_rows)
+    write_tsv(evidence_root / "EBD_TAG_HIGH16_FREQUENCY.tsv", ["side","tag_high_u16_hex","occurrence_count","file_count","first_paths","classification","review_status"], high16_rows)
+    write_tsv(evidence_root / "EBD_TAG_ATOMS.tsv", ["normalized_path","side","atom_index","word_index","byte_offset","tag_value","tag_value_hex","tag_high_u16_hex","tag_operand_u16","gap_words_to_next_tag","small_scalar_values","small_scalar_count","opaque_gap_word_count","is_7f_sentinel_candidate","atom_signature_sha256","review_status"], atom_rows)
+    write_tsv(evidence_root / "EBD_TAG_TRANSITION_FREQUENCY.tsv", ["side","source_tag_value_hex","target_tag_value_hex","gap_words","occurrence_count","file_count","first_paths","classification","review_status"], transition_rows)
+    write_tsv(evidence_root / "EBD_TAG_ATOM_DELTAS.tsv", ["normalized_path","sequence_tag","source_atom_start","source_atom_end","target_atom_start","target_atom_end","source_atom_count","target_atom_count","source_first_word_index","target_first_word_index","source_tag_values","target_tag_values","source_atom_sequence_sha256","target_atom_sequence_sha256","classification","review_status"], delta_rows)
+    write_tsv(evidence_root / "FOCUSED_EVENT_TAG_GRAMMAR_REVIEW.tsv", ["normalized_path","event_message_path","event_message_classification","source_post_header_family","target_post_header_family","source_tag_count","target_tag_count","tag_delta_regions","changed_atom_span","classification","review_priority","review_status"], focused_rows)
+    write_tsv(evidence_root / "EVENT_TAG_GRAMMAR_SCAN_SKIPPED.tsv", ["normalized_path","side","reason"], skipped_rows)
+
+    summary = {
+        "type":"br_quartet_restoration_event_tag_grammar_evidence_summary",
+        "format_version":FORMAT_VERSION,"tool_version":TOOL_VERSION,
+        "source_event_schema_tool_version":schema_summary.get("tool_version"),
+        "status":"post_header_high_u16_tag_grammar_evidence_complete_no_semantics_assigned",
+        "canonical_event_pairs":len(entries),"changed_event_pairs":changed_pairs,
+        "post_header_profile_rows":len(profile_rows),"post_header_family_rows":len(family_rows_out),
+        "tag_atom_rows":len(atom_rows),"tag_word_frequency_rows":len(tag_frequency_rows),
+        "tag_high16_frequency_rows":len(high16_rows),"tag_transition_frequency_rows":len(transition_rows),
+        "tag_atom_delta_rows":len(delta_rows),"changed_pairs_with_tag_deltas":changed_pairs_with_tag_deltas,
+        "focused_event_rows":len(focused_rows),"skipped_rows":len(skipped_rows),
+        "stage18_offset_zero_false_token_rows":offset_zero_rows,
+        "stage18_single_character_identifier_rows":one_character_ids,
+        "stage18_token_delta_rows_not_promoted":len(stage18_deltas),
+        "policy":{
+            "installed_games_modified":False,"raw_ebd_or_ebm_payloads_exported":False,
+            "localized_or_dialogue_text_exported":False,"numeric_tag_candidates_exported":True,
+            "tag_values_assigned_opcode_or_gameplay_semantics":False,"event_prototype_generated":False,
+            "automatic_censorship_claims":False,"legacy_dlc_in_scope":False,"translation_edits_in_scope":False,
+        },
+        "next_action":"Upload this report. Use recurrent high-u16 tag families, transitions and rare atom deltas with identical EBM to infer field descriptors or record boundaries. Do not generate an event patch from stage-18 free-scan token deltas.",
+    }
+    atomic_json(evidence_root / "SUMMARY.json", summary)
+    output = report_root / EVENT_TAG_GRAMMAR_REPORT_NAME
+    make_report_archive(evidence_root, output)
+    return output, summary
+
+
+def cmd_collect_event_tag_grammar(args: argparse.Namespace) -> int:
+    project_root = Path(args.project_root).expanduser().resolve()
+    if not project_root.is_dir():
+        raise RestorationError(f"Project root does not exist: {project_root}")
+    default_workspace = project_root / ".local/build/quartet_restoration"
+    default_reports = project_root / ".local/reports/quartet_restoration"
+    workspace_root = Path(args.workspace_root).expanduser().resolve() if args.workspace_root else default_workspace
+    report_root = Path(args.report_root).expanduser().resolve() if args.report_root else default_reports
+    require_within(workspace_root, default_workspace, "Workspace")
+    require_within(report_root, default_reports, "Report root")
+    output, summary = collect_event_tag_grammar_evidence(
+        project_root=project_root, workspace_root=workspace_root, report_root=report_root,
+        maximum_event_bytes=args.maximum_event_bytes, maximum_words=args.maximum_words,
+    )
+    print(f"Canonical EBD pairs: {summary['canonical_event_pairs']}")
+    print(f"Tag atoms: {summary['tag_atom_rows']}")
+    print(f"Changed pairs with tag deltas: {summary['changed_pairs_with_tag_deltas']}")
+    print(f"Focused events: {summary['focused_event_rows']}")
+    print(f"Report: {output}")
+    return 0
+
+
+
+# Stage 20: distinguish broad/recurrent Quartet schema migration patterns from
+# rare event-local tag residuals.  Stage 19 intentionally treated every aligned
+# high-u16 atom delta as potentially interesting, which made 657 of 658 changed
+# EBD pairs look focused.  The uploaded report instead shows several exact or
+# coarse transformations repeated across many unrelated event families.  This
+# stage classifies those transformations conservatively, profiles their local
+# tag contexts, and leaves rare residuals for later semantic work.  It does not
+# assign opcode/field/gameplay meanings or generate an event patch.
+
+
+def event_route_family(normalized_path: str) -> str:
+    parts = PurePosixPath(normalized_path).parts
+    lowered = [part.casefold() for part in parts]
+    try:
+        index = lowered.index("event_jp")
+    except ValueError:
+        return ""
+    return parts[index + 1] if index + 1 < len(parts) else ""
+
+
+def _parse_int_cell(value: Any, default: int = 0) -> int:
+    try:
+        return int(str(value).strip() or default)
+    except (TypeError, ValueError):
+        return default
+
+
+def _event_tag_delta_coarse_key(row: dict[str, Any]) -> tuple[str, int, int, str, str]:
+    return (
+        str(row.get("sequence_tag", "")),
+        _parse_int_cell(row.get("source_atom_count")),
+        _parse_int_cell(row.get("target_atom_count")),
+        str(row.get("source_tag_values", "")),
+        str(row.get("target_tag_values", "")),
+    )
+
+
+def classify_event_tag_migration_signature(
+    *,
+    file_count: int,
+    route_family_count: int,
+    changed_pair_count: int,
+    minimum_broad_files: int,
+    minimum_broad_support_ratio: float,
+    minimum_broad_route_families: int,
+    minimum_recurrent_files: int,
+    minimum_recurrent_route_families: int,
+) -> str:
+    broad_file_gate = max(minimum_broad_files, int(math.ceil(changed_pair_count * minimum_broad_support_ratio)))
+    if file_count >= broad_file_gate and route_family_count >= minimum_broad_route_families:
+        return "broad_schema_migration_candidate"
+    if file_count >= minimum_recurrent_files and route_family_count >= minimum_recurrent_route_families:
+        return "recurrent_schema_delta_candidate"
+    return "rare_event_delta_candidate"
+
+
+def build_ebd_sentinel_frames(atom_rows: Sequence[dict[str, Any]]) -> list[dict[str, Any]]:
+    ordered = sorted(atom_rows, key=lambda row: _parse_int_cell(row.get("atom_index")))
+    frames: list[dict[str, Any]] = []
+    current: list[dict[str, Any]] = []
+    for atom in ordered:
+        current.append(atom)
+        if str(atom.get("tag_value_hex", "")).casefold() == "0x7f000000":
+            frames.append(_make_ebd_sentinel_frame(len(frames), current, True))
+            current = []
+    if current:
+        frames.append(_make_ebd_sentinel_frame(len(frames), current, False))
+    return frames
+
+
+def _make_ebd_sentinel_frame(frame_index: int, atoms: Sequence[dict[str, Any]], ends_with_sentinel: bool) -> dict[str, Any]:
+    tag_values = [str(row.get("tag_value_hex", "")) for row in atoms]
+    atom_signatures = [str(row.get("atom_signature_sha256", "")) for row in atoms]
+    return {
+        "frame_index": frame_index,
+        "first_atom_index": _parse_int_cell(atoms[0].get("atom_index")) if atoms else "",
+        "last_atom_index": _parse_int_cell(atoms[-1].get("atom_index")) if atoms else "",
+        "atom_count": len(atoms),
+        "ends_with_7f_sentinel": ends_with_sentinel,
+        "first_tag_value": tag_values[0] if tag_values else "",
+        "last_tag_value": tag_values[-1] if tag_values else "",
+        "tag_values_preview": ";".join(tag_values[:24]),
+        "tag_sequence_sha256": sha256_text("|".join(tag_values)),
+        "atom_shape_sha256": sha256_text("|".join(atom_signatures)),
+    }
+
+
+def compare_ebd_sentinel_frames(source: Sequence[dict[str, Any]], target: Sequence[dict[str, Any]]) -> list[dict[str, Any]]:
+    left = [str(row.get("atom_shape_sha256", "")) for row in source]
+    right = [str(row.get("atom_shape_sha256", "")) for row in target]
+    matcher = difflib.SequenceMatcher(a=left, b=right, autojunk=False)
+    rows: list[dict[str, Any]] = []
+    for tag, i1, i2, j1, j2 in matcher.get_opcodes():
+        if tag == "equal":
+            continue
+        if tag == "insert":
+            classification = "sentinel_frames_added_in_quartet"
+        elif tag == "delete":
+            classification = "sentinel_frames_removed_in_quartet"
+        elif (i2 - i1) == (j2 - j1):
+            classification = "sentinel_frame_shapes_changed"
+        else:
+            classification = "sentinel_frame_sequence_replacement"
+        rows.append({
+            "sequence_tag": tag,
+            "source_frame_start": i1,
+            "source_frame_end": i2,
+            "target_frame_start": j1,
+            "target_frame_end": j2,
+            "source_frame_count": i2 - i1,
+            "target_frame_count": j2 - j1,
+            "source_frame_shape_hashes": ";".join(left[i1:i2][:24]),
+            "target_frame_shape_hashes": ";".join(right[j1:j2][:24]),
+            "classification": classification,
+            "review_status": "sentinel_frame_delta_not_record_or_gameplay_semantics_proof",
+        })
+    return rows
+
+
+def collect_event_tag_migration_evidence(
+    *,
+    project_root: Path,
+    report_root: Path,
+    minimum_broad_files: int = 32,
+    minimum_broad_support_ratio: float = 0.08,
+    minimum_broad_route_families: int = 8,
+    minimum_recurrent_files: int = 12,
+    minimum_recurrent_route_families: int = 2,
+) -> tuple[Path, dict[str, Any]]:
+    grammar_dir = report_root / EVENT_TAG_GRAMMAR_EVIDENCE_DIR
+    grammar_summary = load_json(grammar_dir / "SUMMARY.json")
+    if grammar_summary.get("type") != "br_quartet_restoration_event_tag_grammar_evidence_summary":
+        raise RestorationError(f"Not an event-tag-grammar report: {grammar_dir / 'SUMMARY.json'}")
+    family_dir = report_root / EVENT_FAMILY_EVIDENCE_DIR
+    family_summary = load_json(family_dir / "SUMMARY.json")
+    if family_summary.get("type") != "br_quartet_restoration_event_family_evidence_summary":
+        raise RestorationError(f"Not an event-family report: {family_dir / 'SUMMARY.json'}")
+
+    delta_rows = read_tsv(grammar_dir / "EBD_TAG_ATOM_DELTAS.tsv")
+    atom_rows = read_tsv(grammar_dir / "EBD_TAG_ATOMS.tsv")
+    profile_rows = read_tsv(grammar_dir / "EBD_POST_HEADER_PROFILES.tsv")
+    focused_stage19_rows = read_tsv(grammar_dir / "FOCUSED_EVENT_TAG_GRAMMAR_REVIEW.tsv")
+    family_rows = read_tsv(family_dir / "EVENT_FAMILY_PAIRS.tsv")
+    family_by_ebd = {str(row.get("event_data_path", "")): row for row in family_rows}
+    stage19_by_path = {str(row.get("normalized_path", "")): row for row in focused_stage19_rows}
+
+    changed_pair_count = _parse_int_cell(grammar_summary.get("changed_event_pairs"), len({str(row.get('normalized_path','')) for row in delta_rows}))
+    if changed_pair_count <= 0:
+        raise RestorationError("Event tag grammar report has no changed event pairs")
+    if minimum_broad_files < 1 or minimum_recurrent_files < 1:
+        raise RestorationError("Migration support file thresholds must be positive")
+    if not 0.0 <= minimum_broad_support_ratio <= 1.0:
+        raise RestorationError("minimum_broad_support_ratio must be between 0 and 1")
+
+    signature_groups: dict[tuple[str, int, int, str, str], dict[str, Any]] = {}
+    exact_contexts: dict[tuple[str, int, int, str, str], set[tuple[str, str]]] = defaultdict(set)
+    for row in delta_rows:
+        normalized_path = str(row.get("normalized_path", ""))
+        key = _event_tag_delta_coarse_key(row)
+        group = signature_groups.setdefault(key, {
+            "sequence_tag": key[0], "source_atom_count": key[1], "target_atom_count": key[2],
+            "source_tag_values": key[3], "target_tag_values": key[4],
+            "occurrence_count": 0, "paths": set(), "routes": set(), "identical_message_paths": set(),
+        })
+        group["occurrence_count"] += 1
+        group["paths"].add(normalized_path)
+        route = event_route_family(normalized_path)
+        if route:
+            group["routes"].add(route)
+        if str(family_by_ebd.get(normalized_path, {}).get("event_message_classification", "")) == "identical":
+            group["identical_message_paths"].add(normalized_path)
+        exact_contexts[key].add((str(row.get("source_atom_sequence_sha256", "")), str(row.get("target_atom_sequence_sha256", ""))))
+
+    signature_rows: list[dict[str, Any]] = []
+    signature_classification: dict[tuple[str, int, int, str, str], str] = {}
+    signature_support: dict[tuple[str, int, int, str, str], dict[str, Any]] = {}
+    for key, group in signature_groups.items():
+        file_count = len(group["paths"])
+        route_count = len(group["routes"])
+        classification = classify_event_tag_migration_signature(
+            file_count=file_count, route_family_count=route_count, changed_pair_count=changed_pair_count,
+            minimum_broad_files=minimum_broad_files,
+            minimum_broad_support_ratio=minimum_broad_support_ratio,
+            minimum_broad_route_families=minimum_broad_route_families,
+            minimum_recurrent_files=minimum_recurrent_files,
+            minimum_recurrent_route_families=minimum_recurrent_route_families,
+        )
+        signature_classification[key] = classification
+        signature_support[key] = {"file_count": file_count, "route_family_count": route_count}
+        if classification == "broad_schema_migration_candidate":
+            review_status = "broad_cross_family_transform_filter_before_event_semantics"
+        elif classification == "recurrent_schema_delta_candidate":
+            review_status = "recurrent_transform_requires_context_review"
+        else:
+            review_status = "rare_residual_retained_for_event_local_review"
+        signature_rows.append({
+            "sequence_tag": group["sequence_tag"],
+            "source_atom_count": group["source_atom_count"],
+            "target_atom_count": group["target_atom_count"],
+            "source_tag_values": group["source_tag_values"],
+            "target_tag_values": group["target_tag_values"],
+            "occurrence_count": group["occurrence_count"],
+            "file_count": file_count,
+            "route_family_count": route_count,
+            "identical_message_file_count": len(group["identical_message_paths"]),
+            "changed_pair_support_ratio": round(file_count / changed_pair_count, 8),
+            "exact_atom_context_variant_count": len(exact_contexts[key]),
+            "first_paths": ";".join(sorted(group["paths"])[:24]),
+            "classification": classification,
+            "review_status": review_status,
+        })
+    class_rank = {"broad_schema_migration_candidate": 0, "recurrent_schema_delta_candidate": 1, "rare_event_delta_candidate": 2}
+    signature_rows.sort(key=lambda row: (class_rank[str(row["classification"])], -int(row["file_count"]), str(row["source_tag_values"]), str(row["target_tag_values"])))
+    migration_candidate_rows = [row for row in signature_rows if row["classification"] != "rare_event_delta_candidate"]
+
+    atom_groups: dict[tuple[str, str], list[dict[str, str]]] = defaultdict(list)
+    global_tag_counts: Counter[tuple[str, str]] = Counter()
+    global_tag_files: defaultdict[tuple[str, str], set[str]] = defaultdict(set)
+    for row in atom_rows:
+        path = str(row.get("normalized_path", ""))
+        side = str(row.get("side", ""))
+        atom_groups[(path, side)].append(row)
+        tag = str(row.get("tag_value_hex", ""))
+        global_tag_counts[(side, tag)] += 1
+        global_tag_files[(side, tag)].add(path)
+
+    candidate_tags: set[str] = set()
+    for row in migration_candidate_rows:
+        candidate_tags.update(value for value in str(row["source_tag_values"]).split(";") if value)
+        candidate_tags.update(value for value in str(row["target_tag_values"]).split(";") if value)
+    context_groups: dict[tuple[Any, ...], dict[str, Any]] = {}
+    for (path, side), rows in atom_groups.items():
+        ordered = sorted(rows, key=lambda row: _parse_int_cell(row.get("atom_index")))
+        for index, row in enumerate(ordered):
+            tag = str(row.get("tag_value_hex", ""))
+            if tag not in candidate_tags:
+                continue
+            previous_tag = str(ordered[index - 1].get("tag_value_hex", "")) if index else ""
+            next_tag = str(ordered[index + 1].get("tag_value_hex", "")) if index + 1 < len(ordered) else ""
+            key = (
+                side, tag, previous_tag, next_tag,
+                _parse_int_cell(row.get("gap_words_to_next_tag")), str(row.get("small_scalar_values", "")),
+                _parse_int_cell(row.get("opaque_gap_word_count")),
+            )
+            group = context_groups.setdefault(key, {"occurrence_count": 0, "paths": set(), "routes": set()})
+            group["occurrence_count"] += 1
+            group["paths"].add(path)
+            route = event_route_family(path)
+            if route:
+                group["routes"].add(route)
+    context_rows: list[dict[str, Any]] = []
+    for key, group in context_groups.items():
+        side, tag, previous_tag, next_tag, gap, small_values, opaque_count = key
+        other_side = "target" if side == "source" else "source"
+        source_occ = global_tag_counts[("source", tag)]
+        target_occ = global_tag_counts[("target", tag)]
+        if source_occ == 0 and target_occ > 0:
+            cross_side = "quartet_only_tag_candidate"
+        elif target_occ == 0 and source_occ > 0:
+            cross_side = "original_only_tag_candidate"
+        else:
+            cross_side = "shared_tag_candidate"
+        context_rows.append({
+            "side": side, "tag_value_hex": tag,
+            "previous_tag_value_hex": previous_tag, "next_tag_value_hex": next_tag,
+            "gap_words_to_next_tag": gap, "small_scalar_values": small_values,
+            "opaque_gap_word_count": opaque_count,
+            "occurrence_count": group["occurrence_count"], "file_count": len(group["paths"]),
+            "route_family_count": len(group["routes"]),
+            "source_total_occurrence_count": source_occ, "target_total_occurrence_count": target_occ,
+            "opposite_side_file_count": len(global_tag_files[(other_side, tag)]),
+            "first_paths": ";".join(sorted(group["paths"])[:24]),
+            "classification": cross_side,
+            "review_status": "local_tag_context_not_field_or_gameplay_semantics_proof",
+        })
+    context_rows.sort(key=lambda row: (-int(row["file_count"]), str(row["side"]), str(row["tag_value_hex"]), str(row["previous_tag_value_hex"]), str(row["next_tag_value_hex"])))
+
+    coverage: dict[str, dict[str, Any]] = {}
+    residual_rows: list[dict[str, Any]] = []
+    for row in delta_rows:
+        path = str(row.get("normalized_path", ""))
+        key = _event_tag_delta_coarse_key(row)
+        migration_class = signature_classification[key]
+        support = signature_support[key]
+        stats = coverage.setdefault(path, {"total": 0, "broad": 0, "recurrent": 0, "rare": 0, "broad_atoms": 0, "recurrent_atoms": 0, "rare_atoms": 0})
+        stats["total"] += 1
+        bucket = "broad" if migration_class.startswith("broad_") else "recurrent" if migration_class.startswith("recurrent_") else "rare"
+        stats[bucket] += 1
+        atom_span = _parse_int_cell(row.get("source_atom_count")) + _parse_int_cell(row.get("target_atom_count"))
+        stats[f"{bucket}_atoms"] += atom_span
+        if bucket != "broad":
+            family = family_by_ebd.get(path, {})
+            residual_rows.append({
+                "normalized_path": path,
+                "event_message_path": family.get("event_message_path", ""),
+                "event_message_classification": family.get("event_message_classification", ""),
+                "migration_classification": migration_class,
+                "signature_file_count": support["file_count"],
+                "signature_route_family_count": support["route_family_count"],
+                "sequence_tag": row.get("sequence_tag", ""),
+                "source_atom_count": row.get("source_atom_count", ""),
+                "target_atom_count": row.get("target_atom_count", ""),
+                "source_tag_values": row.get("source_tag_values", ""),
+                "target_tag_values": row.get("target_tag_values", ""),
+                "source_first_word_index": row.get("source_first_word_index", ""),
+                "target_first_word_index": row.get("target_first_word_index", ""),
+                "source_atom_sequence_sha256": row.get("source_atom_sequence_sha256", ""),
+                "target_atom_sequence_sha256": row.get("target_atom_sequence_sha256", ""),
+                "review_status": "broad_migration_removed_but_residual_still_requires_semantics",
+            })
+
+    coverage_rows: list[dict[str, Any]] = []
+    focused_rows: list[dict[str, Any]] = []
+    broad_only_files = 0
+    files_without_rare_residual = 0
+    files_with_rare_residual = 0
+    identical_message_rare_files = 0
+    for path, stats in coverage.items():
+        family = family_by_ebd.get(path, {})
+        message_class = str(family.get("event_message_classification", ""))
+        if stats["rare"] == 0:
+            files_without_rare_residual += 1
+            if stats["recurrent"] == 0 and stats["broad"] > 0:
+                classification = "broad_schema_migration_only"
+                broad_only_files += 1
+            elif stats["recurrent"] > 0:
+                classification = "broad_or_recurrent_schema_delta_without_rare_residual"
+            else:
+                classification = "no_classified_tag_residual"
+            priority = "deferred"
+        else:
+            files_with_rare_residual += 1
+            if message_class == "identical":
+                identical_message_rare_files += 1
+                classification = "rare_event_tag_residual_with_identical_message"
+                priority = "high" if stats["rare"] <= 4 and stats["rare_atoms"] <= 16 else "medium"
+            else:
+                classification = "rare_event_tag_residual"
+                priority = "medium" if stats["rare"] <= 4 and stats["rare_atoms"] <= 16 else "low"
+        stage19 = stage19_by_path.get(path, {})
+        row_out = {
+            "normalized_path": path,
+            "event_message_path": family.get("event_message_path", ""),
+            "event_message_classification": message_class,
+            "stage19_classification": stage19.get("classification", ""),
+            "total_tag_delta_regions": stats["total"],
+            "broad_migration_regions": stats["broad"],
+            "recurrent_schema_regions": stats["recurrent"],
+            "rare_residual_regions": stats["rare"],
+            "broad_migration_atom_span": stats["broad_atoms"],
+            "recurrent_schema_atom_span": stats["recurrent_atoms"],
+            "rare_residual_atom_span": stats["rare_atoms"],
+            "classification": classification,
+            "review_priority": priority,
+            "review_status": "migration_filter_is_structural_triage_not_censorship_or_field_semantics",
+        }
+        coverage_rows.append(row_out)
+        if stats["rare"] > 0:
+            focused_rows.append(row_out.copy())
+    priority_rank = {"high": 0, "medium": 1, "low": 2, "deferred": 3}
+    coverage_rows.sort(key=lambda row: (priority_rank.get(str(row["review_priority"]), 9), int(row["rare_residual_regions"]), str(row["normalized_path"])))
+    focused_rows.sort(key=lambda row: (priority_rank.get(str(row["review_priority"]), 9), int(row["rare_residual_regions"]), str(row["normalized_path"])))
+    residual_rows.sort(key=lambda row: (0 if row["migration_classification"] == "rare_event_delta_candidate" else 1, str(row["normalized_path"]), _parse_int_cell(row["source_first_word_index"]), _parse_int_cell(row["target_first_word_index"])))
+
+    profile_by_path_side = {(str(row.get("normalized_path", "")), str(row.get("side", ""))): row for row in profile_rows}
+    frame_rows: list[dict[str, Any]] = []
+    relationship_rows: list[dict[str, Any]] = []
+    frames_by_path_side: dict[tuple[str, str], list[dict[str, Any]]] = {}
+    skipped_rows: list[dict[str, Any]] = []
+    exact_declared_sentinel_rows = 0
+    declared_plus_one_sentinel_rows = 0
+    for key, rows in atom_groups.items():
+        path, side = key
+        frames = build_ebd_sentinel_frames(rows)
+        frames_by_path_side[key] = frames
+        for frame in frames:
+            frame_rows.append({"normalized_path": path, "side": side, **frame,
+                               "review_status": "sentinel_bounded_shape_not_record_boundary_proof"})
+        profile = profile_by_path_side.get(key)
+        if profile is None:
+            skipped_rows.append({"normalized_path": path, "side": side, "reason": "missing_stage19_post_header_profile"})
+            continue
+        declared = _parse_int_cell(profile.get("declared_count"))
+        sentinel_count = _parse_int_cell(profile.get("sentinel_7f_count"))
+        if sentinel_count == declared:
+            relation = "sentinel_count_equals_declared_count"
+            exact_declared_sentinel_rows += 1
+        elif sentinel_count == declared + 1:
+            relation = "sentinel_count_equals_declared_count_plus_one"
+            declared_plus_one_sentinel_rows += 1
+        else:
+            relation = "sentinel_count_not_direct_declared_count"
+        relationship_rows.append({
+            "normalized_path": path, "side": side, "declared_count": declared,
+            "sentinel_7f_count": sentinel_count, "sentinel_frame_count": len(frames),
+            "sentinel_minus_declared": sentinel_count - declared,
+            "frame_minus_declared": len(frames) - declared,
+            "classification": relation,
+            "review_status": "count_relationship_not_record_boundary_semantics_proof",
+        })
+
+    frame_delta_rows: list[dict[str, Any]] = []
+    for path in sorted({key[0] for key in frames_by_path_side}):
+        source = frames_by_path_side.get((path, "source"))
+        target = frames_by_path_side.get((path, "target"))
+        if source is None or target is None:
+            continue
+        for row in compare_ebd_sentinel_frames(source, target):
+            frame_delta_rows.append({"normalized_path": path, **row})
+
+    evidence_root = report_root / EVENT_TAG_MIGRATION_EVIDENCE_DIR
+    if evidence_root.exists():
+        shutil.rmtree(evidence_root)
+    evidence_root.mkdir(parents=True, exist_ok=True)
+    write_tsv(evidence_root / "EVENT_TAG_DELTA_SIGNATURE_FREQUENCY.tsv", [
+        "sequence_tag","source_atom_count","target_atom_count","source_tag_values","target_tag_values",
+        "occurrence_count","file_count","route_family_count","identical_message_file_count",
+        "changed_pair_support_ratio","exact_atom_context_variant_count","first_paths","classification","review_status",
+    ], signature_rows)
+    write_tsv(evidence_root / "EVENT_TAG_SCHEMA_MIGRATION_CANDIDATES.tsv", [
+        "sequence_tag","source_atom_count","target_atom_count","source_tag_values","target_tag_values",
+        "occurrence_count","file_count","route_family_count","identical_message_file_count",
+        "changed_pair_support_ratio","exact_atom_context_variant_count","first_paths","classification","review_status",
+    ], migration_candidate_rows)
+    write_tsv(evidence_root / "EVENT_TAG_CONTEXT_ARCHETYPES.tsv", [
+        "side","tag_value_hex","previous_tag_value_hex","next_tag_value_hex","gap_words_to_next_tag",
+        "small_scalar_values","opaque_gap_word_count","occurrence_count","file_count","route_family_count",
+        "source_total_occurrence_count","target_total_occurrence_count","opposite_side_file_count","first_paths",
+        "classification","review_status",
+    ], context_rows)
+    write_tsv(evidence_root / "EVENT_TAG_MIGRATION_COVERAGE.tsv", [
+        "normalized_path","event_message_path","event_message_classification","stage19_classification",
+        "total_tag_delta_regions","broad_migration_regions","recurrent_schema_regions","rare_residual_regions",
+        "broad_migration_atom_span","recurrent_schema_atom_span","rare_residual_atom_span",
+        "classification","review_priority","review_status",
+    ], coverage_rows)
+    write_tsv(evidence_root / "RESIDUAL_EVENT_TAG_DELTAS.tsv", [
+        "normalized_path","event_message_path","event_message_classification","migration_classification",
+        "signature_file_count","signature_route_family_count","sequence_tag","source_atom_count","target_atom_count",
+        "source_tag_values","target_tag_values","source_first_word_index","target_first_word_index",
+        "source_atom_sequence_sha256","target_atom_sequence_sha256","review_status",
+    ], residual_rows)
+    write_tsv(evidence_root / "FOCUSED_EVENT_TAG_RESIDUAL_REVIEW.tsv", [
+        "normalized_path","event_message_path","event_message_classification","stage19_classification",
+        "total_tag_delta_regions","broad_migration_regions","recurrent_schema_regions","rare_residual_regions",
+        "broad_migration_atom_span","recurrent_schema_atom_span","rare_residual_atom_span",
+        "classification","review_priority","review_status",
+    ], focused_rows)
+    write_tsv(evidence_root / "EBD_SENTINEL_FRAME_PROFILES.tsv", [
+        "normalized_path","side","frame_index","first_atom_index","last_atom_index","atom_count",
+        "ends_with_7f_sentinel","first_tag_value","last_tag_value","tag_values_preview",
+        "tag_sequence_sha256","atom_shape_sha256","review_status",
+    ], frame_rows)
+    write_tsv(evidence_root / "EBD_SENTINEL_COUNT_RELATIONSHIPS.tsv", [
+        "normalized_path","side","declared_count","sentinel_7f_count","sentinel_frame_count",
+        "sentinel_minus_declared","frame_minus_declared","classification","review_status",
+    ], relationship_rows)
+    write_tsv(evidence_root / "EBD_SENTINEL_FRAME_DELTAS.tsv", [
+        "normalized_path","sequence_tag","source_frame_start","source_frame_end","target_frame_start","target_frame_end",
+        "source_frame_count","target_frame_count","source_frame_shape_hashes","target_frame_shape_hashes",
+        "classification","review_status",
+    ], frame_delta_rows)
+    write_tsv(evidence_root / "EVENT_TAG_MIGRATION_SCAN_SKIPPED.tsv", ["normalized_path","side","reason"], skipped_rows)
+
+    broad_signature_count = sum(row["classification"] == "broad_schema_migration_candidate" for row in signature_rows)
+    recurrent_signature_count = sum(row["classification"] == "recurrent_schema_delta_candidate" for row in signature_rows)
+    rare_signature_count = sum(row["classification"] == "rare_event_delta_candidate" for row in signature_rows)
+    quartet_only_candidate_tags = sorted({str(row["tag_value_hex"]) for row in context_rows if row["classification"] == "quartet_only_tag_candidate"})
+    summary = {
+        "type": "br_quartet_restoration_event_tag_migration_evidence_summary",
+        "format_version": FORMAT_VERSION,
+        "tool_version": TOOL_VERSION,
+        "source_event_tag_grammar_tool_version": grammar_summary.get("tool_version"),
+        "status": "broad_tag_schema_migration_candidates_filtered_rare_event_residuals_retained_no_semantics_assigned",
+        "changed_event_pairs": changed_pair_count,
+        "stage19_tag_atom_delta_rows": len(delta_rows),
+        "delta_signature_rows": len(signature_rows),
+        "broad_schema_migration_signature_rows": broad_signature_count,
+        "recurrent_schema_delta_signature_rows": recurrent_signature_count,
+        "rare_event_delta_signature_rows": rare_signature_count,
+        "migration_candidate_rows": len(migration_candidate_rows),
+        "event_coverage_rows": len(coverage_rows),
+        "broad_schema_migration_only_files": broad_only_files,
+        "files_without_rare_residual": files_without_rare_residual,
+        "files_with_rare_residual": files_with_rare_residual,
+        "identical_message_files_with_rare_residual": identical_message_rare_files,
+        "residual_delta_rows": len(residual_rows),
+        "focused_residual_event_rows": len(focused_rows),
+        "context_archetype_rows": len(context_rows),
+        "quartet_only_migration_candidate_tags": quartet_only_candidate_tags,
+        "sentinel_frame_rows": len(frame_rows),
+        "sentinel_frame_delta_rows": len(frame_delta_rows),
+        "sentinel_count_equals_declared_count_rows": exact_declared_sentinel_rows,
+        "sentinel_count_equals_declared_count_plus_one_rows": declared_plus_one_sentinel_rows,
+        "skipped_rows": len(skipped_rows),
+        "thresholds": {
+            "minimum_broad_files": minimum_broad_files,
+            "minimum_broad_support_ratio": minimum_broad_support_ratio,
+            "effective_minimum_broad_files": max(minimum_broad_files, int(math.ceil(changed_pair_count * minimum_broad_support_ratio))),
+            "minimum_broad_route_families": minimum_broad_route_families,
+            "minimum_recurrent_files": minimum_recurrent_files,
+            "minimum_recurrent_route_families": minimum_recurrent_route_families,
+        },
+        "policy": {
+            "installed_games_modified": False,
+            "raw_ebd_or_ebm_payloads_exported": False,
+            "localized_or_dialogue_text_exported": False,
+            "numeric_tag_candidates_exported": True,
+            "broad_transform_classified_as_confirmed_engine_migration": False,
+            "tag_values_assigned_opcode_field_or_gameplay_semantics": False,
+            "sentinel_treated_as_confirmed_record_boundary": False,
+            "event_prototype_generated": False,
+            "automatic_censorship_claims": False,
+            "legacy_dlc_in_scope": False,
+            "translation_edits_in_scope": False,
+        },
+        "next_action": "Upload this report. Review rare residual signatures and sentinel-frame relationships after broad cross-family schema transformations are removed. Do not generate an event patch until residual fields are tied to scene semantics.",
+    }
+    atomic_json(evidence_root / "SUMMARY.json", summary)
+    output = report_root / EVENT_TAG_MIGRATION_REPORT_NAME
+    make_report_archive(evidence_root, output)
+    return output, summary
+
+
+def cmd_collect_event_tag_migrations(args: argparse.Namespace) -> int:
+    project_root = Path(args.project_root).expanduser().resolve()
+    if not project_root.is_dir():
+        raise RestorationError(f"Project root does not exist: {project_root}")
+    default_reports = project_root / ".local/reports/quartet_restoration"
+    report_root = Path(args.report_root).expanduser().resolve() if args.report_root else default_reports
+    require_within(report_root, default_reports, "Report root")
+    output, summary = collect_event_tag_migration_evidence(
+        project_root=project_root,
+        report_root=report_root,
+        minimum_broad_files=args.minimum_broad_files,
+        minimum_broad_support_ratio=args.minimum_broad_support_ratio,
+        minimum_broad_route_families=args.minimum_broad_route_families,
+        minimum_recurrent_files=args.minimum_recurrent_files,
+        minimum_recurrent_route_families=args.minimum_recurrent_route_families,
+    )
+    print(f"Delta signatures: {summary['delta_signature_rows']}")
+    print(f"Broad migration candidates: {summary['broad_schema_migration_signature_rows']}")
+    print(f"Files without rare residuals: {summary['files_without_rare_residual']}")
+    print(f"Files with rare residuals: {summary['files_with_rare_residual']}")
+    print(f"Report: {output}")
+    return 0
+
+
+
+# Stage 21: use Japanese event-message payloads only as a metadata index for
+# scene semantics after broad EBD tag migrations have been filtered.  Generic,
+# project-owned cue literals are scanned in-place; reports contain rule IDs,
+# domains, hashes, counts and offsets only.  No dialogue excerpts are exported,
+# and a cue hit is never treated as proof of a costume/effect binding or of
+# censorship.
+
+EVENT_SCENE_CUE_SUPPORTED_ENCODINGS: tuple[str, ...] = (
+    "cp932", "utf-8", "utf-16le", "utf-16be",
+)
+EVENT_SCENE_LOCATION_DOMAINS = {
+    "bath_or_hot_spring", "shower", "pool_or_swimming",
+}
+EVENT_SCENE_PRESENTATION_DOMAINS = {
+    "costume_or_coverage", "clothing_state", "wet_fabric_or_transparency",
+    "steam_or_vapor", "godray_or_light_occlusion", "water_visibility",
+}
+
+
+def load_event_scene_cue_rules(path: Path) -> list[dict[str, Any]]:
+    rows = read_tsv(path)
+    required = {"rule_id", "status", "domain", "priority", "cue_label", "literal", "encodings", "note"}
+    if rows and not required.issubset(rows[0]):
+        missing = sorted(required - set(rows[0]))
+        raise RestorationError(f"Event scene cue rules missing columns: {', '.join(missing)}")
+    result: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for row in rows:
+        if str(row.get("status", "")).casefold() != "active":
+            continue
+        rule_id = str(row.get("rule_id", "")).strip()
+        literal = str(row.get("literal", ""))
+        domain = str(row.get("domain", "")).strip()
+        if not rule_id or not literal or not domain:
+            raise RestorationError(f"Invalid active event scene cue rule in {path}: {row}")
+        if rule_id in seen:
+            raise RestorationError(f"Duplicate event scene cue rule_id: {rule_id}")
+        seen.add(rule_id)
+        encodings = [value.strip().casefold() for value in str(row.get("encodings", "")).split(",") if value.strip()]
+        if not encodings:
+            encodings = ["cp932"]
+        unknown = [value for value in encodings if value not in EVENT_SCENE_CUE_SUPPORTED_ENCODINGS]
+        if unknown:
+            raise RestorationError(f"Unsupported cue encoding(s) for {rule_id}: {', '.join(unknown)}")
+        result.append({
+            "rule_id": rule_id,
+            "domain": domain,
+            "priority": str(row.get("priority", "medium")).strip() or "medium",
+            "cue_label": str(row.get("cue_label", rule_id)).strip() or rule_id,
+            "literal": literal,
+            "literal_sha256": sha256_text(literal),
+            "literal_char_count": len(literal),
+            "encodings": encodings,
+            "note": str(row.get("note", "")).strip(),
+        })
+    if not result:
+        raise RestorationError(f"No active event scene cue rules in {path}")
+    return result
+
+
+def find_literal_offsets(payload: bytes, needle: bytes, *, maximum_offsets: int = 20) -> tuple[int, list[int]]:
+    if not needle:
+        return 0, []
+    count = 0
+    offsets: list[int] = []
+    start = 0
+    while True:
+        index = payload.find(needle, start)
+        if index < 0:
+            break
+        count += 1
+        if len(offsets) < maximum_offsets:
+            offsets.append(index)
+        start = index + max(1, len(needle))
+    return count, offsets
+
+
+def scan_event_scene_cues(payload: bytes, rules: Sequence[dict[str, Any]]) -> list[dict[str, Any]]:
+    hits: list[dict[str, Any]] = []
+    for rule in rules:
+        literal = str(rule["literal"])
+        for encoding in rule["encodings"]:
+            try:
+                needle = literal.encode(str(encoding))
+            except UnicodeEncodeError:
+                continue
+            count, offsets = find_literal_offsets(payload, needle)
+            if count:
+                hits.append({
+                    "rule_id": rule["rule_id"],
+                    "domain": rule["domain"],
+                    "priority": rule["priority"],
+                    "cue_label": rule["cue_label"],
+                    "literal_sha256": rule["literal_sha256"],
+                    "literal_char_count": rule["literal_char_count"],
+                    "encoding": encoding,
+                    "hit_count": count,
+                    "first_offsets": ";".join(str(value) for value in offsets),
+                })
+    return hits
+
+
+def classify_event_scene_cue_frequency(
+    *, file_count: int, route_family_count: int, total_families: int,
+    minimum_broad_files: int, minimum_broad_ratio: float,
+    minimum_broad_route_families: int, minimum_recurrent_files: int,
+    minimum_recurrent_route_families: int,
+) -> str:
+    broad_gate = max(minimum_broad_files, int(math.ceil(total_families * minimum_broad_ratio)))
+    if file_count >= broad_gate and route_family_count >= minimum_broad_route_families:
+        return "broad_dialogue_cue"
+    if file_count >= minimum_recurrent_files and route_family_count >= minimum_recurrent_route_families:
+        return "recurrent_scene_cue"
+    return "rare_scene_cue"
+
+
+def _cue_side_relation(source_count: int, target_count: int, payloads_identical: bool) -> str:
+    if source_count and target_count:
+        return "both_identical_payload" if payloads_identical else "both_changed_payload"
+    if source_count:
+        return "source_only_message_cue"
+    if target_count:
+        return "target_only_message_cue"
+    return "absent"
+
+
+def collect_event_scene_cue_evidence(
+    *, project_root: Path, workspace_root: Path, report_root: Path,
+    cue_rules_file: Path, maximum_payload_bytes: int = 8 * 1024 * 1024,
+    minimum_broad_files: int = 32, minimum_broad_ratio: float = 0.08,
+    minimum_broad_route_families: int = 8, minimum_recurrent_files: int = 8,
+    minimum_recurrent_route_families: int = 2,
+) -> tuple[Path, dict[str, Any]]:
+    migration_dir = report_root / EVENT_TAG_MIGRATION_EVIDENCE_DIR
+    migration_summary = load_json(migration_dir / "SUMMARY.json")
+    if migration_summary.get("type") != "br_quartet_restoration_event_tag_migration_evidence_summary":
+        raise RestorationError(f"Not an event-tag-migration report: {migration_dir / 'SUMMARY.json'}")
+    family_dir = report_root / EVENT_FAMILY_EVIDENCE_DIR
+    family_summary = load_json(family_dir / "SUMMARY.json")
+    if family_summary.get("type") != "br_quartet_restoration_event_family_evidence_summary":
+        raise RestorationError(f"Not an event-family report: {family_dir / 'SUMMARY.json'}")
+    if maximum_payload_bytes < 1:
+        raise RestorationError("maximum_payload_bytes must be positive")
+    if not 0.0 <= minimum_broad_ratio <= 1.0:
+        raise RestorationError("minimum_broad_ratio must be between 0 and 1")
+
+    rules = load_event_scene_cue_rules(cue_rules_file)
+    rules_by_id = {str(row["rule_id"]): row for row in rules}
+    reports = load_report_jsons(report_root, "differences")
+    event_report = next((row for row in reports if str(row.get("source_archive_group", "")) == "br1_events"), None)
+    if event_report is None:
+        raise RestorationError("Missing br1_events difference report")
+    entries = {str(row.get("normalized_path", "")): row for row in event_report.get("entries", [])}
+    family_rows = read_tsv(family_dir / "EVENT_FAMILY_PAIRS.tsv")
+    focused_rows = read_tsv(migration_dir / "FOCUSED_EVENT_TAG_RESIDUAL_REVIEW.tsv")
+    residual_rows = read_tsv(migration_dir / "RESIDUAL_EVENT_TAG_DELTAS.tsv")
+    focused_by_path = {str(row.get("normalized_path", "")): row for row in focused_rows}
+    residual_by_path: dict[str, list[dict[str, str]]] = defaultdict(list)
+    for row in residual_rows:
+        residual_by_path[str(row.get("normalized_path", ""))].append(row)
+
+    hit_rows: list[dict[str, Any]] = []
+    skipped_rows: list[dict[str, Any]] = []
+    family_hit_rule_ids: dict[str, set[str]] = defaultdict(set)
+    family_hit_domains: dict[str, set[str]] = defaultdict(set)
+    family_hit_relations: dict[str, set[str]] = defaultdict(set)
+    family_hit_counts: Counter[str] = Counter()
+    rule_paths: dict[str, set[str]] = defaultdict(set)
+    rule_routes: dict[str, set[str]] = defaultdict(set)
+    rule_focused_paths: dict[str, set[str]] = defaultdict(set)
+    rule_identical_focused_paths: dict[str, set[str]] = defaultdict(set)
+    rule_source_only_paths: dict[str, set[str]] = defaultdict(set)
+    rule_target_only_paths: dict[str, set[str]] = defaultdict(set)
+    scanned_families = 0
+
+    for family in family_rows:
+        ebm_path = str(family.get("event_message_path", ""))
+        ebd_path = str(family.get("event_data_path", ""))
+        entry = entries.get(ebm_path)
+        if not ebm_path or not ebd_path or not entry:
+            skipped_rows.append({"event_message_path": ebm_path, "event_data_path": ebd_path, "reason": "event_family_or_inventory_entry_missing"})
+            continue
+        source_ref = entry.get("source") or {}
+        target_ref = entry.get("target") or {}
+        source_file = inventory_workspace_file(workspace_root, "source", "br1_events", str(source_ref.get("archive", "")), str(source_ref.get("path", "")))
+        target_file = inventory_workspace_file(workspace_root, "target", "br1_events", str(target_ref.get("archive", "")), str(target_ref.get("path", "")))
+        if not source_file.is_file() or not target_file.is_file():
+            skipped_rows.append({"event_message_path": ebm_path, "event_data_path": ebd_path, "reason": "event_message_workspace_file_missing"})
+            continue
+        if source_file.stat().st_size > maximum_payload_bytes or target_file.stat().st_size > maximum_payload_bytes:
+            skipped_rows.append({"event_message_path": ebm_path, "event_data_path": ebd_path, "reason": "maximum_payload_bytes_exceeded"})
+            continue
+        source = source_file.read_bytes()
+        target = target_file.read_bytes()
+        payloads_identical = source == target
+        source_hits = scan_event_scene_cues(source, rules)
+        target_hits = source_hits if payloads_identical else scan_event_scene_cues(target, rules)
+        source_by_key = {(str(row["rule_id"]), str(row["encoding"])): row for row in source_hits}
+        target_by_key = {(str(row["rule_id"]), str(row["encoding"])): row for row in target_hits}
+        scanned_families += 1
+        route = event_route_family(ebd_path)
+        for key in sorted(set(source_by_key) | set(target_by_key)):
+            source_row = source_by_key.get(key, {})
+            target_row = target_by_key.get(key, {})
+            rule = rules_by_id[key[0]]
+            source_count = _parse_int_cell(source_row.get("hit_count"))
+            target_count = _parse_int_cell(target_row.get("hit_count"))
+            relation = _cue_side_relation(source_count, target_count, payloads_identical)
+            family_hit_rule_ids[ebd_path].add(key[0])
+            family_hit_domains[ebd_path].add(str(rule["domain"]))
+            family_hit_relations[ebd_path].add(relation)
+            family_hit_counts[ebd_path] += source_count if payloads_identical else source_count + target_count
+            rule_paths[key[0]].add(ebd_path)
+            if route:
+                rule_routes[key[0]].add(route)
+            if ebd_path in focused_by_path:
+                rule_focused_paths[key[0]].add(ebd_path)
+                if str(family.get("event_message_classification", "")) == "identical":
+                    rule_identical_focused_paths[key[0]].add(ebd_path)
+            if relation == "source_only_message_cue":
+                rule_source_only_paths[key[0]].add(ebd_path)
+            elif relation == "target_only_message_cue":
+                rule_target_only_paths[key[0]].add(ebd_path)
+            hit_rows.append({
+                "event_message_path": ebm_path,
+                "event_data_path": ebd_path,
+                "event_message_classification": family.get("event_message_classification", ""),
+                "rule_id": key[0], "domain": rule["domain"], "priority": rule["priority"],
+                "cue_label": rule["cue_label"], "literal_sha256": rule["literal_sha256"],
+                "literal_char_count": rule["literal_char_count"], "encoding": key[1],
+                "source_hit_count": source_count, "target_hit_count": target_count,
+                "source_first_offsets": source_row.get("first_offsets", ""),
+                "target_first_offsets": target_row.get("first_offsets", ""),
+                "side_relation": relation,
+                "review_status": "generic_scene_cue_only_not_dialogue_excerpt_or_event_binding_proof",
+            })
+
+    frequency_rows: list[dict[str, Any]] = []
+    frequency_class_by_rule: dict[str, str] = {}
+    for rule in rules:
+        rule_id = str(rule["rule_id"])
+        classification = classify_event_scene_cue_frequency(
+            file_count=len(rule_paths[rule_id]), route_family_count=len(rule_routes[rule_id]),
+            total_families=max(1, scanned_families), minimum_broad_files=minimum_broad_files,
+            minimum_broad_ratio=minimum_broad_ratio, minimum_broad_route_families=minimum_broad_route_families,
+            minimum_recurrent_files=minimum_recurrent_files,
+            minimum_recurrent_route_families=minimum_recurrent_route_families,
+        )
+        frequency_class_by_rule[rule_id] = classification
+        frequency_rows.append({
+            "rule_id": rule_id, "domain": rule["domain"], "priority": rule["priority"],
+            "cue_label": rule["cue_label"], "literal_sha256": rule["literal_sha256"],
+            "literal_char_count": rule["literal_char_count"], "encodings": ";".join(rule["encodings"]),
+            "family_count": len(rule_paths[rule_id]), "route_family_count": len(rule_routes[rule_id]),
+            "focused_residual_family_count": len(rule_focused_paths[rule_id]),
+            "identical_message_residual_family_count": len(rule_identical_focused_paths[rule_id]),
+            "source_only_family_count": len(rule_source_only_paths[rule_id]),
+            "target_only_family_count": len(rule_target_only_paths[rule_id]),
+            "corpus_support_ratio": round(len(rule_paths[rule_id]) / max(1, scanned_families), 8),
+            "classification": classification,
+            "review_status": "frequency_class_is_triage_not_scene_or_censorship_semantics",
+        })
+
+    family_by_ebd = {str(row.get("event_data_path", "")): row for row in family_rows}
+    correlation_rows: list[dict[str, Any]] = []
+    focused_review_rows: list[dict[str, Any]] = []
+    priority_rank = {"critical": 0, "high": 1, "medium": 2, "low": 3, "deferred": 4}
+    for ebd_path, focused in sorted(focused_by_path.items()):
+        family = family_by_ebd.get(ebd_path, {})
+        rule_ids = sorted(family_hit_rule_ids.get(ebd_path, set()))
+        domains = sorted(family_hit_domains.get(ebd_path, set()))
+        relations = sorted(family_hit_relations.get(ebd_path, set()))
+        cue_classes = sorted({frequency_class_by_rule.get(rule_id, "") for rule_id in rule_ids if frequency_class_by_rule.get(rule_id)})
+        location_domains = sorted(set(domains) & EVENT_SCENE_LOCATION_DOMAINS)
+        presentation_domains = sorted(set(domains) & EVENT_SCENE_PRESENTATION_DOMAINS)
+        compound = bool(location_domains and presentation_domains)
+        message_class = str(family.get("event_message_classification", focused.get("event_message_classification", "")))
+        if compound and message_class == "identical":
+            classification, priority = "compound_presentation_scene_cue_with_rare_tag_residual", "critical"
+        elif domains and message_class == "identical":
+            classification, priority = "presentation_scene_cue_with_rare_tag_residual", "high"
+        elif domains:
+            classification, priority = "scene_cue_with_residual_and_changed_message", "medium"
+        else:
+            classification, priority = "rare_tag_residual_without_scene_cue", "deferred"
+        rows = residual_by_path.get(ebd_path, [])
+        row = {
+            "normalized_path": ebd_path,
+            "event_message_path": family.get("event_message_path", focused.get("event_message_path", "")),
+            "event_message_classification": message_class,
+            "rare_residual_regions": focused.get("rare_residual_regions", ""),
+            "rare_residual_atom_span": focused.get("rare_residual_atom_span", ""),
+            "residual_delta_rows": len(rows),
+            "cue_rule_ids": ";".join(rule_ids), "cue_domains": ";".join(domains),
+            "cue_frequency_classes": ";".join(cue_classes),
+            "cue_side_relations": ";".join(relations),
+            "cue_hit_count": family_hit_counts.get(ebd_path, 0),
+            "location_cue_domains": ";".join(location_domains),
+            "presentation_cue_domains": ";".join(presentation_domains),
+            "compound_location_and_presentation_cue": compound,
+            "classification": classification, "review_priority": priority,
+            "review_status": "semantic_message_cue_correlates_event_family_but_does_not_identify_binary_field_or_prove_censorship",
+        }
+        correlation_rows.append(row)
+        if domains:
+            focused_review_rows.append(row)
+
+    focused_review_rows.sort(key=lambda row: (priority_rank.get(str(row["review_priority"]), 9), -_parse_int_cell(row.get("cue_hit_count")), str(row["normalized_path"])))
+    rule_export_rows = [{
+        "rule_id": row["rule_id"], "domain": row["domain"], "priority": row["priority"],
+        "cue_label": row["cue_label"], "literal_sha256": row["literal_sha256"],
+        "literal_char_count": row["literal_char_count"], "encodings": ";".join(row["encodings"]),
+        "note": row["note"], "review_status": "project_owned_generic_cue_lexicon_literal_not_exported_in_report",
+    } for row in rules]
+
+    evidence_root = report_root / EVENT_SCENE_CUE_EVIDENCE_DIR
+    if evidence_root.exists():
+        shutil.rmtree(evidence_root)
+    evidence_root.mkdir(parents=True, exist_ok=True)
+    write_tsv(evidence_root / "EVENT_SCENE_CUE_RULES.tsv", [
+        "rule_id","domain","priority","cue_label","literal_sha256","literal_char_count","encodings","note","review_status",
+    ], rule_export_rows)
+    write_tsv(evidence_root / "EVENT_SCENE_CUE_HITS.tsv", [
+        "event_message_path","event_data_path","event_message_classification","rule_id","domain","priority","cue_label",
+        "literal_sha256","literal_char_count","encoding","source_hit_count","target_hit_count","source_first_offsets",
+        "target_first_offsets","side_relation","review_status",
+    ], hit_rows)
+    write_tsv(evidence_root / "EVENT_SCENE_CUE_FREQUENCY.tsv", [
+        "rule_id","domain","priority","cue_label","literal_sha256","literal_char_count","encodings","family_count",
+        "route_family_count","focused_residual_family_count","identical_message_residual_family_count","source_only_family_count",
+        "target_only_family_count","corpus_support_ratio","classification","review_status",
+    ], frequency_rows)
+    correlation_fields = [
+        "normalized_path","event_message_path","event_message_classification","rare_residual_regions","rare_residual_atom_span",
+        "residual_delta_rows","cue_rule_ids","cue_domains","cue_frequency_classes","cue_side_relations","cue_hit_count",
+        "location_cue_domains","presentation_cue_domains","compound_location_and_presentation_cue","classification",
+        "review_priority","review_status",
+    ]
+    write_tsv(evidence_root / "EVENT_RESIDUAL_CUE_CORRELATION.tsv", correlation_fields, correlation_rows)
+    write_tsv(evidence_root / "FOCUSED_PRESENTATION_EVENT_REVIEW.tsv", correlation_fields, focused_review_rows)
+    write_tsv(evidence_root / "EVENT_SCENE_CUE_SCAN_SKIPPED.tsv", ["event_message_path","event_data_path","reason"], skipped_rows)
+
+    domain_counts = Counter()
+    for row in correlation_rows:
+        for domain in str(row["cue_domains"]).split(";"):
+            if domain:
+                domain_counts[domain] += 1
+    relation_counts = Counter(str(row["side_relation"]) for row in hit_rows)
+    summary = {
+        "type": "br_quartet_restoration_event_scene_cue_evidence_summary",
+        "format_version": FORMAT_VERSION, "tool_version": TOOL_VERSION,
+        "source_event_tag_migration_tool_version": migration_summary.get("tool_version"),
+        "status": "generic_japanese_scene_cues_correlated_with_rare_event_tag_residuals_no_dialogue_exported",
+        "active_cue_rules": len(rules), "event_message_families_scanned": scanned_families,
+        "cue_hit_rows": len(hit_rows), "cue_positive_event_families": len(family_hit_rule_ids),
+        "focused_residual_event_rows": len(correlation_rows),
+        "focused_residual_events_with_any_cue": len(focused_review_rows),
+        "focused_residual_events_with_compound_cues": sum(bool(row["compound_location_and_presentation_cue"]) for row in correlation_rows),
+        "identical_message_focused_events_with_cues": sum(bool(row["cue_domains"]) and row["event_message_classification"] == "identical" for row in correlation_rows),
+        "cue_domains_in_focused_residuals": dict(sorted(domain_counts.items())),
+        "cue_hit_side_relations": dict(sorted(relation_counts.items())),
+        "broad_cue_rules": sum(row["classification"] == "broad_dialogue_cue" for row in frequency_rows),
+        "recurrent_cue_rules": sum(row["classification"] == "recurrent_scene_cue" for row in frequency_rows),
+        "rare_cue_rules": sum(row["classification"] == "rare_scene_cue" for row in frequency_rows),
+        "skipped_rows": len(skipped_rows),
+        "thresholds": {
+            "minimum_broad_files": minimum_broad_files, "minimum_broad_ratio": minimum_broad_ratio,
+            "minimum_broad_route_families": minimum_broad_route_families,
+            "minimum_recurrent_files": minimum_recurrent_files,
+            "minimum_recurrent_route_families": minimum_recurrent_route_families,
+        },
+        "policy": {
+            "installed_games_modified": False, "raw_ebm_or_ebd_payloads_exported": False,
+            "dialogue_excerpts_exported": False, "generic_project_owned_cue_literals_exported_in_report": False,
+            "cue_rule_ids_domains_hashes_counts_and_offsets_exported": True,
+            "cue_hit_is_scene_binding_proof": False, "cue_hit_is_censorship_proof": False,
+            "event_prototype_generated": False, "legacy_dlc_in_scope": False,
+            "translation_edits_in_scope": False,
+        },
+        "next_action": "Upload this report. Review cue-linked residual event families first, especially identical-message events with compound location plus presentation cues. Decode binary fields only inside that narrowed set; do not patch EBD from cue hits alone.",
+    }
+    atomic_json(evidence_root / "SUMMARY.json", summary)
+    output = report_root / EVENT_SCENE_CUE_REPORT_NAME
+    make_report_archive(evidence_root, output)
+    return output, summary
+
+
+def cmd_collect_event_scene_cues(args: argparse.Namespace) -> int:
+    project_root = Path(args.project_root).expanduser().resolve()
+    if not project_root.is_dir():
+        raise RestorationError(f"Project root does not exist: {project_root}")
+    default_workspace = project_root / ".local/build/quartet_restoration"
+    default_reports = project_root / ".local/reports/quartet_restoration"
+    workspace_root = Path(args.workspace_root).expanduser().resolve() if args.workspace_root else default_workspace
+    report_root = Path(args.report_root).expanduser().resolve() if args.report_root else default_reports
+    require_within(workspace_root, default_workspace, "Workspace")
+    require_within(report_root, default_reports, "Report root")
+    module_root = project_root / "titles/blue_reflection/modules/quartet_restoration/mappings"
+    rules_file = Path(args.cue_rules).expanduser().resolve() if args.cue_rules else module_root / "event_scene_cue_rules.tsv"
+    output, summary = collect_event_scene_cue_evidence(
+        project_root=project_root, workspace_root=workspace_root, report_root=report_root,
+        cue_rules_file=rules_file, maximum_payload_bytes=args.maximum_payload_bytes,
+        minimum_broad_files=args.minimum_broad_files, minimum_broad_ratio=args.minimum_broad_ratio,
+        minimum_broad_route_families=args.minimum_broad_route_families,
+        minimum_recurrent_files=args.minimum_recurrent_files,
+        minimum_recurrent_route_families=args.minimum_recurrent_route_families,
+    )
+    print(f"Event-message families scanned: {summary['event_message_families_scanned']}")
+    print(f"Cue-positive focused residual events: {summary['focused_residual_events_with_any_cue']}")
+    print(f"Compound cue focused events: {summary['focused_residual_events_with_compound_cues']}")
+    print(f"Report: {output}")
+    return 0
+
+
+
+# Stage 22: correlate the already-filtered rare EBD tag residuals with repeated
+# event slots and route-local scene sequences.  This stage deliberately works
+# from report metadata only.  It does not decode dialogue, assign tag/opcode
+# semantics, generate an EBD patch, or modify installed games.
+
+_EVENT_SEQUENCE_NAME_RE = re.compile(
+    r"^event_([a-z]+)([0-9]+)_([0-9]+)(?:_([0-9]+))?\.ebd$",
+    re.IGNORECASE,
+)
+
+
+def parse_event_sequence_identity(normalized_path: str) -> dict[str, Any]:
+    name = PurePosixPath(str(normalized_path)).name
+    match = _EVENT_SEQUENCE_NAME_RE.fullmatch(name)
+    route_family = event_route_family(normalized_path)
+    if not match:
+        return {
+            "route_family": route_family,
+            "route_stem": "",
+            "route_index": "",
+            "event_slot": "",
+            "event_subslot": "",
+            "classification": "unparsed_event_sequence_name",
+        }
+    return {
+        "route_family": route_family or f"{match.group(1).lower()}{match.group(2)}",
+        "route_stem": match.group(1).lower(),
+        "route_index": int(match.group(2)),
+        "event_slot": int(match.group(3)),
+        "event_subslot": int(match.group(4)) if match.group(4) is not None else "",
+        "classification": "parsed_event_sequence_name",
+    }
+
+
+def event_residual_delta_shape_key(row: dict[str, Any]) -> tuple[str, int, int, str, str]:
+    return _event_tag_delta_coarse_key(row)
+
+
+def event_residual_delta_shape_id(row: dict[str, Any]) -> str:
+    key = event_residual_delta_shape_key(row)
+    return sha256_text(json.dumps(key, ensure_ascii=False, separators=(",", ":")))
+
+
+def classify_presentation_delta_shape(
+    *, cue_file_count: int, identical_cue_file_count: int, all_file_count: int,
+    cue_event_count: int, all_residual_event_count: int,
+    minimum_repeated_cue_files: int = 3,
+    minimum_associated_cue_files: int = 2,
+    minimum_enrichment_ratio: float = 1.5,
+) -> tuple[str, float, float]:
+    cue_support = cue_file_count / max(1, cue_event_count)
+    corpus_support = all_file_count / max(1, all_residual_event_count)
+    enrichment = cue_support / corpus_support if corpus_support else 0.0
+    if (
+        cue_file_count >= minimum_repeated_cue_files
+        and identical_cue_file_count >= 2
+        and enrichment >= minimum_enrichment_ratio
+    ):
+        classification = "presentation_repeated_delta_shape_candidate"
+    elif cue_file_count >= minimum_associated_cue_files and enrichment >= minimum_enrichment_ratio:
+        classification = "presentation_associated_delta_shape_candidate"
+    elif cue_file_count == 1 and all_file_count == 1 and identical_cue_file_count == 1:
+        classification = "presentation_single_scene_delta_shape_candidate"
+    else:
+        classification = "non_enriched_or_background_residual_shape"
+    return classification, cue_support, enrichment
+
+
+def _split_semicolon_cell(value: Any) -> set[str]:
+    return {part for part in str(value or "").split(";") if part}
+
+
+def _cohort_common_shape_ids(
+    member_paths: Sequence[str], shape_ids_by_path: dict[str, set[str]],
+    minimum_ratio: float,
+) -> tuple[list[str], dict[str, int]]:
+    counts: Counter[str] = Counter()
+    for path in member_paths:
+        counts.update(shape_ids_by_path.get(path, set()))
+    required = max(2, int(math.ceil(len(member_paths) * minimum_ratio)))
+    common = sorted(shape_id for shape_id, count in counts.items() if count >= required)
+    return common, dict(counts)
+
+
+def _event_path_sort_key(path: str) -> tuple[str, int, int, str]:
+    identity = parse_event_sequence_identity(path)
+    slot = identity.get("event_slot")
+    subslot = identity.get("event_subslot")
+    return (
+        str(identity.get("route_family", "")),
+        int(slot) if isinstance(slot, int) else 1_000_000_000,
+        int(subslot) if isinstance(subslot, int) else -1,
+        path,
+    )
+
+
+def collect_event_presentation_cohort_evidence(
+    *, project_root: Path, report_root: Path,
+    minimum_repeated_cue_files: int = 3,
+    minimum_associated_cue_files: int = 2,
+    minimum_enrichment_ratio: float = 1.5,
+    minimum_slot_cohort_members: int = 2,
+    common_shape_ratio: float = 0.75,
+    maximum_sequence_gap: int = 50,
+) -> tuple[Path, dict[str, Any]]:
+    cue_dir = report_root / EVENT_SCENE_CUE_EVIDENCE_DIR
+    cue_summary = load_json(cue_dir / "SUMMARY.json")
+    if cue_summary.get("type") != "br_quartet_restoration_event_scene_cue_evidence_summary":
+        raise RestorationError(f"Not an event-scene-cue report: {cue_dir / 'SUMMARY.json'}")
+    migration_dir = report_root / EVENT_TAG_MIGRATION_EVIDENCE_DIR
+    migration_summary = load_json(migration_dir / "SUMMARY.json")
+    if migration_summary.get("type") != "br_quartet_restoration_event_tag_migration_evidence_summary":
+        raise RestorationError(f"Not an event-tag-migration report: {migration_dir / 'SUMMARY.json'}")
+    family_dir = report_root / EVENT_FAMILY_EVIDENCE_DIR
+    family_summary = load_json(family_dir / "SUMMARY.json")
+    if family_summary.get("type") != "br_quartet_restoration_event_family_evidence_summary":
+        raise RestorationError(f"Not an event-family report: {family_dir / 'SUMMARY.json'}")
+    if minimum_repeated_cue_files < 2 or minimum_associated_cue_files < 1:
+        raise RestorationError("Cue file thresholds must be positive and repeated threshold must be at least two")
+    if minimum_enrichment_ratio < 1.0:
+        raise RestorationError("minimum_enrichment_ratio must be at least 1.0")
+    if not 0.0 < common_shape_ratio <= 1.0:
+        raise RestorationError("common_shape_ratio must be in (0, 1]")
+    if maximum_sequence_gap < 1:
+        raise RestorationError("maximum_sequence_gap must be positive")
+
+    correlation_rows = read_tsv(cue_dir / "EVENT_RESIDUAL_CUE_CORRELATION.tsv")
+    focused_cue_rows = read_tsv(cue_dir / "FOCUSED_PRESENTATION_EVENT_REVIEW.tsv")
+    residual_rows_all = read_tsv(migration_dir / "RESIDUAL_EVENT_TAG_DELTAS.tsv")
+    migration_focused_rows = read_tsv(migration_dir / "FOCUSED_EVENT_TAG_RESIDUAL_REVIEW.tsv")
+    rare_residual_paths = {str(row.get("normalized_path", "")) for row in migration_focused_rows}
+    residual_rows = [
+        row for row in residual_rows_all
+        if str(row.get("normalized_path", "")) in rare_residual_paths
+        and str(row.get("migration_classification", "")) == "rare_event_delta_candidate"
+    ]
+    family_rows = read_tsv(family_dir / "EVENT_FAMILY_PAIRS.tsv")
+
+    correlation_by_path = {str(row.get("normalized_path", "")): row for row in correlation_rows}
+    family_by_path = {str(row.get("event_data_path", "")): row for row in family_rows}
+    cue_paths = {str(row.get("normalized_path", "")) for row in focused_cue_rows}
+    identical_cue_paths = {
+        path for path in cue_paths
+        if str(correlation_by_path.get(path, {}).get("event_message_classification", "")) == "identical"
+    }
+    compound_cue_paths = {
+        path for path in cue_paths
+        if str(correlation_by_path.get(path, {}).get("compound_location_and_presentation_cue", "")).casefold() == "true"
+    }
+    residual_event_paths = {str(row.get("normalized_path", "")) for row in residual_rows}
+
+    shape_groups: dict[tuple[str, int, int, str, str], dict[str, Any]] = {}
+    shape_ids_by_path: dict[str, set[str]] = defaultdict(set)
+    shape_rows_by_path: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for row in residual_rows:
+        path = str(row.get("normalized_path", ""))
+        key = event_residual_delta_shape_key(row)
+        shape_id = event_residual_delta_shape_id(row)
+        shape_ids_by_path[path].add(shape_id)
+        shape_rows_by_path[path].append(row)
+        group = shape_groups.setdefault(key, {
+            "shape_id": shape_id,
+            "sequence_tag": key[0],
+            "source_atom_count": key[1],
+            "target_atom_count": key[2],
+            "source_tag_values": key[3],
+            "target_tag_values": key[4],
+            "occurrence_count": 0,
+            "paths": set(),
+            "cue_paths": set(),
+            "identical_cue_paths": set(),
+            "compound_cue_paths": set(),
+            "cue_domains": set(),
+            "cue_routes": set(),
+            "cue_route_stems": set(),
+        })
+        group["occurrence_count"] += 1
+        group["paths"].add(path)
+        if path in cue_paths:
+            group["cue_paths"].add(path)
+            correlation = correlation_by_path.get(path, {})
+            group["cue_domains"].update(_split_semicolon_cell(correlation.get("cue_domains", "")))
+            identity = parse_event_sequence_identity(path)
+            if identity.get("route_family"):
+                group["cue_routes"].add(str(identity["route_family"]))
+            if identity.get("route_stem"):
+                group["cue_route_stems"].add(str(identity["route_stem"]))
+        if path in identical_cue_paths:
+            group["identical_cue_paths"].add(path)
+        if path in compound_cue_paths:
+            group["compound_cue_paths"].add(path)
+
+    shape_frequency_rows: list[dict[str, Any]] = []
+    shape_class_by_id: dict[str, str] = {}
+    shape_enrichment_by_id: dict[str, float] = {}
+    for group in shape_groups.values():
+        classification, cue_support, enrichment = classify_presentation_delta_shape(
+            cue_file_count=len(group["cue_paths"]),
+            identical_cue_file_count=len(group["identical_cue_paths"]),
+            all_file_count=len(group["paths"]),
+            cue_event_count=len(cue_paths),
+            all_residual_event_count=len(residual_event_paths),
+            minimum_repeated_cue_files=minimum_repeated_cue_files,
+            minimum_associated_cue_files=minimum_associated_cue_files,
+            minimum_enrichment_ratio=minimum_enrichment_ratio,
+        )
+        shape_class_by_id[group["shape_id"]] = classification
+        shape_enrichment_by_id[group["shape_id"]] = enrichment
+        noncue_shape_files = len(group["paths"] - cue_paths)
+        cue_without_shape = max(0, len(cue_paths) - len(group["cue_paths"]))
+        noncue_without_shape = max(0, len(residual_event_paths - cue_paths) - noncue_shape_files)
+        odds_ratio = (
+            ((len(group["cue_paths"]) + 0.5) * (noncue_without_shape + 0.5))
+            / ((cue_without_shape + 0.5) * (noncue_shape_files + 0.5))
+        )
+        shape_frequency_rows.append({
+            "shape_id": group["shape_id"],
+            "sequence_tag": group["sequence_tag"],
+            "source_atom_count": group["source_atom_count"],
+            "target_atom_count": group["target_atom_count"],
+            "source_tag_values": group["source_tag_values"],
+            "target_tag_values": group["target_tag_values"],
+            "occurrence_count": group["occurrence_count"],
+            "all_residual_file_count": len(group["paths"]),
+            "cue_positive_file_count": len(group["cue_paths"]),
+            "identical_message_cue_file_count": len(group["identical_cue_paths"]),
+            "compound_cue_file_count": len(group["compound_cue_paths"]),
+            "cue_route_family_count": len(group["cue_routes"]),
+            "cue_route_stem_count": len(group["cue_route_stems"]),
+            "cue_domains": ";".join(sorted(group["cue_domains"])),
+            "cue_support_ratio": round(cue_support, 8),
+            "residual_corpus_support_ratio": round(len(group["paths"]) / max(1, len(residual_event_paths)), 8),
+            "cue_enrichment_ratio": round(enrichment, 8),
+            "continuity_corrected_odds_ratio": round(odds_ratio, 8),
+            "first_cue_paths": ";".join(sorted(group["cue_paths"])[:24]),
+            "classification": classification,
+            "review_status": "statistical_association_is_triage_not_tag_semantics_or_censorship_proof",
+        })
+
+    cue_linked_shape_rows: list[dict[str, Any]] = []
+    for path in sorted(cue_paths, key=_event_path_sort_key):
+        correlation = correlation_by_path.get(path, {})
+        for shape_id in sorted(shape_ids_by_path.get(path, set())):
+            cue_linked_shape_rows.append({
+                "normalized_path": path,
+                "event_message_path": correlation.get("event_message_path", ""),
+                "event_message_classification": correlation.get("event_message_classification", ""),
+                "cue_rule_ids": correlation.get("cue_rule_ids", ""),
+                "cue_domains": correlation.get("cue_domains", ""),
+                "compound_location_and_presentation_cue": correlation.get("compound_location_and_presentation_cue", ""),
+                "shape_id": shape_id,
+                "shape_classification": shape_class_by_id.get(shape_id, ""),
+                "cue_enrichment_ratio": round(shape_enrichment_by_id.get(shape_id, 0.0), 8),
+                "review_status": "cue_and_delta_shape_cooccurrence_does_not_identify_binary_field_semantics",
+            })
+
+    all_paths_by_slot: dict[tuple[str, int], set[str]] = defaultdict(set)
+    all_paths_by_route: dict[str, list[tuple[int, str]]] = defaultdict(list)
+    skipped_rows: list[dict[str, Any]] = []
+    for family in family_rows:
+        path = str(family.get("event_data_path", ""))
+        identity = parse_event_sequence_identity(path)
+        if identity["classification"] != "parsed_event_sequence_name":
+            skipped_rows.append({"normalized_path": path, "reason": "event_sequence_name_not_parsed"})
+            continue
+        route_stem = str(identity["route_stem"])
+        slot = int(identity["event_slot"])
+        route_family = str(identity["route_family"])
+        all_paths_by_slot[(route_stem, slot)].add(path)
+        all_paths_by_route[route_family].append((slot, path))
+
+    slot_groups: dict[tuple[str, int], list[str]] = defaultdict(list)
+    for path in cue_paths:
+        identity = parse_event_sequence_identity(path)
+        if identity["classification"] == "parsed_event_sequence_name":
+            slot_groups[(str(identity["route_stem"]), int(identity["event_slot"]))].append(path)
+
+    slot_cohort_rows: list[dict[str, Any]] = []
+    slot_cohort_id_by_path: dict[str, set[str]] = defaultdict(set)
+    for (route_stem, slot), members in sorted(slot_groups.items()):
+        members = sorted(set(members), key=_event_path_sort_key)
+        if len(members) < minimum_slot_cohort_members:
+            continue
+        common_shapes, shape_counts = _cohort_common_shape_ids(members, shape_ids_by_path, common_shape_ratio)
+        enriched_common = [
+            shape_id for shape_id in common_shapes
+            if shape_class_by_id.get(shape_id) in {
+                "presentation_repeated_delta_shape_candidate",
+                "presentation_associated_delta_shape_candidate",
+            }
+        ]
+        domains: set[str] = set()
+        route_indices: list[int] = []
+        identical_count = 0
+        compound_count = 0
+        for path in members:
+            domains.update(_split_semicolon_cell(correlation_by_path.get(path, {}).get("cue_domains", "")))
+            identity = parse_event_sequence_identity(path)
+            if isinstance(identity.get("route_index"), int):
+                route_indices.append(int(identity["route_index"]))
+            if path in identical_cue_paths:
+                identical_count += 1
+            if path in compound_cue_paths:
+                compound_count += 1
+        cohort_id = sha256_text(f"slot|{route_stem}|{slot}|{'|'.join(members)}")
+        for path in members:
+            slot_cohort_id_by_path[path].add(cohort_id)
+        if len(members) >= 3 and identical_count >= 2 and enriched_common:
+            classification = "repeated_slot_presentation_cohort_candidate"
+            priority = "critical"
+        elif enriched_common:
+            classification = "slot_presentation_cohort_with_enriched_delta"
+            priority = "high"
+        else:
+            classification = "repeated_slot_scene_cue_cohort_without_enriched_delta"
+            priority = "medium"
+        slot_cohort_rows.append({
+            "cohort_id": cohort_id,
+            "route_stem": route_stem,
+            "event_slot": slot,
+            "all_corpus_slot_member_count": len(all_paths_by_slot.get((route_stem, slot), set())),
+            "cue_residual_member_count": len(members),
+            "identical_message_member_count": identical_count,
+            "compound_cue_member_count": compound_count,
+            "route_indices": ";".join(str(value) for value in sorted(route_indices)),
+            "cue_domains": ";".join(sorted(domains)),
+            "common_delta_shape_count": len(common_shapes),
+            "enriched_common_delta_shape_count": len(enriched_common),
+            "common_delta_shape_ids": ";".join(common_shapes),
+            "enriched_common_delta_shape_ids": ";".join(enriched_common),
+            "union_delta_shape_count": len(shape_counts),
+            "member_paths": ";".join(members),
+            "classification": classification,
+            "review_priority": priority,
+            "review_status": "repeated_slot_and_shared_delta_shapes_are_cohort_evidence_not_field_semantics",
+        })
+
+    route_sequence_rows: list[dict[str, Any]] = []
+    route_sequence_id_by_path: dict[str, set[str]] = defaultdict(set)
+    cue_paths_by_route: dict[str, list[tuple[int, str]]] = defaultdict(list)
+    for path in cue_paths:
+        identity = parse_event_sequence_identity(path)
+        if identity["classification"] == "parsed_event_sequence_name":
+            cue_paths_by_route[str(identity["route_family"])].append((int(identity["event_slot"]), path))
+    for route_family, items in sorted(cue_paths_by_route.items()):
+        items = sorted(set(items))
+        clusters: list[list[tuple[int, str]]] = []
+        current: list[tuple[int, str]] = []
+        for item in items:
+            if current and item[0] - current[-1][0] > maximum_sequence_gap:
+                clusters.append(current)
+                current = []
+            current.append(item)
+        if current:
+            clusters.append(current)
+        for cluster in clusters:
+            if len(cluster) < 2:
+                continue
+            members = [path for _, path in cluster]
+            common_shapes, shape_counts = _cohort_common_shape_ids(members, shape_ids_by_path, 0.5)
+            enriched_common = [
+                shape_id for shape_id in common_shapes
+                if shape_class_by_id.get(shape_id) in {
+                    "presentation_repeated_delta_shape_candidate",
+                    "presentation_associated_delta_shape_candidate",
+                }
+            ]
+            domains: set[str] = set()
+            for path in members:
+                domains.update(_split_semicolon_cell(correlation_by_path.get(path, {}).get("cue_domains", "")))
+            sequence_id = sha256_text(f"route|{route_family}|{'|'.join(members)}")
+            for path in members:
+                route_sequence_id_by_path[path].add(sequence_id)
+            identical_count = sum(path in identical_cue_paths for path in members)
+            if len(members) >= 3 and identical_count >= 2 and enriched_common:
+                classification = "route_local_presentation_sequence_candidate"
+                priority = "high"
+            elif len(members) >= 3:
+                classification = "route_local_scene_cue_sequence"
+                priority = "medium"
+            else:
+                classification = "route_local_scene_cue_pair"
+                priority = "medium"
+            route_sequence_rows.append({
+                "sequence_id": sequence_id,
+                "route_family": route_family,
+                "start_event_slot": cluster[0][0],
+                "end_event_slot": cluster[-1][0],
+                "member_count": len(members),
+                "identical_message_member_count": identical_count,
+                "compound_cue_member_count": sum(path in compound_cue_paths for path in members),
+                "cue_domains": ";".join(sorted(domains)),
+                "common_delta_shape_count": len(common_shapes),
+                "enriched_common_delta_shape_count": len(enriched_common),
+                "common_delta_shape_ids": ";".join(common_shapes),
+                "enriched_common_delta_shape_ids": ";".join(enriched_common),
+                "union_delta_shape_count": len(shape_counts),
+                "member_paths": ";".join(members),
+                "classification": classification,
+                "review_priority": priority,
+                "review_status": "route_sequence_is_scene_neighborhood_evidence_not_event_binding_semantics",
+            })
+
+    neighborhood_rows: list[dict[str, Any]] = []
+    all_cue_paths = set(cue_paths)
+    for path in sorted(cue_paths, key=_event_path_sort_key):
+        identity = parse_event_sequence_identity(path)
+        route_family = str(identity.get("route_family", ""))
+        slot = identity.get("event_slot")
+        route_items = sorted(all_paths_by_route.get(route_family, []))
+        index = next((idx for idx, (_, candidate) in enumerate(route_items) if candidate == path), -1)
+        previous = route_items[index - 1] if index > 0 else ("", "")
+        following = route_items[index + 1] if 0 <= index < len(route_items) - 1 else ("", "")
+        neighborhood_rows.append({
+            "normalized_path": path,
+            "route_family": route_family,
+            "event_slot": slot,
+            "previous_event_slot": previous[0],
+            "previous_event_path": previous[1],
+            "previous_has_rare_residual": previous[1] in residual_event_paths,
+            "previous_has_scene_cue": previous[1] in all_cue_paths,
+            "next_event_slot": following[0],
+            "next_event_path": following[1],
+            "next_has_rare_residual": following[1] in residual_event_paths,
+            "next_has_scene_cue": following[1] in all_cue_paths,
+            "review_status": "neighbor_paths_are_control_selection_metadata_not_scene_semantics",
+        })
+
+    focused_review_rows: list[dict[str, Any]] = []
+    priority_rank = {"critical": 0, "high": 1, "medium": 2, "low": 3, "deferred": 4}
+    for path in sorted(cue_paths, key=_event_path_sort_key):
+        correlation = correlation_by_path.get(path, {})
+        shape_ids = sorted(shape_ids_by_path.get(path, set()))
+        enriched_shapes = [
+            shape_id for shape_id in shape_ids
+            if shape_class_by_id.get(shape_id) in {
+                "presentation_repeated_delta_shape_candidate",
+                "presentation_associated_delta_shape_candidate",
+            }
+        ]
+        singleton_shapes = [
+            shape_id for shape_id in shape_ids
+            if shape_class_by_id.get(shape_id) == "presentation_single_scene_delta_shape_candidate"
+        ]
+        slot_ids = sorted(slot_cohort_id_by_path.get(path, set()))
+        sequence_ids = sorted(route_sequence_id_by_path.get(path, set()))
+        if slot_ids and path in identical_cue_paths and enriched_shapes:
+            classification = "repeated_slot_candidate_with_identical_message_and_enriched_delta"
+            priority = "critical"
+        elif sequence_ids and path in identical_cue_paths and enriched_shapes:
+            classification = "route_sequence_candidate_with_identical_message_and_enriched_delta"
+            priority = "high"
+        elif path in compound_cue_paths and (enriched_shapes or singleton_shapes):
+            classification = "compound_cue_event_with_residual_delta_candidate"
+            priority = "high"
+        elif enriched_shapes and path in identical_cue_paths:
+            classification = "identical_message_cue_event_with_enriched_delta"
+            priority = "high"
+        elif singleton_shapes and path in identical_cue_paths:
+            classification = "identical_message_single_scene_delta_for_manual_review"
+            priority = "medium"
+        else:
+            classification = "cue_linked_residual_without_cohort_support"
+            priority = "deferred"
+        focused_review_rows.append({
+            "normalized_path": path,
+            "event_message_path": correlation.get("event_message_path", ""),
+            "event_message_classification": correlation.get("event_message_classification", ""),
+            "cue_rule_ids": correlation.get("cue_rule_ids", ""),
+            "cue_domains": correlation.get("cue_domains", ""),
+            "compound_location_and_presentation_cue": correlation.get("compound_location_and_presentation_cue", ""),
+            "rare_residual_regions": correlation.get("rare_residual_regions", ""),
+            "residual_delta_rows": correlation.get("residual_delta_rows", ""),
+            "delta_shape_count": len(shape_ids),
+            "enriched_delta_shape_count": len(enriched_shapes),
+            "single_scene_delta_shape_count": len(singleton_shapes),
+            "slot_cohort_ids": ";".join(slot_ids),
+            "route_sequence_ids": ";".join(sequence_ids),
+            "classification": classification,
+            "review_priority": priority,
+            "review_status": "cohort_prioritization_is_not_binary_field_semantics_or_censorship_proof",
+        })
+    focused_review_rows.sort(key=lambda row: (
+        priority_rank.get(str(row.get("review_priority", "deferred")), 9),
+        -_parse_int_cell(row.get("enriched_delta_shape_count")),
+        str(row.get("normalized_path", "")),
+    ))
+
+    evidence_root = report_root / EVENT_PRESENTATION_COHORT_EVIDENCE_DIR
+    if evidence_root.exists():
+        shutil.rmtree(evidence_root)
+    evidence_root.mkdir(parents=True, exist_ok=True)
+    write_tsv(evidence_root / "EVENT_RESIDUAL_DELTA_SHAPE_FREQUENCY.tsv", [
+        "shape_id","sequence_tag","source_atom_count","target_atom_count","source_tag_values","target_tag_values",
+        "occurrence_count","all_residual_file_count","cue_positive_file_count","identical_message_cue_file_count",
+        "compound_cue_file_count","cue_route_family_count","cue_route_stem_count","cue_domains","cue_support_ratio",
+        "residual_corpus_support_ratio","cue_enrichment_ratio","continuity_corrected_odds_ratio","first_cue_paths",
+        "classification","review_status",
+    ], shape_frequency_rows)
+    write_tsv(evidence_root / "CUE_LINKED_RESIDUAL_DELTA_SHAPES.tsv", [
+        "normalized_path","event_message_path","event_message_classification","cue_rule_ids","cue_domains",
+        "compound_location_and_presentation_cue","shape_id","shape_classification","cue_enrichment_ratio","review_status",
+    ], cue_linked_shape_rows)
+    write_tsv(evidence_root / "EVENT_PRESENTATION_SLOT_COHORTS.tsv", [
+        "cohort_id","route_stem","event_slot","all_corpus_slot_member_count","cue_residual_member_count",
+        "identical_message_member_count","compound_cue_member_count","route_indices","cue_domains",
+        "common_delta_shape_count","enriched_common_delta_shape_count","common_delta_shape_ids",
+        "enriched_common_delta_shape_ids","union_delta_shape_count","member_paths","classification",
+        "review_priority","review_status",
+    ], slot_cohort_rows)
+    write_tsv(evidence_root / "EVENT_ROUTE_SEQUENCE_CLUSTERS.tsv", [
+        "sequence_id","route_family","start_event_slot","end_event_slot","member_count","identical_message_member_count",
+        "compound_cue_member_count","cue_domains","common_delta_shape_count","enriched_common_delta_shape_count",
+        "common_delta_shape_ids","enriched_common_delta_shape_ids","union_delta_shape_count","member_paths",
+        "classification","review_priority","review_status",
+    ], route_sequence_rows)
+    write_tsv(evidence_root / "EVENT_SEQUENCE_NEIGHBORHOODS.tsv", [
+        "normalized_path","route_family","event_slot","previous_event_slot","previous_event_path",
+        "previous_has_rare_residual","previous_has_scene_cue","next_event_slot","next_event_path",
+        "next_has_rare_residual","next_has_scene_cue","review_status",
+    ], neighborhood_rows)
+    write_tsv(evidence_root / "FOCUSED_PRESENTATION_COHORT_REVIEW.tsv", [
+        "normalized_path","event_message_path","event_message_classification","cue_rule_ids","cue_domains",
+        "compound_location_and_presentation_cue","rare_residual_regions","residual_delta_rows","delta_shape_count",
+        "enriched_delta_shape_count","single_scene_delta_shape_count","slot_cohort_ids","route_sequence_ids",
+        "classification","review_priority","review_status",
+    ], focused_review_rows)
+    write_tsv(evidence_root / "EVENT_PRESENTATION_COHORT_SCAN_SKIPPED.tsv", ["normalized_path","reason"], skipped_rows)
+
+    summary = {
+        "type": "br_quartet_restoration_event_presentation_cohort_evidence_summary",
+        "format_version": FORMAT_VERSION,
+        "tool_version": TOOL_VERSION,
+        "source_event_scene_cue_tool_version": cue_summary.get("tool_version"),
+        "source_event_tag_migration_tool_version": migration_summary.get("tool_version"),
+        "status": "scene_cue_events_grouped_by_delta_shape_repeated_slot_and_route_sequence_no_field_semantics_assigned",
+        "cue_positive_residual_events": len(cue_paths),
+        "identical_message_cue_events": len(identical_cue_paths),
+        "compound_cue_events": len(compound_cue_paths),
+        "all_residual_events": len(residual_event_paths),
+        "residual_delta_shape_rows": len(shape_frequency_rows),
+        "repeated_presentation_delta_shape_rows": sum(row["classification"] == "presentation_repeated_delta_shape_candidate" for row in shape_frequency_rows),
+        "associated_presentation_delta_shape_rows": sum(row["classification"] == "presentation_associated_delta_shape_candidate" for row in shape_frequency_rows),
+        "single_scene_delta_shape_rows": sum(row["classification"] == "presentation_single_scene_delta_shape_candidate" for row in shape_frequency_rows),
+        "slot_cohort_rows": len(slot_cohort_rows),
+        "critical_slot_cohort_rows": sum(row["review_priority"] == "critical" for row in slot_cohort_rows),
+        "route_sequence_cluster_rows": len(route_sequence_rows),
+        "route_sequence_candidate_rows": sum(row["classification"] == "route_local_presentation_sequence_candidate" for row in route_sequence_rows),
+        "focused_review_rows": len(focused_review_rows),
+        "critical_focused_review_rows": sum(row["review_priority"] == "critical" for row in focused_review_rows),
+        "high_focused_review_rows": sum(row["review_priority"] == "high" for row in focused_review_rows),
+        "skipped_rows": len(skipped_rows),
+        "thresholds": {
+            "minimum_repeated_cue_files": minimum_repeated_cue_files,
+            "minimum_associated_cue_files": minimum_associated_cue_files,
+            "minimum_enrichment_ratio": minimum_enrichment_ratio,
+            "minimum_slot_cohort_members": minimum_slot_cohort_members,
+            "common_shape_ratio": common_shape_ratio,
+            "maximum_sequence_gap": maximum_sequence_gap,
+        },
+        "policy": {
+            "installed_games_modified": False,
+            "raw_ebm_or_ebd_payloads_exported": False,
+            "dialogue_excerpts_exported": False,
+            "tag_values_and_shape_hashes_exported": True,
+            "cohort_association_treated_as_field_semantics": False,
+            "cohort_association_treated_as_censorship_proof": False,
+            "event_prototype_generated": False,
+            "legacy_dlc_in_scope": False,
+            "translation_edits_in_scope": False,
+        },
+        "next_action": "Upload this report. Inspect repeated slot and route-sequence cohorts first. Decode raw scalar/context transitions only for cohort-common enriched delta shapes; do not patch EBD from statistical association alone.",
+    }
+    atomic_json(evidence_root / "SUMMARY.json", summary)
+    output = report_root / EVENT_PRESENTATION_COHORT_REPORT_NAME
+    make_report_archive(evidence_root, output)
+    return output, summary
+
+
+def cmd_collect_event_presentation_cohorts(args: argparse.Namespace) -> int:
+    project_root = Path(args.project_root).expanduser().resolve()
+    if not project_root.is_dir():
+        raise RestorationError(f"Project root does not exist: {project_root}")
+    default_reports = project_root / ".local/reports/quartet_restoration"
+    report_root = Path(args.report_root).expanduser().resolve() if args.report_root else default_reports
+    require_within(report_root, default_reports, "Report root")
+    output, summary = collect_event_presentation_cohort_evidence(
+        project_root=project_root,
+        report_root=report_root,
+        minimum_repeated_cue_files=args.minimum_repeated_cue_files,
+        minimum_associated_cue_files=args.minimum_associated_cue_files,
+        minimum_enrichment_ratio=args.minimum_enrichment_ratio,
+        minimum_slot_cohort_members=args.minimum_slot_cohort_members,
+        common_shape_ratio=args.common_shape_ratio,
+        maximum_sequence_gap=args.maximum_sequence_gap,
+    )
+    print(f"Cue-positive residual events: {summary['cue_positive_residual_events']}")
+    print(f"Repeated presentation delta shapes: {summary['repeated_presentation_delta_shape_rows']}")
+    print(f"Slot cohorts: {summary['slot_cohort_rows']}")
+    print(f"Route sequence clusters: {summary['route_sequence_cluster_rows']}")
+    print(f"Report: {output}")
+    return 0
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--version", action="version", version=TOOL_VERSION)
+    sub = parser.add_subparsers(dest="command", required=True)
+
+    run = sub.add_parser(
+        "run-project",
+        help="extract, inventory and compare Original vs Quartet archives read-only",
+    )
+    run.add_argument("--project-root", required=True)
+    run.add_argument("--original-root", required=True)
+    run.add_argument("--quartet-root", required=True)
+    run.add_argument("--gust-pak", required=True)
+    run.add_argument("--archive-equivalence")
+    run.add_argument("--path-rules")
+    run.add_argument("--workspace-root")
+    run.add_argument("--report-root")
+    run.add_argument("--timeout", type=int, default=3600)
+    run.set_defaults(func=run_project)
+
+    compare = sub.add_parser(
+        "compare-inventories",
+        help="compare two previously generated inventories",
+    )
+    compare.add_argument("--source-inventory", required=True)
+    compare.add_argument("--target-inventory", required=True)
+    compare.add_argument("--output", required=True)
+    compare.set_defaults(func=cmd_compare)
+
+    evidence = sub.add_parser(
+        "collect-evidence",
+        help="scan corrected local extractions for references to Quartet-only candidate assets",
+    )
+    evidence.add_argument("--project-root", required=True)
+    evidence.add_argument("--workspace-root")
+    evidence.add_argument("--report-root")
+    evidence.add_argument("--candidate-rules")
+    evidence.add_argument(
+        "--maximum-scan-bytes",
+        type=int,
+        default=128 * 1024 * 1024,
+        help="maximum bytes scanned only for raw/unrecognized files; recognized compressed containers are streamed without a decompressed-size limit",
+    )
+    evidence.set_defaults(func=cmd_collect_evidence)
+
+    scene_effects = sub.add_parser(
+        "collect-scene-effects",
+        help="compare bath/shower/pool scenes, water/fog shaders, effects and wet-material descriptors",
+    )
+    scene_effects.add_argument("--project-root", required=True)
+    scene_effects.add_argument("--workspace-root")
+    scene_effects.add_argument("--report-root")
+    scene_effects.add_argument("--effect-material-rules")
+    scene_effects.add_argument(
+        "--maximum-raw-scan-bytes",
+        type=int,
+        default=128 * 1024 * 1024,
+        help="maximum bytes scanned for raw/unrecognized files; recognized compressed containers are streamed",
+    )
+    scene_effects.set_defaults(func=cmd_collect_scene_effects)
+
+    structural = sub.add_parser(
+        "collect-structural",
+        help="parse focused EARC member tables and scan case-preserving internal identifiers",
+    )
+    structural.add_argument("--project-root", required=True)
+    structural.add_argument("--workspace-root")
+    structural.add_argument("--report-root")
+    structural.add_argument("--candidate-rules")
+    structural.add_argument("--effect-material-rules")
+    structural.add_argument(
+        "--maximum-raw-scan-bytes",
+        type=int,
+        default=128 * 1024 * 1024,
+        help="maximum bytes scanned for raw/unrecognized binding files; recognized compressed containers are streamed",
+    )
+    structural.add_argument(
+        "--maximum-earc-bytes",
+        type=int,
+        default=DEFAULT_MAX_EARC_BYTES,
+        help="maximum decoded size of each focused EARC archive parsed in memory",
+    )
+    structural.set_defaults(func=cmd_collect_structural)
+
+    material = sub.add_parser(
+        "collect-material-parameters",
+        help="parse G1M/G1MG material and shader parameter values for focused restoration candidates",
+    )
+    material.add_argument("--project-root", required=True)
+    material.add_argument("--workspace-root")
+    material.add_argument("--report-root")
+    material.add_argument("--candidate-rules")
+    material.add_argument("--effect-material-rules")
+    material.add_argument(
+        "--maximum-earc-bytes",
+        type=int,
+        default=DEFAULT_MAX_EARC_BYTES,
+        help="maximum decoded size of each focused EARC archive parsed in memory",
+    )
+    material.set_defaults(func=cmd_collect_material_parameters)
+
+    material_deltas = sub.add_parser(
+        "collect-material-deltas",
+        help="realign G1M parameters semantically and compare Original base, Quartet base and Quartet-only variants",
+    )
+    material_deltas.add_argument("--project-root", required=True)
+    material_deltas.add_argument("--workspace-root")
+    material_deltas.add_argument("--report-root")
+    material_deltas.add_argument("--candidate-rules")
+    material_deltas.add_argument("--effect-material-rules")
+    material_deltas.add_argument(
+        "--maximum-earc-bytes",
+        type=int,
+        default=DEFAULT_MAX_EARC_BYTES,
+        help="maximum decoded size of each focused EARC archive parsed in memory",
+    )
+    material_deltas.set_defaults(func=cmd_collect_material_deltas)
+
+    shader_effects = sub.add_parser(
+        "collect-shader-effects",
+        help="inspect focused G1S/G1E/KPS render-behavior differences without exporting payloads",
+    )
+    shader_effects.add_argument("--project-root", required=True)
+    shader_effects.add_argument("--workspace-root")
+    shader_effects.add_argument("--report-root")
+    shader_effects.add_argument("--effect-material-rules")
+    shader_effects.add_argument(
+        "--maximum-earc-bytes",
+        type=int,
+        default=DEFAULT_MAX_EARC_BYTES,
+        help="maximum decoded size of each focused EARC archive parsed in memory",
+    )
+    shader_effects.add_argument(
+        "--maximum-payload-bytes",
+        type=int,
+        default=64 * 1024 * 1024,
+        help="maximum size of an individual focused shader/effect member analyzed in memory",
+    )
+    shader_effects.set_defaults(func=cmd_collect_shader_effects)
+
+    binary_deltas = sub.add_parser(
+        "collect-binary-deltas",
+        help="compare focused render payload byte shapes and DXBC chunks/instruction envelopes",
+    )
+    binary_deltas.add_argument("--project-root", required=True)
+    binary_deltas.add_argument("--workspace-root")
+    binary_deltas.add_argument("--report-root")
+    binary_deltas.add_argument("--effect-material-rules")
+    binary_deltas.add_argument(
+        "--maximum-earc-bytes",
+        type=int,
+        default=DEFAULT_MAX_EARC_BYTES,
+        help="maximum decoded size of each focused EARC archive parsed in memory",
+    )
+    binary_deltas.add_argument(
+        "--maximum-payload-bytes",
+        type=int,
+        default=64 * 1024 * 1024,
+        help="maximum size of an individual focused render payload analyzed in memory",
+    )
+    binary_deltas.set_defaults(func=cmd_collect_binary_deltas)
+
+    g1s_envelope = sub.add_parser(
+        "collect-g1s-envelope",
+        help="audit G1S outer layout and dry-run size-changing DXBC code transplants in memory",
+    )
+    g1s_envelope.add_argument("--project-root", required=True)
+    g1s_envelope.add_argument("--workspace-root")
+    g1s_envelope.add_argument("--report-root")
+    g1s_envelope.add_argument("--effect-material-rules")
+    g1s_envelope.add_argument(
+        "--maximum-earc-bytes",
+        type=int,
+        default=DEFAULT_MAX_EARC_BYTES,
+        help="maximum decoded size of each focused EARC archive parsed in memory",
+    )
+    g1s_envelope.add_argument(
+        "--maximum-payload-bytes",
+        type=int,
+        default=64 * 1024 * 1024,
+        help="maximum size of an individual direct G1S payload analyzed in memory",
+    )
+    g1s_envelope.set_defaults(func=cmd_collect_g1s_envelope)
+
+
+    g1s_prototypes = sub.add_parser(
+        "build-g1s-prototypes",
+        help="build local round-trip-validated heightfog/swater G1S code-transplant prototypes without installing them",
+    )
+    g1s_prototypes.add_argument("--project-root", required=True)
+    g1s_prototypes.add_argument("--workspace-root")
+    g1s_prototypes.add_argument("--report-root")
+    g1s_prototypes.add_argument("--effect-material-rules")
+    g1s_prototypes.add_argument(
+        "--maximum-earc-bytes",
+        type=int,
+        default=DEFAULT_MAX_EARC_BYTES,
+        help="maximum decoded size of each focused EARC archive parsed in memory",
+    )
+    g1s_prototypes.add_argument(
+        "--maximum-payload-bytes",
+        type=int,
+        default=64 * 1024 * 1024,
+        help="maximum size of an individual direct G1S payload used for local prototype generation",
+    )
+    g1s_prototypes.set_defaults(func=cmd_build_g1s_prototypes)
+
+    dxbc_reflection = sub.add_parser(
+        "collect-dxbc-reflection",
+        help="decode focused DXBC resource bindings, constant-buffer layouts and IO signatures",
+    )
+    dxbc_reflection.add_argument("--project-root", required=True)
+    dxbc_reflection.add_argument("--workspace-root")
+    dxbc_reflection.add_argument("--report-root")
+    dxbc_reflection.add_argument("--effect-material-rules")
+    dxbc_reflection.add_argument(
+        "--maximum-earc-bytes",
+        type=int,
+        default=DEFAULT_MAX_EARC_BYTES,
+        help="maximum decoded size of each focused EARC archive parsed in memory",
+    )
+    dxbc_reflection.add_argument(
+        "--maximum-payload-bytes",
+        type=int,
+        default=64 * 1024 * 1024,
+        help="maximum size of an individual direct shader payload analyzed in memory",
+    )
+    dxbc_reflection.set_defaults(func=cmd_collect_dxbc_reflection)
+
+
+    presentation = sub.add_parser(
+        "collect-presentation-surfaces",
+        help="map godray/lightshaft occlusion and scene costume-state/substitution evidence without installing prototypes",
+    )
+    presentation.add_argument("--project-root", required=True)
+    presentation.add_argument("--workspace-root")
+    presentation.add_argument("--report-root")
+    presentation.add_argument("--candidate-rules")
+    presentation.add_argument("--effect-material-rules")
+    presentation.add_argument("--restoration-dimensions")
+    presentation.add_argument(
+        "--maximum-earc-bytes", type=int, default=DEFAULT_MAX_EARC_BYTES,
+        help="maximum decoded size of each focused EARC archive parsed in memory",
+    )
+    presentation.add_argument(
+        "--maximum-payload-bytes", type=int, default=64 * 1024 * 1024,
+        help="maximum individual preset/effect member payload analyzed in memory",
+    )
+    presentation.set_defaults(func=cmd_collect_presentation_surfaces)
+
+    event_identifiers = sub.add_parser(
+        "collect-event-identifiers",
+        help="scan numeric OID/name-hash hypotheses and align changed event words after presentation-surface triage",
+    )
+    event_identifiers.add_argument("--project-root", required=True)
+    event_identifiers.add_argument("--workspace-root")
+    event_identifiers.add_argument("--report-root")
+    event_identifiers.add_argument("--candidate-rules")
+    event_identifiers.add_argument(
+        "--maximum-earc-bytes", type=int, default=DEFAULT_MAX_EARC_BYTES,
+        help="maximum decoded size of each candidate EARC archive parsed in memory",
+    )
+    event_identifiers.add_argument(
+        "--maximum-event-bytes", type=int, default=2 * 1024 * 1024,
+        help="maximum size of each changed event binary used for word alignment",
+    )
+    event_identifiers.set_defaults(func=cmd_collect_event_identifiers)
+
+    event_structure = sub.add_parser(
+        "collect-event-structure",
+        help="separate EBD internal relocation pointers and string-layout noise from focused binary record deltas",
+    )
+    event_structure.add_argument("--project-root", required=True)
+    event_structure.add_argument("--workspace-root")
+    event_structure.add_argument("--report-root")
+    event_structure.add_argument(
+        "--maximum-event-bytes", type=int, default=2 * 1024 * 1024,
+        help="maximum size of each changed EBD analyzed for anchors, relocation pointers and record deltas",
+    )
+    event_structure.add_argument(
+        "--anchor-block-size", type=int, default=16,
+        help="exact unique byte-window size used only to map source offsets to target offsets",
+    )
+    event_structure.add_argument(
+        "--anchor-stride", type=int, default=1,
+        help="stride for exact unique anchor discovery",
+    )
+    event_structure.set_defaults(func=cmd_collect_event_structure)
+
+    event_records = sub.add_parser(
+        "collect-event-records",
+        help="correct anchor-gap artefacts, cluster true event-record deltas and link focused pool/shower/bathroom identifiers",
+    )
+    event_records.add_argument("--project-root", required=True)
+    event_records.add_argument("--workspace-root")
+    event_records.add_argument("--report-root")
+    event_records.add_argument("--effect-material-rules")
+    event_records.add_argument(
+        "--maximum-event-bytes", type=int, default=2 * 1024 * 1024,
+        help="maximum size of each changed EBD/EPD/BSB scanned for corrected record and scene-linkage evidence",
+    )
+    event_records.add_argument(
+        "--anchor-block-size", type=int, default=16,
+        help="exact unique byte-window size used to correct and cluster event-record deltas",
+    )
+    event_records.add_argument(
+        "--anchor-stride", type=int, default=1,
+        help="stride for exact unique anchor discovery",
+    )
+    event_records.set_defaults(func=cmd_collect_event_records)
+
+    event_families = sub.add_parser(
+        "collect-event-families",
+        help="pair Japanese EBM message files with EBD data files and scan strict technical scene/presentation identifiers",
+    )
+    event_families.add_argument("--project-root", required=True)
+    event_families.add_argument("--workspace-root")
+    event_families.add_argument("--report-root")
+    event_families.add_argument("--effect-material-rules")
+    event_families.add_argument(
+        "--maximum-payload-bytes", type=int, default=8 * 1024 * 1024,
+        help="maximum size of each EBM/EPD/BSB payload scanned for strict ASCII technical identifiers",
+    )
+    event_families.set_defaults(func=cmd_collect_event_families)
+
+
+    event_opcodes = sub.add_parser(
+        "collect-event-opcodes",
+        help="infer conservative EBD record framing/opcode hypotheses after direct event identifiers are exhausted",
+    )
+    event_opcodes.add_argument("--project-root", required=True)
+    event_opcodes.add_argument("--workspace-root")
+    event_opcodes.add_argument("--report-root")
+    event_opcodes.add_argument(
+        "--maximum-event-bytes", type=int, default=2 * 1024 * 1024,
+        help="maximum size of each EBD used for framing and opcode hypothesis testing",
+    )
+    event_opcodes.add_argument(
+        "--discovery-files", type=int, default=256,
+        help="maximum deterministic EBD pair count used to discover explicit-size record layouts",
+    )
+    event_opcodes.add_argument(
+        "--maximum-start-offset", type=int, default=64,
+        help="maximum candidate record-stream start offset tested during layout discovery",
+    )
+    event_opcodes.set_defaults(func=cmd_collect_event_opcodes)
+
+    event_schema = sub.add_parser(
+        "collect-event-schema",
+        help="profile the actual self-describing EBD header and length-prefixed field grammar after rejecting partial opcode parses",
+    )
+    event_schema.add_argument("--project-root", required=True)
+    event_schema.add_argument("--workspace-root")
+    event_schema.add_argument("--report-root")
+    event_schema.add_argument(
+        "--maximum-event-bytes", type=int, default=2 * 1024 * 1024,
+        help="maximum size of each canonical Japanese EBD used for schema evidence",
+    )
+    event_schema.add_argument(
+        "--maximum-token-length", type=int, default=1024,
+        help="maximum bounded u32-length-prefixed text token retained as structural metadata",
+    )
+    event_schema.set_defaults(func=cmd_collect_event_schema)
+
+    event_tag_grammar = sub.add_parser(
+        "collect-event-tag-grammar",
+        help="profile stable post-header high-u16 tag candidates after correcting free length-token scan noise",
+    )
+    event_tag_grammar.add_argument("--project-root", required=True)
+    event_tag_grammar.add_argument("--workspace-root")
+    event_tag_grammar.add_argument("--report-root")
+    event_tag_grammar.add_argument(
+        "--maximum-event-bytes", type=int, default=2 * 1024 * 1024,
+        help="maximum size of each canonical Japanese EBD used for tagged-word grammar evidence",
+    )
+    event_tag_grammar.add_argument(
+        "--maximum-words", type=int, default=1_000_000,
+        help="maximum number of post-header aligned u32 words profiled per EBD",
+    )
+    event_tag_grammar.set_defaults(func=cmd_collect_event_tag_grammar)
+
+    event_tag_migrations = sub.add_parser(
+        "collect-event-tag-migrations",
+        help="filter broad cross-family EBD tag schema migrations and retain rare event-local residuals",
+    )
+    event_tag_migrations.add_argument("--project-root", required=True)
+    event_tag_migrations.add_argument("--report-root")
+    event_tag_migrations.add_argument("--minimum-broad-files", type=int, default=32)
+    event_tag_migrations.add_argument("--minimum-broad-support-ratio", type=float, default=0.08)
+    event_tag_migrations.add_argument("--minimum-broad-route-families", type=int, default=8)
+    event_tag_migrations.add_argument("--minimum-recurrent-files", type=int, default=12)
+    event_tag_migrations.add_argument("--minimum-recurrent-route-families", type=int, default=2)
+    event_tag_migrations.set_defaults(func=cmd_collect_event_tag_migrations)
+
+    event_scene_cues = sub.add_parser(
+        "collect-event-scene-cues",
+        help="correlate generic Japanese bath/costume/wet/steam/light scene cues with rare EBD tag residuals without exporting dialogue",
+    )
+    event_scene_cues.add_argument("--project-root", required=True)
+    event_scene_cues.add_argument("--workspace-root")
+    event_scene_cues.add_argument("--report-root")
+    event_scene_cues.add_argument("--cue-rules")
+    event_scene_cues.add_argument("--maximum-payload-bytes", type=int, default=8 * 1024 * 1024)
+    event_scene_cues.add_argument("--minimum-broad-files", type=int, default=32)
+    event_scene_cues.add_argument("--minimum-broad-ratio", type=float, default=0.08)
+    event_scene_cues.add_argument("--minimum-broad-route-families", type=int, default=8)
+    event_scene_cues.add_argument("--minimum-recurrent-files", type=int, default=8)
+    event_scene_cues.add_argument("--minimum-recurrent-route-families", type=int, default=2)
+    event_scene_cues.set_defaults(func=cmd_collect_event_scene_cues)
+
+    event_presentation_cohorts = sub.add_parser(
+        "collect-event-presentation-cohorts",
+        help="group cue-linked rare EBD residuals by enriched delta shapes, repeated event slots and route-local scene sequences",
+    )
+    event_presentation_cohorts.add_argument("--project-root", required=True)
+    event_presentation_cohorts.add_argument("--report-root")
+    event_presentation_cohorts.add_argument("--minimum-repeated-cue-files", type=int, default=3)
+    event_presentation_cohorts.add_argument("--minimum-associated-cue-files", type=int, default=2)
+    event_presentation_cohorts.add_argument("--minimum-enrichment-ratio", type=float, default=1.5)
+    event_presentation_cohorts.add_argument("--minimum-slot-cohort-members", type=int, default=2)
+    event_presentation_cohorts.add_argument("--common-shape-ratio", type=float, default=0.75)
+    event_presentation_cohorts.add_argument("--maximum-sequence-gap", type=int, default=50)
+    event_presentation_cohorts.set_defaults(func=cmd_collect_event_presentation_cohorts)
+    return parser
+
+
+def main() -> int:
+    parser = build_parser()
+    args = parser.parse_args()
+    try:
+        return int(args.func(args))
+    except RestorationError as exc:
+        eprint(f"ERROR: {exc}")
+        return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

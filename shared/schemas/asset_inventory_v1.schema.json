@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "br_asset_inventory_v1.schema.json",
+  "title": "Blue Reflection asset inventory v1",
+  "type": "object",
+  "required": [
+    "type",
+    "format_version",
+    "target_id",
+    "root",
+    "files"
+  ],
+  "properties": {
+    "type": {
+      "const": "br_asset_inventory"
+    },
+    "format_version": {
+      "const": 1
+    },
+    "files": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "path",
+          "normalized_path",
+          "size",
+          "sha256",
+          "extension"
+        ]
+      }
+    }
+  }
+}

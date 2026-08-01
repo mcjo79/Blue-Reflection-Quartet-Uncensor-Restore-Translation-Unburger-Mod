@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "br_composition_profile_v1.schema.json",
+  "title": "Blue Reflection composition profile v1",
+  "type": "object",
+  "required": [
+    "type",
+    "format_version",
+    "profile_id",
+    "project",
+    "target_id",
+    "status",
+    "enabled_modules"
+  ],
+  "properties": {
+    "type": {
+      "const": "br_composition_profile"
+    },
+    "format_version": {
+      "const": 1
+    },
+    "enabled_modules": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1,
+      "uniqueItems": true
+    }
+  }
+}

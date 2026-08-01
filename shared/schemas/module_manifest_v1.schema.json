@@ -1,0 +1,67 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "br_module_manifest_v1.schema.json",
+  "title": "Blue Reflection module manifest v1",
+  "type": "object",
+  "required": [
+    "type",
+    "format_version",
+    "module_id",
+    "project",
+    "module_type",
+    "status",
+    "default_enabled",
+    "targets",
+    "dependencies",
+    "distribution_policy",
+    "build_namespace"
+  ],
+  "properties": {
+    "type": {
+      "const": "br_module_manifest"
+    },
+    "format_version": {
+      "const": 1
+    },
+    "module_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "project": {
+      "type": "string",
+      "minLength": 1
+    },
+    "module_type": {
+      "enum": [
+        "translation",
+        "restoration",
+        "dlc_adapter"
+      ]
+    },
+    "default_enabled": {
+      "type": "boolean"
+    },
+    "targets": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1,
+      "uniqueItems": true
+    },
+    "dependencies": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true
+    },
+    "distribution_policy": {
+      "type": "object"
+    },
+    "build_namespace": {
+      "type": "string",
+      "minLength": 1
+    }
+  }
+}

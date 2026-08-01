@@ -1,0 +1,6 @@
+rule_id	status	normalized_path_glob	family	priority	counterpart_templates	note
+quartet_bath_towel	active	data/x64/character/item_bathtowel_*/*	bath_towel_addition	critical		Quartet-only bath-towel assets; locate scene bindings before deciding whether the item or its reference must be removed.
+quartet_swimsuit_prop	active	data/x64/character/item_swimsuit/*	shower_swimsuit_addition	critical		Quartet-only swimsuit prop; locate event or table references and confirm its role in altered shower or bath scenes.
+quartet_underwear_variant_2	active	data/x64/character/pc*/pc*_udw2.*	underwear_coverage_variant	critical	{character}_udw,{character}_tng,{character}_nkd	Quartet-only second underwear/coverage variant; compare its binding with the retained original variants.
+quartet_underwear_variant_3	active	data/x64/character/pc*/pc*_udw3.*	underwear_coverage_variant	critical	{character}_udw,{character}_tng,{character}_nkd	Quartet-only third underwear/coverage variant; compare its binding with the retained original variants.
+quartet_reflector_wet	active	data/x64/character/pc*/pc*_rfl_w.*	wet_reflector_variant	high	{character}_rfl	Quartet-only wet Reflector texture/descriptor variant; verify whether it changes clothing transparency or only supports remastered materials.

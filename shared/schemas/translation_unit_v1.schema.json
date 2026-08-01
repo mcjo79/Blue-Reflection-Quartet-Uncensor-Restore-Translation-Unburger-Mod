@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "br_translation_unit_v1.schema.json",
+  "title": "Blue Reflection translation unit v1",
+  "description": "Common minimum schema for event and system translation units. Target paths are platform adapters and are not part of the logical translation identity.",
+  "oneOf": [
+    {
+      "type": "object",
+      "required": ["type", "format_version", "project", "category", "logical_path", "source", "targets", "records"],
+      "properties": {
+        "type": {"const": "br_event_translation_unit"},
+        "format_version": {"const": 1},
+        "category": {"const": "event"},
+        "records": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["logical_id", "jp", "en_original", "en", "alignment"],
+            "properties": {
+              "logical_id": {"type": "string"},
+              "jp": {"type": "string"},
+              "en_original": {"type": ["string", "null"]},
+              "en_auxiliary": {"type": ["string", "null"]},
+              "en": {"type": "string"}
+            }
+          }
+        }
+      }
+    },
+    {
+      "type": "object",
+      "required": ["type", "format_version", "project", "category", "logical_path", "source", "targets", "records"],
+      "properties": {
+        "type": {"const": "br_system_translation_unit"},
+        "format_version": {"const": 1},
+        "category": {"const": "system"},
+        "records": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["logical_id", "jp", "en_original", "en", "alignment"],
+            "properties": {
+              "logical_id": {"type": "string"},
+              "jp": {"type": "string"},
+              "en_original": {"type": ["string", "null"]},
+              "en_auxiliary": {"type": ["string", "null"]},
+              "en": {"type": "string"}
+            }
+          }
+        }
+      }
+    }
+  ]
+}

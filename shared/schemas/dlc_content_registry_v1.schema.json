@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "br_dlc_content_registry_v1.schema.json",
+  "title": "Blue Reflection DLC content registry v1",
+  "type": "object",
+  "required": [
+    "type",
+    "format_version",
+    "module_id",
+    "items"
+  ],
+  "properties": {
+    "type": {
+      "const": "br_dlc_content_registry"
+    },
+    "format_version": {
+      "const": 1
+    },
+    "items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "content_id",
+          "content_type",
+          "source",
+          "source_ownership",
+          "quartet_status",
+          "dependencies",
+          "test_status"
+        ]
+      }
+    }
+  }
+}

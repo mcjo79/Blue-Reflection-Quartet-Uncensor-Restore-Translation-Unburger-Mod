@@ -1,0 +1,43 @@
+workstream_id	path_prefix	permission	note
+core	config/	write	Shared project configuration
+core	distribution/	write	Bundle formats and public distribution core
+core	Blue_Reflection_Patcher/cmd/	write	Patcher CLI
+core	Blue_Reflection_Patcher/internal/bundle/	write	Bundle reader
+core	Blue_Reflection_Patcher/internal/detect/	write	Game detection
+core	Blue_Reflection_Patcher/internal/model/	write	Shared patcher models
+core	Blue_Reflection_Patcher/internal/plan/	write	Shared planner
+core	Blue_Reflection_Patcher/internal/targets/	write	Shared targets
+core	Blue_Reflection_Patcher/go.mod	write	Go module definition
+core	Blue_Reflection_Text_Tool/br_distribution_tool.py	write	Distribution validation
+core	Blue_Reflection_Text_Tool/br_extension_tool.py	write	Shared project/module validation
+core	Blue_Reflection_Text_Tool/workstream_update.py	write	Generic independent updater
+core	Blue_Reflection_Text_Tool/workstream_guard.py	write	Parallel workstream validation
+core	Blue_Reflection_Text_Tool/workstream_lock.sh	write	Runtime lock helper
+core	shared/schemas/	write	Shared schemas
+core	.github/	write	Cross-platform CI
+core	START_HERE.sh	write	Global status only
+core	04_validate_project_base.sh	write	Global validation
+core	05_validate_patcher_architecture.sh	write	Global patcher validation
+core	apply_workstream_update.sh	write	Generic workstream updater wrapper
+translation_tooling	titles/blue_reflection/modules/translation/	write	First-game translation module integration
+translation_tooling	titles/second_light/modules/translation/	write	Second Light translation module integration
+translation_tooling	Blue_Reflection_Text_Tool/br_text_tool.py	write	Text parser/export/import code
+translation_tooling	workstreams/translation_tooling/	write	Translation technical workflow and status
+translation_tooling	01_inventory_archives.sh	write	Text-source discovery workflow
+translation_tooling	02_extract_text_sources.sh	write	Text extraction workflow
+translation_tooling	03_create_translation_base.sh	write	Translation database export workflow
+translation_tooling	Blue_Reflection_Patcher/internal/operations/translation/	write	Translation patcher operations
+translation	titles/blue_reflection/translation/	write	Canonical first-game translated records
+translation	titles/second_light/translation/	write	Canonical Second Light translated records
+translation	workstreams/translation/	write	Translation-content status and changelog only
+quartet_restoration	titles/blue_reflection/modules/quartet_restoration/	write	Restoration maps and registry
+quartet_restoration	Blue_Reflection_Text_Tool/br_restoration_tool.py	write	Restoration inventory/diff tooling
+quartet_restoration	workstreams/quartet_restoration/	write	Restoration workflow and status
+quartet_restoration	Blue_Reflection_Patcher/internal/operations/restoration/	write	Future patcher restoration operations
+quartet_legacy_dlc	titles/blue_reflection/modules/quartet_legacy_dlc/	write	Legacy DLC maps and registry
+quartet_legacy_dlc	Blue_Reflection_Text_Tool/br_dlc_tool.py	write	Future DLC tooling
+quartet_legacy_dlc	workstreams/quartet_legacy_dlc/	write	Deferred DLC workflow and status
+quartet_legacy_dlc	Blue_Reflection_Patcher/internal/operations/dlc/	write	Future patcher DLC operations
+core	.gitignore	write	Public repository exclusion policy
+core	.gitattributes	write	Repository line-ending and binary-file policy
+core	06_validate_parallel_workstreams.sh	write	Parallel workstream validation wrapper

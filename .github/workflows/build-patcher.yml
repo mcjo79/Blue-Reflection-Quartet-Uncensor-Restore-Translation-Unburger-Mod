@@ -1,0 +1,48 @@
+name: Build Blue Reflection Patcher
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "Blue_Reflection_Patcher/**"
+      - ".github/workflows/build-patcher.yml"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: Blue_Reflection_Patcher
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.23.x"
+      - run: go test ./...
+
+  build:
+    needs: test
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - goos: linux
+            goarch: amd64
+            output: blue-reflection-patcher-linux-x86_64
+          - goos: windows
+            goarch: amd64
+            output: blue-reflection-patcher-windows-x86_64.exe
+    defaults:
+      run:
+        working-directory: Blue_Reflection_Patcher
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.23.x"
+      - run: mkdir -p ../dist/patcher
+      - run: GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o ../dist/patcher/${{ matrix.output }} ./cmd/brpatcher
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.output }}
+          path: dist/patcher/${{ matrix.output }}

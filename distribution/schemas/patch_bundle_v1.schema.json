@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "br_patch_bundle_v1.schema.json",
+  "title": "Blue Reflection unified patch bundle v1",
+  "type": "object",
+  "required": ["type", "format_version", "bundle_id", "bundle_version", "compatibility", "targets", "modules", "operations"],
+  "properties": {
+    "type": {"const": "br_patch_bundle"},
+    "format_version": {"const": 1},
+    "compatibility": {
+      "type": "object",
+      "required": ["mode", "require_whole_archive_hash", "preserve_unknown_entries", "allow_known_prior_outputs", "structured_merge_preferred"],
+      "properties": {
+        "mode": {"const": "content_aware_rebuild"},
+        "require_whole_archive_hash": {"const": false},
+        "preserve_unknown_entries": {"const": true}
+      }
+    },
+    "modules": {"type": "array"},
+    "operations": {"type": "array"}
+  }
+}

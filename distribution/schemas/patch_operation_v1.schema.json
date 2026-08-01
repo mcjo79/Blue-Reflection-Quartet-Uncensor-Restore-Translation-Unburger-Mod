@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "br_patch_operation_v1.schema.json",
+  "title": "Blue Reflection content-aware patch operation v1",
+  "type": "object",
+  "required": ["operation_id", "module_id", "target_id", "archive_path", "entry_path", "kind", "conflict_policy", "base_variants", "recognized_output_sha256"],
+  "properties": {
+    "kind": {"enum": ["merge_ebm_records", "merge_xml_records", "replace_entry", "copy_owned_entry", "add_entry", "delete_entry", "edit_table_records"]},
+    "conflict_policy": {"enum": ["structured_merge", "known_base_or_prompt", "backup_and_replace", "skip_unknown", "user_choice"]}
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "br_game_detection_v1.schema.json",
+  "title": "Blue Reflection detected installation v1",
+  "type": "object",
+  "required": ["target_id", "display_name", "root", "source", "confidence"],
+  "properties": {
+    "source": {"enum": ["steam_manifest", "manual_root"]},
+    "confidence": {"enum": ["steam_manifest_and_markers", "markers_only"]}
+  }
+}

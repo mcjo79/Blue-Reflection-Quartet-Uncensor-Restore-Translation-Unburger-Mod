@@ -1,0 +1,39 @@
+rule_id	status	domain	priority	cue_label	literal	encodings	note
+bath_ofuro	active	bath_or_hot_spring	critical	o-furo	お風呂	cp932,utf-8,utf-16le,utf-16be	Generic bath-scene cue; not a scene binding by itself.
+bath_furoba	active	bath_or_hot_spring	critical	bathroom	風呂場	cp932,utf-8,utf-16le,utf-16be	Generic bath-location cue.
+bath_yokushitsu	active	bath_or_hot_spring	critical	bathing room	浴室	cp932,utf-8,utf-16le,utf-16be	Generic bathing-room cue.
+bath_nyuuyoku	active	bath_or_hot_spring	high	bathing	入浴	cp932,utf-8,utf-16le,utf-16be	Generic bathing-action cue.
+bath_yubune	active	bath_or_hot_spring	high	bathtub	湯船	cp932,utf-8,utf-16le,utf-16be	Generic bathtub cue.
+bath_bathtub	active	bath_or_hot_spring	high	bathtub loanword	バスタブ	cp932,utf-8,utf-16le,utf-16be	Generic bathtub cue.
+bath_onsen	active	bath_or_hot_spring	high	hot spring	温泉	cp932,utf-8,utf-16le,utf-16be	Hot-spring cue; may include unrelated dialogue references.
+shower	active	shower	critical	shower	シャワー	cp932,utf-8,utf-16le,utf-16be	Direct shower-scene cue.
+pool	active	pool_or_swimming	critical	pool	プール	cp932,utf-8,utf-16le,utf-16be	Direct pool-scene cue.
+swimming	active	pool_or_swimming	medium	swimming	水泳	cp932,utf-8,utf-16le,utf-16be	Swimming cue; frequency controls broad references.
+swimsuit	active	costume_or_coverage	critical	swimsuit	水着	cp932,utf-8,utf-16le,utf-16be	Costume/coverage cue.
+bath_towel	active	costume_or_coverage	critical	bath towel	バスタオル	cp932,utf-8,utf-16le,utf-16be	Direct bath-towel cue.
+towel	active	costume_or_coverage	high	towel	タオル	cp932,utf-8,utf-16le,utf-16be	Generic towel cue; bath-towel matches may overlap and are retained as separate rules.
+underwear	active	costume_or_coverage	high	underwear	下着	cp932,utf-8,utf-16le,utf-16be	Underwear/coverage cue.
+naked	active	costume_or_coverage	critical	naked	裸	cp932,utf-8,utf-16le,utf-16be	Nudity/coverage cue; no automatic censorship conclusion.
+change_clothes	active	clothing_state	critical	change clothes	着替え	cp932,utf-8,utf-16le,utf-16be	Clothing-state or alternate-costume cue.
+remove_clothes	active	clothing_state	critical	remove clothes	服を脱	cp932,utf-8,utf-16le,utf-16be	Explicit clothing-removal phrase stem.
+put_on_clothes	active	clothing_state	high	put on clothes	服を着	cp932,utf-8,utf-16le,utf-16be	Explicit clothing-wearing phrase stem.
+undress_verb	active	clothing_state	high	undress	脱い	cp932,utf-8,utf-16le,utf-16be	Inflected undressing verb stem; may produce broader dialogue hits.
+wearing_nothing	active	clothing_state	critical	wearing nothing	何も着て	cp932,utf-8,utf-16le,utf-16be	Explicit clothing-state phrase stem.
+wet_kanji	active	wet_fabric_or_transparency	critical	wet	濡れ	cp932,utf-8,utf-16le,utf-16be	Wet-clothing or wet-scene cue.
+wet_kana	active	wet_fabric_or_transparency	high	wet kana	ぬれ	cp932,utf-8,utf-16le,utf-16be	Kana spelling of wet cue.
+soaking_wet	active	wet_fabric_or_transparency	critical	soaking wet	びしょ濡れ	cp932,utf-8,utf-16le,utf-16be	Strong wet-clothing cue.
+see_through	active	wet_fabric_or_transparency	critical	see-through	透け	cp932,utf-8,utf-16le,utf-16be	Direct translucency/see-through cue.
+water_drops	active	wet_fabric_or_transparency	medium	water drops	水滴	cp932,utf-8,utf-16le,utf-16be	Wet-surface cue.
+steam_yuge	active	steam_or_vapor	critical	bath steam	湯気	cp932,utf-8,utf-16le,utf-16be	Direct bath/shower steam cue.
+steam_jouki	active	steam_or_vapor	high	steam vapor	蒸気	cp932,utf-8,utf-16le,utf-16be	Generic steam/vapor cue.
+mist	active	steam_or_vapor	medium	mist	霧	cp932,utf-8,utf-16le,utf-16be	Mist/fog cue; corpus frequency controls broad uses.
+fogged_up	active	steam_or_vapor	high	fogged up	曇っ	cp932,utf-8,utf-16le,utf-16be	Fogged/steamed surface phrase stem.
+light_ray	active	godray_or_light_occlusion	high	light ray	光線	cp932,utf-8,utf-16le,utf-16be	Specific light-ray cue.
+backlight	active	godray_or_light_occlusion	high	backlight	逆光	cp932,utf-8,utf-16le,utf-16be	Backlighting cue.
+light_streak	active	godray_or_light_occlusion	high	streak of light	光の筋	cp932,utf-8,utf-16le,utf-16be	Specific godray-like phrase.
+dazzling_kanji	active	godray_or_light_occlusion	medium	dazzling	眩し	cp932,utf-8,utf-16le,utf-16be	Dazzling-light phrase stem.
+dazzling_kana	active	godray_or_light_occlusion	medium	dazzling kana	まぶし	cp932,utf-8,utf-16le,utf-16be	Kana spelling of dazzling-light phrase stem.
+light_shining_in	active	godray_or_light_occlusion	high	light shining in	光が差し	cp932,utf-8,utf-16le,utf-16be	Specific incoming-light phrase stem.
+clear_water	active	water_visibility	high	clear water	透き通った水	cp932,utf-8,utf-16le,utf-16be	Specific water-transparency phrase.
+water_surface	active	water_visibility	medium	water surface	水面	cp932,utf-8,utf-16le,utf-16be	Water-surface cue; may include unrelated scenes.
+underwater	active	water_visibility	medium	underwater	水中	cp932,utf-8,utf-16le,utf-16be	Underwater visibility cue.

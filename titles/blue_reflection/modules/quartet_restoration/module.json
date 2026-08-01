@@ -1,0 +1,34 @@
+{
+  "type": "br_module_manifest",
+  "format_version": 1,
+  "module_id": "quartet_restoration",
+  "project": "blue_reflection",
+  "module_type": "restoration",
+  "status": "planned_after_text_repack",
+  "default_enabled": false,
+  "targets": [
+    "blue_reflection_quartet",
+    "blue_reflection_quartet_switch"
+  ],
+  "dependencies": [],
+  "source_requirements": [
+    "legally_installed_blue_reflection_original",
+    "legally_installed_blue_reflection_quartet"
+  ],
+  "registries": {
+    "items": "titles/blue_reflection/modules/quartet_restoration/registry/restoration_items.json"
+  },
+  "mapping_sources": [
+    "config/quartet_archive_equivalence.tsv",
+    "titles/blue_reflection/modules/quartet_restoration/mappings/path_rules.tsv",
+    "titles/blue_reflection/modules/quartet_restoration/mappings/candidate_rules.tsv",
+    "titles/blue_reflection/modules/quartet_restoration/mappings/effect_material_rules.tsv",
+    "titles/blue_reflection/modules/quartet_restoration/mappings/restoration_dimensions.tsv"
+  ],
+  "distribution_policy": {
+    "contains_proprietary_assets": false,
+    "migration_reads_owned_installations_locally": true,
+    "public_package": "tool_mappings_owned_scripts_only"
+  },
+  "build_namespace": "quartet_restoration"
+}

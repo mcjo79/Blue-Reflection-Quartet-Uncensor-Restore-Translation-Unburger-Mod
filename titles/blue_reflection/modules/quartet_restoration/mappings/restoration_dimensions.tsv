@@ -1,0 +1,8 @@
+dimension_id	status	priority	evidence_surfaces	note
+costume_and_coverage_variants	active	critical	character assets, materials, textures	Quartet-only or changed clothing/coverage variants; never reduce this to texture-only review.
+scene_costume_state_binding	active	critical	event EBD/EPD, OID fingerprints, scene descriptors	Detect whether a scene forces clothing to be worn or removed through binary bindings.
+alternate_costume_substitution	active	critical	event bindings, character OIDs, costume family mappings	Detect scenes where Quartet selects a completely different outfit from Original.
+steam_or_vapor_occlusion	active	critical	particles, fog shaders, scene effects	Additional steam, vapor, mist or smoke used to hide character visibility.
+godray_or_lightshaft_occlusion	active	critical	lightshaft/bloom presets, post-effects, scene effect members	Additional godrays-like light shafts, beams, bloom or glare used as an occluding layer.
+water_visibility_and_transparency	active	critical	water shaders, materials, scene settings	Reduced visibility through water or altered water transparency/refraction.
+wet_fabric_translucency_or_material_response	active	critical	G1M materials, wet variants, effects	Reduced see-through behavior or changed wet-fabric material assignment.

@@ -1,0 +1,31 @@
+{
+  "type": "br_module_manifest",
+  "format_version": 1,
+  "module_id": "quartet_legacy_dlc",
+  "project": "blue_reflection",
+  "module_type": "dlc_adapter",
+  "status": "planned_after_text_repack",
+  "default_enabled": false,
+  "targets": [
+    "blue_reflection_quartet",
+    "blue_reflection_quartet_switch"
+  ],
+  "dependencies": [],
+  "source_requirements": [
+    "legally_installed_blue_reflection_original",
+    "legally_owned_and_installed_original_dlc",
+    "legally_installed_blue_reflection_quartet"
+  ],
+  "registries": {
+    "content": "titles/blue_reflection/modules/quartet_legacy_dlc/registry/content_registry.json"
+  },
+  "mapping_sources": [
+    "titles/blue_reflection/modules/quartet_legacy_dlc/mappings/content_bindings.json"
+  ],
+  "distribution_policy": {
+    "contains_paid_dlc_assets": false,
+    "migration_reads_owned_dlc_locally": true,
+    "public_package": "extractor_mappings_converters_integrations_only"
+  },
+  "build_namespace": "quartet_legacy_dlc"
+}

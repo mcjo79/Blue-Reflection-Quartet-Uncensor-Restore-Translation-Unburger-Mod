@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "br_patch_state_v1.schema.json",
+  "title": "Blue Reflection local patch state v1",
+  "type": "object",
+  "required": ["type", "format_version", "game", "installed_modules", "archives", "operations", "transaction"],
+  "properties": {
+    "type": {"const": "br_patch_state"},
+    "format_version": {"const": 1},
+    "game": {"type": "object"},
+    "installed_modules": {"type": "array"},
+    "archives": {"type": "array"},
+    "operations": {"type": "array"},
+    "transaction": {"type": "object"}
+  }
+}

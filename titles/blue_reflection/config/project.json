@@ -1,0 +1,40 @@
+{
+  "format_version": 3,
+  "project_id": "blue_reflection",
+  "title": "BLUE REFLECTION",
+  "translation_set": "blue_reflection",
+  "canonical_target": "blue_reflection_original",
+  "record_identity": "platform_neutral_logical_id",
+  "targets": [
+    {
+      "id": "blue_reflection_original",
+      "platform": "pc",
+      "release": "original_2017",
+      "role": "canonical",
+      "status": "active",
+      "translation_source_of_truth": true
+    },
+    {
+      "id": "blue_reflection_quartet",
+      "platform": "pc",
+      "release": "quartet",
+      "role": "compatibility",
+      "status": "active",
+      "translation_source_of_truth": false
+    },
+    {
+      "id": "blue_reflection_quartet_switch",
+      "platform": "switch",
+      "release": "quartet",
+      "role": "compatibility",
+      "status": "planned_unverified",
+      "translation_source_of_truth": false
+    }
+  ],
+  "modules": [
+    "blue_reflection_translation",
+    "quartet_restoration",
+    "quartet_legacy_dlc"
+  ],
+  "composition_profiles_root": "../profiles"
+}

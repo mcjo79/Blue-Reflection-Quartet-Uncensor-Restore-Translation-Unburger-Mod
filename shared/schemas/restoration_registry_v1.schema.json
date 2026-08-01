@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "br_restoration_registry_v1.schema.json",
+  "title": "Blue Reflection restoration registry v1",
+  "type": "object",
+  "required": [
+    "type",
+    "format_version",
+    "module_id",
+    "items"
+  ],
+  "properties": {
+    "type": {
+      "const": "br_restoration_registry"
+    },
+    "format_version": {
+      "const": 1
+    },
+    "items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "restoration_id",
+          "status",
+          "category",
+          "source_files",
+          "target_files",
+          "dependencies",
+          "test_status",
+          "enabled_by_default"
+        ]
+      }
+    }
+  }
+}

@@ -1,0 +1,82 @@
+{
+  "type": "br_patch_bundle",
+  "format_version": 1,
+  "bundle_id": "blue_reflection_unburger",
+  "bundle_version": "0.0.0-development",
+  "display_name": "Blue Reflection Unburger Patch",
+  "compatibility": {
+    "mode": "content_aware_rebuild",
+    "require_whole_archive_hash": false,
+    "preserve_unknown_entries": true,
+    "allow_known_prior_outputs": true,
+    "structured_merge_preferred": true
+  },
+  "targets": [
+    {
+      "target_id": "blue_reflection_original",
+      "archive_format": "gust_pak_a18",
+      "required_paths": ["DATA/PACK01.PAK", "DATA/PACK02_1.PAK", "DATA/PACK02_3.PAK"]
+    },
+    {
+      "target_id": "blue_reflection_quartet",
+      "archive_format": "gust_pak_a22_a24_key",
+      "required_paths": ["Data/PACK11.PAK", "Data/PACK12.PAK"]
+    },
+    {
+      "target_id": "second_light_original",
+      "archive_format": "gust_pak_a22",
+      "required_paths": ["Data/PACK01.PAK", "Data/PACK02.PAK"]
+    }
+  ],
+  "modules": [
+    {
+      "module_id": "blue_reflection_translation",
+      "display_name": "BLUE REFLECTION translation revision",
+      "description": "Revised English translation for the original game and Quartet.",
+      "module_type": "translation",
+      "supported_targets": ["blue_reflection_original", "blue_reflection_quartet"],
+      "default_targets": ["blue_reflection_original", "blue_reflection_quartet"],
+      "dependencies": [],
+      "conflicts": [],
+      "selectable": true,
+      "requires_owned_games": []
+    },
+    {
+      "module_id": "quartet_restoration",
+      "display_name": "Quartet restoration",
+      "description": "Optional restoration of verified changes relative to the 2017 original.",
+      "module_type": "restoration",
+      "supported_targets": ["blue_reflection_quartet"],
+      "default_targets": [],
+      "dependencies": [],
+      "conflicts": [],
+      "selectable": true,
+      "requires_owned_games": ["blue_reflection_original", "blue_reflection_quartet"]
+    },
+    {
+      "module_id": "quartet_legacy_dlc",
+      "display_name": "Quartet legacy DLC adapter",
+      "description": "Optional local migration of legally owned original DLC.",
+      "module_type": "dlc_adapter",
+      "supported_targets": ["blue_reflection_quartet"],
+      "default_targets": [],
+      "dependencies": [],
+      "conflicts": [],
+      "selectable": true,
+      "requires_owned_games": ["blue_reflection_original", "blue_reflection_quartet"]
+    },
+    {
+      "module_id": "second_light_translation",
+      "display_name": "BLUE REFLECTION: Second Light translation revision",
+      "description": "Revised English translation for Second Light.",
+      "module_type": "translation",
+      "supported_targets": ["second_light_original"],
+      "default_targets": ["second_light_original"],
+      "dependencies": [],
+      "conflicts": [],
+      "selectable": true,
+      "requires_owned_games": []
+    }
+  ],
+  "operations": []
+}
