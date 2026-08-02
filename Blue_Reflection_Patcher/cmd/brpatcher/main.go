@@ -43,17 +43,19 @@ func main() {
 	case "state-path":
 		err = commandStatePath(os.Args[2:])
 	case "quartet-profile-activate":
-		err = commandQuartetProfileActivate(os.Args[2:])
+		err = commandDiscoveredProfileActivate(os.Args[2:], "Data/PACK11.PAK")
 	case "quartet-profile-status":
-		err = commandQuartetProfileStatus(os.Args[2:])
+		err = commandDiscoveredProfileStatus(os.Args[2:], "Data/PACK11.PAK")
 	case "quartet-profile-rollback":
-		err = commandQuartetProfileRollback(os.Args[2:])
+		err = commandDiscoveredProfileRollback(os.Args[2:], "Data/PACK11.PAK")
 	case "quartet-shader-profile-activate":
-		err = commandQuartetShaderProfileActivate(os.Args[2:])
+		err = commandDiscoveredProfileActivate(os.Args[2:], "Data/PACK10_01.PAK")
 	case "quartet-shader-profile-status":
-		err = commandQuartetShaderProfileStatus(os.Args[2:])
+		err = commandDiscoveredProfileStatus(os.Args[2:], "Data/PACK10_01.PAK")
 	case "quartet-shader-profile-rollback":
-		err = commandQuartetShaderProfileRollback(os.Args[2:])
+		err = commandDiscoveredProfileRollback(os.Args[2:], "Data/PACK10_01.PAK")
+	case "quartet-local-profile-list":
+		err = commandDiscoveredProfileList(os.Args[2:])
 	case "help", "-h", "--help":
 		usage()
 	default:
@@ -201,6 +203,7 @@ Commands:
   quartet-shader-profile-activate --project-root PATH --game-root PATH PROFILE_ID
   quartet-shader-profile-status --project-root PATH --game-root PATH
   quartet-shader-profile-rollback --project-root PATH --game-root PATH
+  quartet-local-profile-list --project-root PATH --game-root PATH
 
 The general apply/repack engine remains gated until EBM/XML import and PAK rebuild
 validation are complete. This development binary already validates bundle

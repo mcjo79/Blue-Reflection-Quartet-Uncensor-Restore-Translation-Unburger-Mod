@@ -21,9 +21,7 @@ Usage:
   br_quartet_shader_profile.sh status
   br_quartet_shader_profile.sh rollback
 
-Profiles:
-  height_fog_shader_original_code
-  water_shader_swater_original_code
+Profile IDs are discovered from local quartet_restoration manifests.
 USAGE
 }
 
