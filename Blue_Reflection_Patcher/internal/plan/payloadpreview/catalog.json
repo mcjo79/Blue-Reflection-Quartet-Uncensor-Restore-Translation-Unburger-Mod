@@ -1,0 +1,73 @@
+{
+  "type": "br_local_payload_catalog",
+  "format_version": 1,
+  "module_targets": [
+    {
+      "module_id": "blue_reflection_translation",
+      "target_id": "blue_reflection_original",
+      "source_kind": "verified_translation_build",
+      "connection_status": "connected_preview_only",
+      "artifacts": [
+        {
+          "relative_path": "DATA/PACK01.PAK"
+        },
+        {
+          "relative_path": "DATA/PACK02_1.PAK"
+        },
+        {
+          "relative_path": "DATA/PACK00_04_1.PAK"
+        }
+      ]
+    },
+    {
+      "module_id": "blue_reflection_translation",
+      "target_id": "blue_reflection_quartet",
+      "source_kind": "verified_translation_build",
+      "connection_status": "connected_preview_only",
+      "artifacts": [
+        {
+          "relative_path": "Data/PACK11.PAK"
+        },
+        {
+          "relative_path": "Data/PACK12.PAK"
+        },
+        {
+          "relative_path": "Data/PACK00_04_01.PAK"
+        }
+      ]
+    },
+    {
+      "module_id": "second_light_translation",
+      "target_id": "second_light_original",
+      "source_kind": "verified_translation_build",
+      "connection_status": "connected_preview_only",
+      "artifacts": [
+        {
+          "relative_path": "Data/PACK01.PAK"
+        },
+        {
+          "relative_path": "Data/PACK02.PAK"
+        },
+        {
+          "relative_path": "Data/PACK00_04_01.PAK"
+        }
+      ]
+    },
+    {
+      "module_id": "quartet_restoration",
+      "target_id": "blue_reflection_quartet",
+      "source_kind": "verified_local_restoration_profiles",
+      "connection_status": "composition_preflight_available",
+      "reason": "Verified local restoration profiles are connected to a content-aware composition preflight; composed archives are not built or committed yet.",
+      "artifacts": []
+    },
+    {
+      "module_id": "quartet_legacy_dlc",
+      "target_id": "blue_reflection_quartet",
+      "source_kind": "future_selected_game_transfer",
+      "connection_status": "pending_adapter",
+      "reason": "The local DLC transfer adapter is planned after the general translation/restoration composition path.",
+      "artifacts": []
+    }
+  ]
+}

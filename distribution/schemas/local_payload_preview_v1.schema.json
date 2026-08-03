@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "br_local_payload_preview_v1.schema.json",
+  "title": "Blue Reflection local payload transaction preview v1",
+  "type": "object",
+  "required": [
+    "type",
+    "format_version",
+    "status",
+    "project_root",
+    "repack_report",
+    "commit_enabled",
+    "transaction_policy",
+    "distribution_policy",
+    "targets"
+  ],
+  "properties": {
+    "type": {"const": "br_local_payload_transaction_preview"},
+    "format_version": {"const": 1},
+    "status": {"enum": ["ready", "partial", "not_ready"]},
+    "commit_enabled": {"const": false},
+    "targets": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["target_id", "game_root", "selected_modules", "status", "modules"],
+        "properties": {
+          "status": {"enum": ["ready", "partial", "not_ready", "no_modules_selected"]}
+        }
+      }
+    }
+  }
+}

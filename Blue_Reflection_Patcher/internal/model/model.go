@@ -7,25 +7,54 @@ const (
 	BundleFormatVersion = 1
 )
 
-type TargetSpec struct {
-	TargetID       string   `json:"target_id"`
+const (
+	SelectionType          = "br_module_selection"
+	SelectionFormatVersion = 1
+)
+
+type ModuleChoice struct {
+	ModuleID       string   `json:"module_id"`
 	DisplayName    string   `json:"display_name"`
-	Project        string   `json:"project"`
-	Platform       string   `json:"platform"`
-	SteamAppID     uint32   `json:"steam_app_id"`
-	InstallDirHint []string `json:"install_dir_hints"`
-	Markers        []string `json:"markers"`
-	ArchiveFormat  string   `json:"archive_format"`
+	Description    string   `json:"description"`
+	ModuleType     string   `json:"module_type"`
+	DefaultEnabled bool     `json:"default_enabled"`
+	DesiredState   string   `json:"desired_state"`
+	SourceTargets  []string `json:"source_targets"`
+}
+
+type TargetSelection struct {
+	TargetID          string         `json:"target_id"`
+	DisplayName       string         `json:"display_name"`
+	Root              string         `json:"root"`
+	DetectionSource   string         `json:"detection_source"`
+	AvailableModules  []ModuleChoice `json:"available_modules"`
+	SelectedModuleIDs []string       `json:"selected_module_ids"`
+}
+
+type SelectionResult struct {
+	Type          string            `json:"type"`
+	FormatVersion int               `json:"format_version"`
+	Mode          string            `json:"mode"`
+	Targets       []TargetSelection `json:"targets"`
+	Warnings      []string          `json:"warnings"`
+}
+
+type TargetSpec struct {
+	TargetID      string   `json:"target_id"`
+	DisplayName   string   `json:"display_name"`
+	Project       string   `json:"project"`
+	Platform      string   `json:"platform"`
+	RequiredFiles []string `json:"required_files"`
+	ArchiveFormat string   `json:"archive_format"`
 }
 
 type Detection struct {
-	TargetID    string `json:"target_id"`
-	DisplayName string `json:"display_name"`
-	Root        string `json:"root"`
-	Source      string `json:"source"`
-	Confidence  string `json:"confidence"`
-	SteamAppID  uint32 `json:"steam_app_id,omitempty"`
-	BuildID     string `json:"build_id,omitempty"`
+	TargetID     string   `json:"target_id"`
+	DisplayName  string   `json:"display_name"`
+	Root         string   `json:"root"`
+	Source       string   `json:"source"`
+	Confidence   string   `json:"confidence"`
+	MatchedFiles []string `json:"matched_files"`
 }
 
 type BundleManifest struct {
@@ -55,16 +84,16 @@ type BundleTarget struct {
 }
 
 type BundleModule struct {
-	ModuleID          string   `json:"module_id"`
-	DisplayName       string   `json:"display_name"`
-	Description       string   `json:"description"`
-	ModuleType        string   `json:"module_type"`
-	SupportedTargets  []string `json:"supported_targets"`
-	DefaultTargets    []string `json:"default_targets"`
-	Dependencies      []string `json:"dependencies"`
-	Conflicts         []string `json:"conflicts"`
-	Selectable        bool     `json:"selectable"`
-	RequiresOwnedGame []string `json:"requires_owned_games"`
+	ModuleID         string   `json:"module_id"`
+	DisplayName      string   `json:"display_name"`
+	Description      string   `json:"description"`
+	ModuleType       string   `json:"module_type"`
+	SupportedTargets []string `json:"supported_targets"`
+	DefaultTargets   []string `json:"default_targets"`
+	Dependencies     []string `json:"dependencies"`
+	Conflicts        []string `json:"conflicts"`
+	Selectable       bool     `json:"selectable"`
+	SourceTargets    []string `json:"source_targets"`
 }
 
 type BaseVariant struct {

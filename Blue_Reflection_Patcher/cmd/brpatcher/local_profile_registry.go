@@ -60,7 +60,6 @@ type localProfileTargetSpec struct {
 	RelativePath string
 	Kind         string
 	StatePath    string
-	OtherState   string
 	ReportLatest string
 	ReportDir    string
 	ReportType   string
@@ -71,7 +70,6 @@ var localProfileTargets = map[string]localProfileTargetSpec{
 		RelativePath: "Data/PACK11.PAK",
 		Kind:         "event",
 		StatePath:    ".local/state/core_unified_patcher/quartet_event_profile.json",
-		OtherState:   ".local/state/core_unified_patcher/quartet_shader_profile.json",
 		ReportLatest: ".local/reports/core/BR_QUARTET_EVENT_PROFILE_TRANSACTION_REPORT.json",
 		ReportDir:    ".local/reports/core/quartet_event_profiles",
 		ReportType:   profileReportType,
@@ -80,10 +78,17 @@ var localProfileTargets = map[string]localProfileTargetSpec{
 		RelativePath: "Data/PACK10_01.PAK",
 		Kind:         "shader",
 		StatePath:    ".local/state/core_unified_patcher/quartet_shader_profile.json",
-		OtherState:   ".local/state/core_unified_patcher/quartet_event_profile.json",
 		ReportLatest: ".local/reports/core/BR_QUARTET_SHADER_PROFILE_TRANSACTION_REPORT.json",
 		ReportDir:    ".local/reports/core/quartet_shader_profiles",
 		ReportType:   shaderProfileReportType,
+	},
+	"Data/PACK10_03.PAK": {
+		RelativePath: "Data/PACK10_03.PAK",
+		Kind:         "field",
+		StatePath:    ".local/state/core_unified_patcher/quartet_field_profile.json",
+		ReportLatest: ".local/reports/core/BR_QUARTET_FIELD_PROFILE_TRANSACTION_REPORT.json",
+		ReportDir:    ".local/reports/core/quartet_field_profiles",
+		ReportType:   fieldProfileReportType,
 	},
 }
 

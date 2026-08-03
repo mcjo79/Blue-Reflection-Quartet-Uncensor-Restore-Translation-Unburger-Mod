@@ -600,26 +600,26 @@ func verifyDiscoveredProfileAgain(projectRoot string, profile discoveredLocalPro
 }
 
 func rejectOtherTargetTransaction(projectRoot string, spec localProfileTargetSpec) error {
-	otherSpec := localProfileTargetSpec{}
-	for _, candidate := range localProfileTargets {
-		if candidate.StatePath == spec.OtherState {
-			otherSpec = candidate
-			break
+	targets := make([]string, 0, len(localProfileTargets))
+	for target := range localProfileTargets {
+		if target != spec.RelativePath {
+			targets = append(targets, target)
 		}
 	}
-	if otherSpec.StatePath == "" {
-		return nil
-	}
-	otherPath, err := secureJoin(projectRoot, otherSpec.StatePath)
-	if err != nil {
-		return err
-	}
-	state, exists, err := readLocalProfileState(otherPath, otherSpec)
-	if err != nil {
-		return fmt.Errorf("inspect other target transaction: %w", err)
-	}
-	if exists && isOpenProfileState(state.Status) {
-		return fmt.Errorf("an isolated %s transaction is already open for %s (%s); rollback before activating a %s profile", otherSpec.Kind, state.ProfileID, state.Status, spec.Kind)
+	sort.Strings(targets)
+	for _, target := range targets {
+		otherSpec := localProfileTargets[target]
+		otherPath, err := secureJoin(projectRoot, otherSpec.StatePath)
+		if err != nil {
+			return err
+		}
+		state, exists, err := readLocalProfileState(otherPath, otherSpec)
+		if err != nil {
+			return fmt.Errorf("inspect %s target transaction: %w", otherSpec.Kind, err)
+		}
+		if exists && isOpenProfileState(state.Status) {
+			return fmt.Errorf("an isolated %s transaction is already open for %s (%s); rollback before activating a %s profile", otherSpec.Kind, state.ProfileID, state.Status, spec.Kind)
+		}
 	}
 	return nil
 }

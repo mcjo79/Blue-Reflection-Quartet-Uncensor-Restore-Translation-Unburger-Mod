@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "br_quartet_composition_preflight_v1.schema.json",
+  "title": "Blue Reflection Quartet translation/restoration composition preflight v1",
+  "type": "object",
+  "required": [
+    "type",
+    "format_version",
+    "status",
+    "project_root",
+    "game_root",
+    "target_id",
+    "commit_enabled",
+    "translation_bases",
+    "profiles",
+    "archives"
+  ],
+  "properties": {
+    "type": {"const": "br_quartet_translation_restoration_composition_preflight"},
+    "format_version": {"const": 1},
+    "target_id": {"const": "blue_reflection_quartet"},
+    "commit_enabled": {"const": false},
+    "status": {
+      "enum": [
+        "ready_for_composition_build",
+        "awaiting_runtime_validated_profiles",
+        "no_restoration_profiles_registered",
+        "blocked_translation_build_unavailable",
+        "blocked_member_conflict",
+        "blocked_archive_precondition"
+      ]
+    },
+    "translation_bases": {"type": "array"},
+    "profiles": {"type": "array"},
+    "archives": {"type": "array"}
+  },
+  "additionalProperties": true
+}

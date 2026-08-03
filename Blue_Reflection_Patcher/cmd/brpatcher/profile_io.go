@@ -18,6 +18,7 @@ const (
 	profileReportType       = "br_core_quartet_event_profile_transaction_report"
 	shaderProfileStateType  = "br_core_quartet_shader_profile_state"
 	shaderProfileReportType = "br_core_quartet_shader_profile_transaction_report"
+	fieldProfileReportType  = "br_core_quartet_field_profile_transaction_report"
 )
 
 type profileCommandContext struct {

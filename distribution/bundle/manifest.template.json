@@ -15,67 +15,97 @@
     {
       "target_id": "blue_reflection_original",
       "archive_format": "gust_pak_a18",
-      "required_paths": ["DATA/PACK01.PAK", "DATA/PACK02_1.PAK", "DATA/PACK02_3.PAK"]
+      "required_paths": [
+        "DATA/PACK00_04_1.PAK",
+        "DATA/PACK01.PAK",
+        "DATA/PACK02_1.PAK"
+      ]
     },
     {
       "target_id": "blue_reflection_quartet",
       "archive_format": "gust_pak_a22_a24_key",
-      "required_paths": ["Data/PACK11.PAK", "Data/PACK12.PAK"]
+      "required_paths": [
+        "Data/PACK00_04_01.PAK",
+        "Data/PACK10_01.PAK",
+        "Data/PACK11.PAK",
+        "Data/PACK12.PAK"
+      ]
     },
     {
       "target_id": "second_light_original",
       "archive_format": "gust_pak_a22",
-      "required_paths": ["Data/PACK01.PAK", "Data/PACK02.PAK"]
+      "required_paths": [
+        "Data/PACK01.PAK",
+        "Data/PACK02.PAK"
+      ]
     }
   ],
   "modules": [
     {
       "module_id": "blue_reflection_translation",
       "display_name": "BLUE REFLECTION translation revision",
-      "description": "Revised English translation for the original game and Quartet.",
+      "description": "Revised English translation and UNBURGER MOD title marker for the original game or Quartet.",
       "module_type": "translation",
-      "supported_targets": ["blue_reflection_original", "blue_reflection_quartet"],
-      "default_targets": ["blue_reflection_original", "blue_reflection_quartet"],
+      "supported_targets": [
+        "blue_reflection_original",
+        "blue_reflection_quartet"
+      ],
+      "default_targets": [
+        "blue_reflection_original",
+        "blue_reflection_quartet"
+      ],
       "dependencies": [],
       "conflicts": [],
       "selectable": true,
-      "requires_owned_games": []
+      "source_targets": []
     },
     {
       "module_id": "quartet_restoration",
-      "display_name": "Quartet restoration",
-      "description": "Optional restoration of verified changes relative to the 2017 original.",
+      "display_name": "Quartet restoration / UNCENSOR",
+      "description": "Restoration / UNCENSOR module for BLUE REFLECTION Quartet.",
       "module_type": "restoration",
-      "supported_targets": ["blue_reflection_quartet"],
-      "default_targets": [],
+      "supported_targets": [
+        "blue_reflection_quartet"
+      ],
+      "default_targets": [
+        "blue_reflection_quartet"
+      ],
       "dependencies": [],
       "conflicts": [],
       "selectable": true,
-      "requires_owned_games": ["blue_reflection_original", "blue_reflection_quartet"]
+      "source_targets": []
     },
     {
       "module_id": "quartet_legacy_dlc",
       "display_name": "Quartet legacy DLC adapter",
-      "description": "Optional local migration of legally owned original DLC.",
+      "description": "Optional transfer of DLC from a selected first-game installation.",
       "module_type": "dlc_adapter",
-      "supported_targets": ["blue_reflection_quartet"],
+      "supported_targets": [
+        "blue_reflection_quartet"
+      ],
       "default_targets": [],
       "dependencies": [],
       "conflicts": [],
       "selectable": true,
-      "requires_owned_games": ["blue_reflection_original", "blue_reflection_quartet"]
+      "source_targets": [
+        "blue_reflection_original"
+      ]
     },
     {
       "module_id": "second_light_translation",
       "display_name": "BLUE REFLECTION: Second Light translation revision",
-      "description": "Revised English translation for Second Light.",
+      "description": "Revised English translation and UNBURGER MOD title marker for Second Light.",
       "module_type": "translation",
-      "supported_targets": ["second_light_original"],
-      "default_targets": ["second_light_original"],
+      "supported_targets": [
+        "second_light_original"
+      ],
+      "default_targets": [
+        "second_light_original"
+      ],
       "dependencies": [],
       "conflicts": [],
       "selectable": true,
-      "requires_owned_games": []
+      "source_targets": []
     }
   ],
   "operations": []

@@ -14,12 +14,12 @@ import zipfile
 from pathlib import Path
 from typing import Any
 
-TOOL_VERSION = "0.0.9"
+TOOL_VERSION = "0.0.10"
 ALLOWED_OPERATION_KINDS = {
     "merge_ebm_records",
     "merge_xml_records",
     "replace_entry",
-    "copy_owned_entry",
+    "copy_source_entry",
     "add_entry",
     "delete_entry",
     "edit_table_records",
@@ -132,8 +132,11 @@ def validate_manifest(manifest: dict[str, Any]) -> list[str]:
         defaults = set(module.get("default_targets", []))
         if not defaults <= supported:
             errors.append(f"module {module_id} defaults outside supported targets")
-        if module.get("module_type") in {"restoration", "dlc_adapter"} and defaults:
-            errors.append(f"optional module {module_id} must never be selected by default")
+        if module.get("module_type") == "dlc_adapter" and defaults:
+            errors.append(f"DLC adapter module {module_id} must remain opt-in")
+        source_targets = set(module.get("source_targets", []))
+        if not source_targets <= target_ids:
+            errors.append(f"module {module_id} has invalid source targets")
 
     operation_ids: set[str] = set()
     for operation in operations:
@@ -190,18 +193,26 @@ def cmd_validate(args: argparse.Namespace) -> int:
     target_specs_path = project_root / "Blue_Reflection_Patcher/internal/targets/targets.json"
     target_specs = load_json(target_specs_path)
     ids = set()
-    app_ids = set()
+    structural_fingerprints: dict[tuple[str, ...], str] = {}
     for item in target_specs:
         target_id = item.get("target_id")
-        app_id = item.get("steam_app_id")
         if target_id in ids or not target_id:
             errors.append(f"duplicate/invalid patcher target ID: {target_id}")
         ids.add(target_id)
-        if app_id in app_ids or not isinstance(app_id, int) or app_id <= 0:
-            errors.append(f"duplicate/invalid Steam app ID: {app_id}")
-        app_ids.add(app_id)
-        if not item.get("markers"):
-            errors.append(f"patcher target {target_id} has no marker files")
+        required_files = item.get("required_files")
+        if not isinstance(required_files, list) or not required_files or not all(
+            isinstance(path, str) and path for path in required_files
+        ):
+            errors.append(f"patcher target {target_id} has no valid structural required_files")
+            continue
+        fingerprint = tuple(sorted(path.replace("\\", "/").casefold() for path in required_files))
+        if fingerprint in structural_fingerprints:
+            errors.append(
+                f"duplicate structural fingerprint for {target_id} and {structural_fingerprints[fingerprint]}"
+            )
+        structural_fingerprints[fingerprint] = target_id
+        if any(key in item for key in ("steam_app_id", "executable_sha256", "install_dir_hints")):
+            errors.append(f"patcher target {target_id} contains store/version-bound detection fields")
     if ids != pc_targets:
         errors.append("embedded patcher targets do not match active PC targets")
 
@@ -258,8 +269,15 @@ def cmd_validate(args: argparse.Namespace) -> int:
         },
         "base_validation_status": base_status,
         "compatibility_policy": manifest.get("compatibility"),
-        "steam_app_ids": {
-            item["target_id"]: item["steam_app_id"] for item in target_specs
+        "detection_policy": {
+            "primary_root": "current_working_directory",
+            "fallback": "explicit_or_prompted_path",
+            "identity": "structural_required_files",
+            "store_metadata_required": False,
+            "executable_hash_required": False,
+        },
+        "structural_targets": {
+            item["target_id"]: item["required_files"] for item in target_specs
         },
         "public_proprietary_files": proprietary,
         "warnings": warnings,
