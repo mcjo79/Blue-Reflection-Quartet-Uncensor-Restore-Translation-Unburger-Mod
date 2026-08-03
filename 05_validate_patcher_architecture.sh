@@ -21,6 +21,7 @@ TRANSACTION_TEST_ROOT="$BUILD_DIR/transaction-self-test"
 PAYLOAD_PREVIEW_REPORT="$REPORT_DIR/BR_PATCHER_LOCAL_PAYLOAD_PREVIEW_REPORT.json"
 PAYLOAD_PREVIEW_TEST_ROOT="$BUILD_DIR/payload-preview-self-test"
 COMPOSITION_PREVIEW_REPORT="$REPORT_DIR/BR_PATCHER_QUARTET_COMPOSITION_PREFLIGHT_REPORT.json"
+COMPOSITION_BUILD_REPORT="$REPORT_DIR/BR_PATCHER_QUARTET_COMPOSITION_BUILD_REPORT.json"
 COMPOSITION_PREVIEW_TEST_ROOT="$BUILD_DIR/quartet-composition-preflight-self-test"
 
 fail() {
@@ -279,47 +280,115 @@ PYPAYLOADCHECK
   mkdir -p -- "$COMPOSITION_PREVIEW_TEST_ROOT/project/workstreams/core" \
     "$COMPOSITION_PREVIEW_TEST_ROOT/project/Blue_Reflection_Patcher" \
     "$COMPOSITION_PREVIEW_TEST_ROOT/game/Data"
-  printf '0.0.23\n' > "$COMPOSITION_PREVIEW_TEST_ROOT/project/workstreams/core/VERSION"
+  printf '0.0.24\n' > "$COMPOSITION_PREVIEW_TEST_ROOT/project/workstreams/core/VERSION"
   printf 'module synthetic/quartet-composition\n' > "$COMPOSITION_PREVIEW_TEST_ROOT/project/Blue_Reflection_Patcher/go.mod"
 
-  python3 - "$COMPOSITION_PREVIEW_TEST_ROOT" <<'PYCOMPOSEBUILD'
+  GUST_PAK_BIN="${GUST_PAK:-$PROJECT_ROOT/.local/vendor/gust_tools/gust_pak}"
+  [[ -f "$GUST_PAK_BIN" && -x "$GUST_PAK_BIN" ]] || fail "gust_pak is required for the composition build self-test: $GUST_PAK_BIN"
+
+  python3 - "$COMPOSITION_PREVIEW_TEST_ROOT" "$GUST_PAK_BIN" <<'PYCOMPOSEBUILD'
 import hashlib
 import json
+import subprocess
 import sys
 from pathlib import Path
 
 root = Path(sys.argv[1])
+gust_pak = Path(sys.argv[2])
 project = root / "project"
 game = root / "game"
-stock = {
-    "Data/PACK00_04_01.PAK": b"stock-title",
-    "Data/PACK10_01.PAK": b"stock-shader",
-    "Data/PACK11.PAK": b"stock-event",
-    "Data/PACK12.PAK": b"stock-text",
-}
-for relative, payload in stock.items():
-    path = game / relative
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_bytes(payload)
 
-translation = {
-    "Data/PACK00_04_01.PAK": b"translation-title",
-    "Data/PACK11.PAK": b"translation-event",
-    "Data/PACK12.PAK": b"translation-text",
+
+def sha_size(path: Path) -> tuple[str, int]:
+    data = path.read_bytes()
+    return hashlib.sha256(data).hexdigest(), len(data)
+
+
+def make_pak(stage: Path, name: str, members: dict[str, bytes]) -> Path:
+    stage.mkdir(parents=True, exist_ok=True)
+    for relative, payload in members.items():
+        path = stage / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(payload)
+    manifest = {
+        "name": Path(name).stem + ".pak",
+        "version": 131072,
+        "header_size": 16,
+        "flags": 0,
+        "nb_files": len(members),
+        "64-bit": True,
+        "files": [
+            {"name": relative, "key": "0" * 40}
+            for relative in members
+        ],
+    }
+    manifest_path = stage / (Path(name).stem + ".json")
+    manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+    subprocess.run(
+        [str(gust_pak), manifest_path.name],
+        cwd=stage,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.PIPE,
+        check=True,
+    )
+    paks = [path for path in stage.iterdir() if path.is_file() and path.suffix.lower() == ".pak"]
+    if len(paks) != 1:
+        raise SystemExit(f"Expected one synthetic PAK in {stage}, found {paks}")
+    return paks[0]
+
+
+baseline_members = {
+    "event/b1/event_en/test.ebm": b"baseline-en-" * 200,
+    "event/b1/event_jp/test.ebd": b"baseline-jp-" * 200,
+    "event/b1/common/keep.bin": b"keep-" * 300,
 }
+translation_members = dict(baseline_members)
+translation_members["event/b1/event_en/test.ebm"] = b"translated-en-" * 200
+profile_members = dict(baseline_members)
+profile_members["event/b1/event_jp/test.ebd"] = b"restored-jp-" * 200
+
+baseline_pack11 = make_pak(root / "pak_sources/baseline_pack11", "PACK11.PAK", baseline_members)
+translation_pack11 = make_pak(root / "pak_sources/translation_pack11", "PACK11.PAK", translation_members)
+profile_pack11 = make_pak(root / "pak_sources/profile_pack11", "PACK11.PAK", profile_members)
+translation_pack12 = make_pak(
+    root / "pak_sources/translation_pack12",
+    "PACK12.PAK",
+    {"text/main.bin": b"translation-text-" * 300},
+)
+translation_title = make_pak(
+    root / "pak_sources/translation_title",
+    "PACK00_04_01.PAK",
+    {"ui/title.bin": b"translation-title-" * 300},
+)
+
+(game / "Data/PACK11.PAK").write_bytes(baseline_pack11.read_bytes())
+# Structural markers used for target detection. Unselected restoration archives
+# need not be valid synthetic PAKs in this test.
+(game / "Data/PACK10_01.PAK").write_bytes(b"synthetic-shader-marker")
+(game / "Data/PACK10_03.PAK").write_bytes(b"synthetic-field-marker")
+(game / "Data/PACK12.PAK").write_bytes(b"synthetic-text-marker")
+(game / "Data/PACK00_04_01.PAK").write_bytes(b"synthetic-title-marker")
+
 archives = []
-for relative, payload in translation.items():
+for source, relative in (
+    (translation_pack11, "Data/PACK11.PAK"),
+    (translation_pack12, "Data/PACK12.PAK"),
+    (translation_title, "Data/PACK00_04_01.PAK"),
+):
     output = project / ".local/build/translation/archives/blue_reflection_quartet" / relative
     output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_bytes(payload)
+    output.write_bytes(source.read_bytes())
+    digest, size = sha_size(output)
     archives.append({
         "target_id": "blue_reflection_quartet",
         "archive_relative_path": relative,
         "output_path": output.relative_to(project).as_posix(),
-        "output_sha256": hashlib.sha256(payload).hexdigest(),
-        "output_bytes": len(payload),
+        "output_sha256": digest,
+        "output_bytes": size,
         "failures": [],
     })
+
 repack = project / ".local/reports/translation/BR_TRANSLATION_PAK_REPACK_REPORT.json"
 repack.parent.mkdir(parents=True, exist_ok=True)
 repack.write_text(json.dumps({"status": "ok", "archives": archives}, indent=2) + "\n", encoding="utf-8")
@@ -338,29 +407,32 @@ loose.write_text(json.dumps({
     },
 }, indent=2) + "\n", encoding="utf-8")
 
-profile_payload = b"runtime-validated-restoration-profile"
-profile_rel = ".local/build/quartet_restoration/synthetic/runtime_profile/Data/PACK11.PAK"
-profile_path = project / profile_rel
+profile_relative = ".local/build/quartet_restoration/synthetic/runtime_profile/Data/PACK11.PAK"
+profile_path = project / profile_relative
 profile_path.parent.mkdir(parents=True, exist_ok=True)
-profile_path.write_bytes(profile_payload)
+profile_path.write_bytes(profile_pack11.read_bytes())
+baseline_sha, baseline_size = sha_size(game / "Data/PACK11.PAK")
+profile_sha, profile_size = sha_size(profile_path)
 manifest = {
     "schema_version": 1,
     "profile_id": "synthetic_runtime_validated_profile",
     "target_relative_path": "Data/PACK11.PAK",
-    "baseline_sha256": hashlib.sha256(stock["Data/PACK11.PAK"]).hexdigest(),
-    "baseline_size": len(stock["Data/PACK11.PAK"]),
-    "profile_sha256": hashlib.sha256(profile_payload).hexdigest(),
-    "profile_size": len(profile_payload),
-    "local_profile_path": profile_rel,
+    "baseline_sha256": baseline_sha,
+    "baseline_size": baseline_size,
+    "profile_sha256": profile_sha,
+    "profile_size": profile_size,
+    "local_profile_path": profile_relative,
     "changed_member_count": 1,
     "changed_members": ["event/b1/event_jp/test.ebd"],
     "runtime_validated": True,
     "workstream_id": "quartet_restoration",
-    "workstream_version": "0.0.76-synthetic",
+    "workstream_version": "0.0.87-synthetic",
 }
 manifest_path = project / ".local/build/quartet_restoration/core_profiles/synthetic_runtime_validated_profile.json"
 manifest_path.parent.mkdir(parents=True, exist_ok=True)
 manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+
+(root / "GAME_PACK11_SHA256_BEFORE").write_text(sha_size(game / "Data/PACK11.PAK")[0] + "\n", encoding="utf-8")
 PYCOMPOSEBUILD
 
   "$BUILD_DIR/blue-reflection-patcher-linux-x86_64" quartet-composition-preview \
@@ -391,8 +463,115 @@ if not pack11 or pack11.get("status") != "ready_for_member_overlay":
     raise SystemExit(f"PACK11 member-overlay plan is not ready: {archives!r}")
 if pack11.get("base_source_kind") != "verified_translation_archive" or pack11.get("overlay_member_count") != 1:
     raise SystemExit(f"PACK11 composition base/overlay is wrong: {pack11!r}")
-print("Quartet translation/restoration inputs are conflict-checked at member level without composing or modifying a game archive.")
+pack1003 = archives.get("Data/PACK10_03.PAK")
+if not pack1003 or pack1003.get("status") != "not_selected":
+    raise SystemExit(f"Unselected PACK10_03 should remain non-blocking: {pack1003!r}")
+print("Quartet translation/restoration inputs are conflict-checked at member level without modifying a game archive.")
 PYCOMPOSECHECK
+
+  "$BUILD_DIR/blue-reflection-patcher-linux-x86_64" quartet-composition-build \
+    --game-dir "$COMPOSITION_PREVIEW_TEST_ROOT/game" \
+    --project-root "$COMPOSITION_PREVIEW_TEST_ROOT/project" \
+    --gust-pak "$GUST_PAK_BIN" \
+    --timeout 2m \
+    --json "$COMPOSITION_BUILD_REPORT"
+
+  python3 - "$COMPOSITION_BUILD_REPORT" "$COMPOSITION_PREVIEW_TEST_ROOT" "$GUST_PAK_BIN" <<'PYCOMPOSEVERIFY'
+import hashlib
+import json
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+
+report = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+root = Path(sys.argv[2])
+gust_pak = Path(sys.argv[3])
+project = root / "project"
+game = root / "game"
+if report.get("type") != "br_quartet_translation_restoration_composition_build":
+    raise SystemExit(f"Unexpected composition build type: {report!r}")
+if report.get("status") != "ok" or report.get("commit_enabled") is not False:
+    raise SystemExit(f"Composition build is not safe and complete: {report!r}")
+if report.get("published_archive_count") != 3 or report.get("composed_archive_count") != 1:
+    raise SystemExit(f"Unexpected composition build summary: {report!r}")
+archives = {item["archive_relative_path"]: item for item in report.get("archives", [])}
+pack11 = archives.get("Data/PACK11.PAK")
+if not pack11 or not pack11.get("full_reextract_verified") or not pack11.get("manifest_declaration_checked"):
+    raise SystemExit(f"PACK11 did not pass full composition verification: {pack11!r}")
+output = project / ".local/build/composition/blue_reflection_quartet/Data/PACK11.PAK"
+verify = root / "final_verify"
+shutil.rmtree(verify, ignore_errors=True)
+verify.mkdir(parents=True)
+shutil.copy2(output, verify / output.name)
+subprocess.run([str(gust_pak), output.name], cwd=verify, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+if (verify / "event/b1/event_en/test.ebm").read_bytes() != b"translated-en-" * 200:
+    raise SystemExit("Composed PAK lost the translation member")
+if (verify / "event/b1/event_jp/test.ebd").read_bytes() != b"restored-jp-" * 200:
+    raise SystemExit("Composed PAK lost the restoration member")
+if (verify / "event/b1/common/keep.bin").read_bytes() != b"keep-" * 300:
+    raise SystemExit("Composed PAK changed an unrelated member")
+current_game_hash = hashlib.sha256((game / "Data/PACK11.PAK").read_bytes()).hexdigest()
+expected_game_hash = (root / "GAME_PACK11_SHA256_BEFORE").read_text(encoding="utf-8").strip()
+if current_game_hash != expected_game_hash:
+    raise SystemExit("Composition build modified the synthetic game installation")
+print("Content-aware composer preserved translation, applied only the declared restoration member, fully re-extracted the result and left the game untouched.")
+PYCOMPOSEVERIFY
+
+  composed_hash_before="$(sha256sum -- "$COMPOSITION_PREVIEW_TEST_ROOT/project/.local/build/composition/blue_reflection_quartet/Data/PACK11.PAK" | awk '{print $1}')"
+  python3 - "$COMPOSITION_PREVIEW_TEST_ROOT" "$GUST_PAK_BIN" <<'PYCOMPOSEBAD'
+import hashlib
+import json
+import subprocess
+import sys
+from pathlib import Path
+
+root = Path(sys.argv[1])
+gust_pak = Path(sys.argv[2])
+project = root / "project"
+stage = root / "pak_sources/bad_profile_pack11"
+stage.mkdir(parents=True, exist_ok=True)
+members = {
+    "event/b1/event_en/test.ebm": b"baseline-en-" * 200,
+    "event/b1/event_jp/test.ebd": b"restored-jp-" * 200,
+    "event/b1/common/keep.bin": b"undeclared-change-" * 200,
+}
+for relative, payload in members.items():
+    path = stage / relative
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(payload)
+manifest = {
+    "name": "PACK11.pak",
+    "version": 131072,
+    "header_size": 16,
+    "flags": 0,
+    "nb_files": len(members),
+    "64-bit": True,
+    "files": [{"name": relative, "key": "0" * 40} for relative in members],
+}
+(stage / "PACK11.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+subprocess.run([str(gust_pak), "PACK11.json"], cwd=stage, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+bad_pak = next(path for path in stage.iterdir() if path.is_file() and path.suffix.lower() == ".pak")
+profile_path = project / ".local/build/quartet_restoration/synthetic/runtime_profile/Data/PACK11.PAK"
+profile_path.write_bytes(bad_pak.read_bytes())
+profile_manifest = project / ".local/build/quartet_restoration/core_profiles/synthetic_runtime_validated_profile.json"
+data = json.loads(profile_manifest.read_text(encoding="utf-8"))
+payload = profile_path.read_bytes()
+data["profile_sha256"] = hashlib.sha256(payload).hexdigest()
+data["profile_size"] = len(payload)
+# Deliberately keep changed_members restricted to event_jp/test.ebd.
+profile_manifest.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+PYCOMPOSEBAD
+
+  if "$BUILD_DIR/blue-reflection-patcher-linux-x86_64" quartet-composition-build \
+      --game-dir "$COMPOSITION_PREVIEW_TEST_ROOT/game" \
+      --project-root "$COMPOSITION_PREVIEW_TEST_ROOT/project" \
+      --gust-pak "$GUST_PAK_BIN" \
+      --timeout 2m >/dev/null 2>&1; then
+    fail "Composer accepted a profile PAK with an undeclared changed member"
+  fi
+  composed_hash_after="$(sha256sum -- "$COMPOSITION_PREVIEW_TEST_ROOT/project/.local/build/composition/blue_reflection_quartet/Data/PACK11.PAK" | awk '{print $1}')"
+  [[ "$composed_hash_after" == "$composed_hash_before" ]] || fail "Failed composition replaced the last verified local payload"
 
   "$BUILD_DIR/blue-reflection-patcher-linux-x86_64" inspect-bundle \
     --bundle "$DEVELOPMENT_BUNDLE" >/dev/null
@@ -429,11 +608,12 @@ package_files=(
 [[ -f "$TRANSACTION_REPORT" ]] && package_files+=(.local/reports/BR_PATCHER_TRANSACTION_ENGINE_REPORT.json)
 [[ -f "$PAYLOAD_PREVIEW_REPORT" ]] && package_files+=(.local/reports/BR_PATCHER_LOCAL_PAYLOAD_PREVIEW_REPORT.json)
 [[ -f "$COMPOSITION_PREVIEW_REPORT" ]] && package_files+=(.local/reports/BR_PATCHER_QUARTET_COMPOSITION_PREFLIGHT_REPORT.json)
+[[ -f "$COMPOSITION_BUILD_REPORT" ]] && package_files+=(.local/reports/BR_PATCHER_QUARTET_COMPOSITION_BUILD_REPORT.json)
 [[ -f "$REPORT_DIR/BR_PATCHER_DEVELOPMENT_PLAN.json" ]] && package_files+=(.local/reports/BR_PATCHER_DEVELOPMENT_PLAN.json)
 
 tar -C "$PROJECT_ROOT" --zstd -cf "$REPORT_PACKAGE" "${package_files[@]}"
 
 printf '\nValidated unified Windows/Linux patcher architecture.\n'
 printf 'The guided installer still does not modify configured game files.\n'
-printf 'The transaction engine, local payload preview and Quartet composition preflight were validated on isolated synthetic files.\n'
+printf 'The transaction engine, local payload preview, Quartet composition preflight and content-aware composer were validated on isolated synthetic files.\n'
 printf 'Created report package:\n  %s\n' "$REPORT_PACKAGE"

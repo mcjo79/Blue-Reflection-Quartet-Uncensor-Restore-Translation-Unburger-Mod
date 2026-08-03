@@ -2,5 +2,48 @@
   "type": "br_dlc_content_registry",
   "format_version": 1,
   "module_id": "quartet_legacy_dlc",
-  "items": []
+  "items": [
+    {
+      "content_id": "legacy_dlc_family_south_island",
+      "content_type": "event_family",
+      "source": "selected_blue_reflection_original_installation",
+      "source_ownership": "requires_original_dlc",
+      "quartet_status": "not_mapped",
+      "dependencies": [
+        "legacy_dlc_shared_system_registry"
+      ],
+      "test_status": "not_tested"
+    },
+    {
+      "content_id": "legacy_dlc_family_ffxv",
+      "content_type": "event_family",
+      "source": "selected_blue_reflection_original_installation",
+      "source_ownership": "requires_original_dlc",
+      "quartet_status": "not_mapped",
+      "dependencies": [
+        "legacy_dlc_shared_system_registry"
+      ],
+      "test_status": "not_tested"
+    },
+    {
+      "content_id": "legacy_dlc_family_yy",
+      "content_type": "system_event_family",
+      "source": "selected_blue_reflection_original_installation",
+      "source_ownership": "requires_original_dlc",
+      "quartet_status": "not_mapped",
+      "dependencies": [
+        "legacy_dlc_shared_system_registry"
+      ],
+      "test_status": "not_tested"
+    },
+    {
+      "content_id": "legacy_dlc_shared_system_registry",
+      "content_type": "system_table_dependency",
+      "source": "canonical_translation_and_selected_first_game_installation",
+      "source_ownership": "requires_original_dlc",
+      "quartet_status": "not_mapped",
+      "dependencies": [],
+      "test_status": "not_tested"
+    }
+  ]
 }

@@ -25,7 +25,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable, Optional
 
-TOOL_VERSION = "translation-0.0.13"
+TOOL_VERSION = "translation-0.0.14"
 FORMAT_VERSION = 1
 MAX_STRING_SIZE = 2048
 DURATION1_LENGTHS = (0, 2)
@@ -493,6 +493,200 @@ def align_rows(source: XMLTable, target: Optional[XMLTable]) -> tuple[list[Optio
 
 
 EDIT_MIGRATION_STATS: Counter[str] = Counter()
+AUXILIARY_FALLBACK_STATS: Counter[str] = Counter()
+
+QUARTET_TARGET_ID = "blue_reflection_quartet"
+QUARTET_POLICY_RELATIVE = Path(
+    "workstreams/translation_tooling/config/quartet_target_adaptations.json"
+)
+QUARTET_TECHNICAL_TOKEN_RE = re.compile(r"<(?:IM\d+|KEY_ASSIGN_[A-Z0-9_]+)>")
+
+
+def text_sha256(value: str) -> str:
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+
+def classify_auxiliary_japanese_copy(
+    auxiliary_jp_text: Optional[str], auxiliary_en_text: Optional[str]
+) -> Optional[str]:
+    """Recognize corpus-proven malformed Japanese copies in Quartet event_en.
+
+    The raw auxiliary field remains untouched.  This only prevents malformed
+    reference text from becoming editable English during a future export.
+    """
+    if not auxiliary_jp_text or not auxiliary_en_text:
+        return None
+    try:
+        malformed = auxiliary_jp_text.encode("cp932").decode(
+            "utf-16le", errors="replace"
+        )
+    except UnicodeEncodeError:
+        malformed = None
+    if malformed == auxiliary_en_text:
+        return "invalid_cp932_bytes_as_utf16le_japanese_copy"
+    if (auxiliary_jp_text, auxiliary_en_text) in {
+        ("うん", "㼿㼿"),
+        ("うん！", "㼿㼿I"),
+    }:
+        return "invalid_lossy_japanese_copy"
+    return None
+
+
+def load_quartet_target_policy(project_root: Path) -> dict[str, Any]:
+    path = project_root / QUARTET_POLICY_RELATIVE
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError as exc:
+        raise ToolError(f"Quartet target adaptation policy is missing: {path}") from exc
+    except json.JSONDecodeError as exc:
+        raise ToolError(f"Invalid Quartet target adaptation policy {path}: {exc}") from exc
+    if data.get("type") != "br_quartet_target_adaptation_policy":
+        raise ToolError(f"Unexpected Quartet target policy type: {path}")
+    if data.get("format_version") != 1 or data.get("target_id") != QUARTET_TARGET_ID:
+        raise ToolError(f"Unsupported Quartet target adaptation policy: {path}")
+    settings = data.get("policy")
+    records = data.get("records")
+    if not isinstance(settings, dict) or not isinstance(records, list):
+        raise ToolError(f"Incomplete Quartet target adaptation policy: {path}")
+    by_id: dict[str, dict[str, Any]] = {}
+    for index, entry in enumerate(records):
+        if not isinstance(entry, dict) or not isinstance(entry.get("logical_id"), str):
+            raise ToolError(f"Invalid Quartet policy record {index}: {path}")
+        logical_id = entry["logical_id"]
+        if logical_id in by_id:
+            raise ToolError(f"Duplicate Quartet policy logical_id: {logical_id}")
+        if entry.get("action") not in {
+            "shared_translation_allowed",
+            "replace_technical_token_sequence",
+            "literal_replacements",
+            "preserve_target_template",
+        }:
+            raise ToolError(f"Unsupported Quartet policy action for {logical_id}")
+        by_id[logical_id] = entry
+    return {"path": path, "settings": settings, "records": by_id, "raw": data}
+
+
+def validate_quartet_policy_fingerprints(
+    entry: dict[str, Any], logical_id: str, source_jp: str, target_jp: str, target_en: str
+) -> None:
+    expected = {
+        "source_jp_sha256": text_sha256(source_jp),
+        "target_jp_sha256": text_sha256(target_jp),
+        "target_template_en_sha256": text_sha256(target_en),
+    }
+    for key, actual in expected.items():
+        if entry.get(key) != actual:
+            raise ToolError(
+                f"Quartet target policy fingerprint mismatch for {logical_id}: {key}"
+            )
+
+
+def replace_technical_token_sequence(
+    text: str, expected_source: list[str], target_tokens: list[str], logical_id: str
+) -> str:
+    matches = list(QUARTET_TECHNICAL_TOKEN_RE.finditer(text))
+    actual_source = [match.group(0) for match in matches]
+    if actual_source != expected_source:
+        raise ToolError(
+            f"Quartet technical-token source sequence changed for {logical_id}: "
+            f"expected {expected_source}, found {actual_source}"
+        )
+    if len(matches) != len(target_tokens):
+        raise ToolError(
+            f"Quartet token replacement count mismatch for {logical_id}; "
+            "use preserve_target_template or literal_replacements"
+        )
+    pieces: list[str] = []
+    cursor = 0
+    for match, replacement in zip(matches, target_tokens):
+        pieces.extend((text[cursor:match.start()], replacement))
+        cursor = match.end()
+    pieces.append(text[cursor:])
+    return "".join(pieces)
+
+
+def adapt_quartet_text(
+    *,
+    record: dict[str, Any],
+    editable: str,
+    target_jp: str,
+    target_en: str,
+    quartet_policy: dict[str, Any],
+) -> tuple[Optional[str], str]:
+    logical_id = str(record.get("logical_id", ""))
+    source_jp = record.get("jp")
+    if not isinstance(source_jp, str):
+        raise ToolError(f"Record has no Japanese source text: {logical_id}")
+    source_tokens = QUARTET_TECHNICAL_TOKEN_RE.findall(editable)
+    target_tokens = QUARTET_TECHNICAL_TOKEN_RE.findall(target_en)
+    if source_jp == target_jp and source_tokens == target_tokens:
+        return editable, "shared_exact"
+
+    settings = quartet_policy["settings"]
+    marker = settings.get("redacted_target_marker", "-")
+    if (
+        settings.get("allow_redacted_target_import") is True
+        and target_jp == marker
+        and target_en == marker
+    ):
+        return editable, "redacted_target_import_allowed"
+
+    entry = quartet_policy["records"].get(logical_id)
+    if entry is None:
+        raise ToolError(
+            f"Unclassified Quartet target difference for {logical_id}; "
+            f"update {quartet_policy['path']}"
+        )
+    validate_quartet_policy_fingerprints(
+        entry, logical_id, source_jp, target_jp, target_en
+    )
+    action = entry["action"]
+    if action == "shared_translation_allowed":
+        return editable, action
+    if action == "preserve_target_template":
+        return None, action
+    if action == "replace_technical_token_sequence":
+        expected_source = entry.get("source_tokens")
+        expected_target = entry.get("target_tokens")
+        if not isinstance(expected_source, list) or not all(
+            isinstance(value, str) for value in expected_source
+        ):
+            raise ToolError(f"Invalid source token policy for {logical_id}")
+        if not isinstance(expected_target, list) or not all(
+            isinstance(value, str) for value in expected_target
+        ):
+            raise ToolError(f"Invalid target token policy for {logical_id}")
+        if target_tokens != expected_target:
+            raise ToolError(
+                f"Quartet target token sequence changed for {logical_id}: "
+                f"expected {expected_target}, found {target_tokens}"
+            )
+        return (
+            replace_technical_token_sequence(
+                editable, expected_source, expected_target, logical_id
+            ),
+            action,
+        )
+    replacements = entry.get("replacements")
+    if action != "literal_replacements" or not isinstance(replacements, list):
+        raise ToolError(f"Invalid Quartet literal-replacement policy for {logical_id}")
+    adapted = editable
+    for replacement in replacements:
+        if not isinstance(replacement, dict):
+            raise ToolError(f"Invalid literal replacement for {logical_id}")
+        old = replacement.get("old")
+        new = replacement.get("new")
+        expected_count = replacement.get("expected_occurrences", 1)
+        if not isinstance(old, str) or not isinstance(new, str) or not isinstance(expected_count, int):
+            raise ToolError(f"Invalid literal replacement values for {logical_id}")
+        actual_count = adapted.count(old)
+        if actual_count != expected_count:
+            raise ToolError(
+                f"Quartet literal replacement source changed for {logical_id}: "
+                f"{old!r} expected {expected_count}, found {actual_count}"
+            )
+        adapted = adapted.replace(old, new)
+    return adapted, action
 
 
 def _initial_editable(record: dict[str, Any]) -> str:
@@ -636,12 +830,19 @@ def export_event_set(spec: EventSet, project_root: Path, report: dict[str, Any])
 
             aux_source_index = source_to_aux[msg.index] if aux_jp else None
             auxiliary_text: Optional[str] = None
+            auxiliary_classification: Optional[str] = None
             auxiliary_index: Optional[int] = None
             aux_status = "unavailable"
             if aux_source_index is not None and aux_en is not None and aux_source_index < len(aux_to_en):
                 auxiliary_index = aux_to_en[aux_source_index]
                 if auxiliary_index is not None:
+                    auxiliary_jp_text = aux_jp.messages[aux_source_index].text if aux_jp else None
                     auxiliary_text = aux_en.messages[auxiliary_index].text
+                    auxiliary_classification = classify_auxiliary_japanese_copy(
+                        auxiliary_jp_text, auxiliary_text
+                    )
+                    if auxiliary_classification is not None:
+                        AUXILIARY_FALLBACK_STATS[auxiliary_classification] += 1
                     aux_status = f"{source_to_aux_status[msg.index]}+{aux_to_en_status[aux_source_index]}"
 
             primary_redacted = is_redaction_placeholder(primary_text, msg.text)
@@ -650,10 +851,15 @@ def export_event_set(spec: EventSet, project_root: Path, report: dict[str, Any])
                 editable = primary_text
                 alignment_status = official_status[msg.index]
                 source_of_initial_en = "official_en"
-            elif auxiliary_text is not None and not auxiliary_redacted:
+            elif (
+                auxiliary_text is not None
+                and not auxiliary_redacted
+                and auxiliary_classification is None
+            ):
                 editable = auxiliary_text
                 alignment_status = "auxiliary_fallback_review"
                 source_of_initial_en = "quartet_en"
+                AUXILIARY_FALLBACK_STATS["accepted_event_auxiliary_fallback"] += 1
             else:
                 editable = ""
                 if primary_redacted or auxiliary_redacted:
@@ -805,22 +1011,30 @@ def export_xml_unit(
         primary_text = official.rows[primary_index].text if official is not None and primary_index is not None else None
         auxiliary_index: Optional[int] = None
         auxiliary_text: Optional[str] = None
+        auxiliary_classification: Optional[str] = None
         aux_status = "unavailable"
         aux_source_index = source_to_aux[row.index] if aux_jp else None
         if aux_source_index is not None and aux_en is not None and aux_source_index < len(aux_to_en):
             auxiliary_index = aux_to_en[aux_source_index]
             if auxiliary_index is not None:
+                auxiliary_jp_text = aux_jp.rows[aux_source_index].text if aux_jp else None
                 auxiliary_text = aux_en.rows[auxiliary_index].text
+                auxiliary_classification = classify_auxiliary_japanese_copy(
+                    auxiliary_jp_text, auxiliary_text
+                )
+                if auxiliary_classification is not None:
+                    AUXILIARY_FALLBACK_STATS[auxiliary_classification] += 1
                 aux_status = f"{source_to_aux_status[row.index]}+{aux_to_en_status[aux_source_index]}"
 
         if primary_text is not None:
             editable = primary_text
             alignment_status = official_status[row.index]
             initial_source = "official_en"
-        elif auxiliary_text is not None:
+        elif auxiliary_text is not None and auxiliary_classification is None:
             editable = auxiliary_text
             alignment_status = "auxiliary_fallback_review"
             initial_source = "quartet_en"
+            AUXILIARY_FALLBACK_STATS["accepted_system_auxiliary_fallback"] += 1
         else:
             editable = ""
             alignment_status = "manual_required"
@@ -1113,6 +1327,7 @@ def write_manifest(translation_root: Path, project: str, units: list[dict[str, A
 
 def cmd_export(args: argparse.Namespace) -> int:
     EDIT_MIGRATION_STATS.clear()
+    AUXILIARY_FALLBACK_STATS.clear()
     project_root = Path(args.project_root).expanduser().resolve()
     if not (project_root / "config/project_version").is_file():
         raise ToolError(f"Not a Blue Reflection project root: {project_root}")
@@ -1165,6 +1380,9 @@ def cmd_export(args: argparse.Namespace) -> int:
             report[project][category]["exception_records"] = len(rows)
 
     report["edit_migration"] = dict(sorted(EDIT_MIGRATION_STATS.items()))
+    report["auxiliary_fallback_safety"] = dict(
+        sorted(AUXILIARY_FALLBACK_STATS.items())
+    )
     reports_dir = project_root / ".local/reports"
     atomic_json(reports_dir / "BR_TRANSLATION_EXPORT_REPORT.json", report)
     if getattr(args, "repair_layouts", False):
@@ -1386,6 +1604,7 @@ def apply_event_unit(
     unit_path: Path,
     unit: dict[str, Any],
     target_id: str,
+    quartet_policy: Optional[dict[str, Any]] = None,
     runtime_canary: bool = False,
 ) -> tuple[bytes, dict[str, Any]]:
     target = unit.get("targets", {}).get(target_id)
@@ -1394,8 +1613,25 @@ def apply_event_unit(
     template_path = project_root / target["template_path"]
     template = parse_ebm(template_path)
     texts = [message.text for message in template.messages]
+
+    quartet_jp: Optional[EBMFile] = None
+    quartet_en_to_jp: list[Optional[int]] = []
+    if target_id == QUARTET_TARGET_ID:
+        if quartet_policy is None:
+            raise ToolError("Quartet target policy was not loaded")
+        value = (
+            unit.get("source", {}).get("auxiliary_jp_path")
+            or unit.get("source", {}).get("jp_path")
+        )
+        if not isinstance(value, str):
+            raise ToolError(f"Quartet Japanese target template is missing: {unit_path}")
+        quartet_jp = parse_ebm(project_root / value)
+        quartet_en_to_jp, _ = align_messages(template, quartet_jp)
+
     assignments: dict[int, tuple[str, str]] = {}
+    adaptation_counts: Counter[str] = Counter()
     blank_preserved = 0
+    target_template_preserved = 0
     applied = 0
 
     for record in unit["records"]:
@@ -1412,11 +1648,31 @@ def apply_event_unit(
             raise ToolError(
                 f"Target index out of range in {unit_path}: {target_index}"
             )
-        editable = validate_record_text(record, unit_path)
+        editable: Optional[str] = validate_record_text(record, unit_path)
+        logical_id = str(record.get("logical_id", ""))
+        if target_id == QUARTET_TARGET_ID:
+            assert quartet_jp is not None and quartet_policy is not None
+            quartet_jp_index = quartet_en_to_jp[target_index]
+            if quartet_jp_index is None:
+                raise ToolError(
+                    f"Quartet EN target has no JP counterpart in {unit_path} "
+                    f"at index {target_index}"
+                )
+            editable, adaptation = adapt_quartet_text(
+                record=record,
+                editable=editable,
+                target_jp=quartet_jp.messages[quartet_jp_index].text,
+                target_en=template.messages[target_index].text,
+                quartet_policy=quartet_policy,
+            )
+            adaptation_counts[adaptation] += 1
+            if editable is None:
+                target_template_preserved += 1
+                continue
         if editable == "":
             blank_preserved += 1
             continue
-        logical_id = str(record.get("logical_id", ""))
+        assert editable is not None
         previous = assignments.get(target_index)
         if previous is not None and previous[0] != editable:
             raise ToolError(
@@ -1430,7 +1686,6 @@ def apply_event_unit(
         applied += 1
 
     runtime_canary_applied = 0
-
     output = serialize_ebm(template, texts)
     parsed = parse_ebm_bytes(
         output,
@@ -1450,6 +1705,8 @@ def apply_event_unit(
         "target_records": len(template.messages),
         "applied_records": applied,
         "blank_preserved_records": blank_preserved,
+        "target_template_preserved_records": target_template_preserved,
+        "quartet_adaptation_counts": dict(sorted(adaptation_counts.items())),
         "runtime_canary_records": runtime_canary_applied,
         "mapped_records": sum(
             1
@@ -1467,14 +1724,32 @@ def apply_system_unit(
     unit_path: Path,
     unit: dict[str, Any],
     target_id: str,
+    quartet_policy: Optional[dict[str, Any]] = None,
 ) -> tuple[bytes, dict[str, Any]]:
     target = unit.get("targets", {}).get(target_id)
     if not isinstance(target, dict) or not target.get("template_path"):
         raise ToolError(f"Unit does not support target {target_id}: {unit_path}")
     template_path = project_root / target["template_path"]
     template = parse_xml_table(template_path)
+
+    quartet_jp: Optional[XMLTable] = None
+    quartet_en_to_jp: list[Optional[int]] = []
+    if target_id == QUARTET_TARGET_ID:
+        if quartet_policy is None:
+            raise ToolError("Quartet target policy was not loaded")
+        value = (
+            unit.get("source", {}).get("auxiliary_jp_path")
+            or unit.get("source", {}).get("jp_path")
+        )
+        if not isinstance(value, str):
+            raise ToolError(f"Quartet Japanese XML target is missing: {unit_path}")
+        quartet_jp = parse_xml_table(project_root / value)
+        quartet_en_to_jp, _ = align_rows(template, quartet_jp)
+
     assignments: dict[int, tuple[str, str]] = {}
+    adaptation_counts: Counter[str] = Counter()
     blank_preserved = 0
+    target_template_preserved = 0
 
     for record in unit["records"]:
         alignment = record.get("alignment")
@@ -1490,11 +1765,31 @@ def apply_system_unit(
             raise ToolError(
                 f"Target XML row out of range in {unit_path}: {target_index}"
             )
-        editable = validate_record_text(record, unit_path)
+        editable: Optional[str] = validate_record_text(record, unit_path)
+        logical_id = str(record.get("logical_id", ""))
+        if target_id == QUARTET_TARGET_ID:
+            assert quartet_jp is not None and quartet_policy is not None
+            quartet_jp_index = quartet_en_to_jp[target_index]
+            if quartet_jp_index is None:
+                raise ToolError(
+                    f"Quartet EN XML target has no JP counterpart in {unit_path} "
+                    f"at row {target_index}"
+                )
+            editable, adaptation = adapt_quartet_text(
+                record=record,
+                editable=editable,
+                target_jp=quartet_jp.rows[quartet_jp_index].text,
+                target_en=template.rows[target_index].text,
+                quartet_policy=quartet_policy,
+            )
+            adaptation_counts[adaptation] += 1
+            if editable is None:
+                target_template_preserved += 1
+                continue
         if editable == "":
             blank_preserved += 1
             continue
-        logical_id = str(record.get("logical_id", ""))
+        assert editable is not None
         previous = assignments.get(target_index)
         if previous is not None and previous[0] != editable:
             raise ToolError(
@@ -1519,6 +1814,8 @@ def apply_system_unit(
         "target_records": len(template.rows),
         "applied_records": len(replacements),
         "blank_preserved_records": blank_preserved,
+        "target_template_preserved_records": target_template_preserved,
+        "quartet_adaptation_counts": dict(sorted(adaptation_counts.items())),
         "mapped_records": sum(
             1
             for record in unit["records"]
@@ -1527,7 +1824,6 @@ def apply_system_unit(
             and record["alignment"]["target_indices"].get(target_id) is not None
         ),
     }
-
 
 def development_targets() -> dict[str, str]:
     return {
@@ -2057,6 +2353,11 @@ def cmd_build_loose(args: argparse.Namespace) -> int:
     runtime_canary = bool(args.runtime_canary)
     if unknown:
         raise ToolError(f"Unsupported translation build target(s): {', '.join(sorted(unknown))}")
+    quartet_policy = (
+        load_quartet_target_policy(project_root)
+        if QUARTET_TARGET_ID in target_filter
+        else None
+    )
 
     report: dict[str, Any] = {
         "type": "br_translation_loose_build_report",
@@ -2075,6 +2376,8 @@ def cmd_build_loose(args: argparse.Namespace) -> int:
             "records": 0,
             "applied_records": 0,
             "blank_preserved_records": 0,
+            "target_template_preserved_records": 0,
+            "quartet_adapted_records": 0,
             "title_marker_files": 0,
             "runtime_canary_records": 0,
             "errors": 0,
@@ -2095,6 +2398,8 @@ def cmd_build_loose(args: argparse.Namespace) -> int:
             "records": 0,
             "applied_records": 0,
             "blank_preserved_records": 0,
+            "target_template_preserved_records": 0,
+            "quartet_adaptation_counts": {},
             "title_marker_files": 0,
             "runtime_canary_records": 0,
             "archives": {},
@@ -2119,11 +2424,21 @@ def cmd_build_loose(args: argparse.Namespace) -> int:
 
             if unit["type"] == "br_event_translation_unit":
                 output, stats = apply_event_unit(
-                    project_root, translation_root, unit_path, unit, target_id
+                    project_root,
+                    translation_root,
+                    unit_path,
+                    unit,
+                    target_id,
+                    quartet_policy=quartet_policy,
                 )
             else:
                 output, stats = apply_system_unit(
-                    project_root, translation_root, unit_path, unit, target_id
+                    project_root,
+                    translation_root,
+                    unit_path,
+                    unit,
+                    target_id,
+                    quartet_policy=quartet_policy,
                 )
 
             output_path = loose_root / target_id / archive_stem / internal_path
@@ -2153,6 +2468,14 @@ def cmd_build_loose(args: argparse.Namespace) -> int:
             target_report["records"] += stats["records"]
             target_report["applied_records"] += stats["applied_records"]
             target_report["blank_preserved_records"] += stats["blank_preserved_records"]
+            target_report["target_template_preserved_records"] += stats.get(
+                "target_template_preserved_records", 0
+            )
+            adaptation_totals = Counter(target_report["quartet_adaptation_counts"])
+            adaptation_totals.update(stats.get("quartet_adaptation_counts", {}))
+            target_report["quartet_adaptation_counts"] = dict(
+                sorted(adaptation_totals.items())
+            )
             target_report["runtime_canary_records"] += stats.get(
                 "runtime_canary_records", 0
             )
@@ -2206,9 +2529,15 @@ def cmd_build_loose(args: argparse.Namespace) -> int:
         for key in (
             "units", "output_files", "changed_files", "records",
             "applied_records", "blank_preserved_records",
+            "target_template_preserved_records",
             "title_marker_files", "runtime_canary_records",
         ):
             report["summary"][key] += target_report[key]
+        report["summary"]["quartet_adapted_records"] += sum(
+            count
+            for action, count in target_report["quartet_adaptation_counts"].items()
+            if action not in {"shared_exact", "redacted_target_import_allowed"}
+        )
 
     plan = {
         "type": "br_translation_repack_plan",
@@ -2232,6 +2561,10 @@ def cmd_build_loose(args: argparse.Namespace) -> int:
     print(f"Applied records: {report['summary']['applied_records']}")
     print(f"Blank/manual records preserved from JP templates: "
           f"{report['summary']['blank_preserved_records']}")
+    print(f"Quartet target-template records preserved: "
+          f"{report['summary']['target_template_preserved_records']}")
+    print(f"Quartet target adaptations applied: "
+          f"{report['summary']['quartet_adapted_records']}")
     print(f"Title marker files: {report['summary']['title_marker_files']}")
     print(f"Title marker: {title_marker or '(disabled)'}")
     print(

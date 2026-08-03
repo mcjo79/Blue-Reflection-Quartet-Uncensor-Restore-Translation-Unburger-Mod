@@ -16,7 +16,7 @@ import (
 	"local/blue-reflection-patcher/internal/targets"
 )
 
-const version = "0.0.23-dev"
+const version = "0.0.24-dev"
 
 type rootsFlag []string
 
@@ -52,6 +52,8 @@ func main() {
 		err = commandPayloadPreview(os.Args[2:])
 	case "quartet-composition-preview":
 		err = commandQuartetCompositionPreview(os.Args[2:])
+	case "quartet-composition-build":
+		err = commandQuartetCompositionBuild(os.Args[2:])
 	case "transaction-self-test":
 		err = commandTransactionSelfTest(os.Args[2:])
 	case "quartet-profile-activate":
@@ -294,6 +296,7 @@ Commands:
   state-path [--app-id ID]
   payload-preview [--game-dir PATH] [--modules ID,ID|none] [--project-root PATH] [--json FILE]
   quartet-composition-preview [--game-dir PATH] [--project-root PATH] [--json FILE]
+  quartet-composition-build [--game-dir PATH] [--project-root PATH] [--gust-pak PATH] [--timeout DURATION] [--json FILE]
   transaction-self-test --work-dir PATH [--json FILE]
   quartet-profile-activate --project-root PATH --game-root PATH PROFILE_ID
   quartet-profile-status --project-root PATH --game-root PATH

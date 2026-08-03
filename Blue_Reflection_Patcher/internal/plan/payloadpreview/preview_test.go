@@ -97,7 +97,7 @@ func TestSelectedRestorationAdvertisesCompositionPreflight(t *testing.T) {
 	if preview.Status != "partial" || preview.Targets[0].Status != "partial" || preview.Targets[0].PendingModuleCount != 1 {
 		t.Fatalf("restoration pending state was not preserved: %+v", preview)
 	}
-	if preview.Targets[0].Modules[1].ConnectionStatus != "composition_preflight_available" || preview.Targets[0].Modules[1].Ready {
+	if preview.Targets[0].Modules[1].ConnectionStatus != "composition_build_available" || preview.Targets[0].Modules[1].Ready {
 		t.Fatalf("unexpected restoration module preview: %+v", preview.Targets[0].Modules[1])
 	}
 }

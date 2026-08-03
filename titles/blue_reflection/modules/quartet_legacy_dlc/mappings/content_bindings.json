@@ -1,5 +1,42 @@
 {
   "type": "br_dlc_content_bindings",
   "format_version": 1,
-  "bindings": []
+  "module_id": "quartet_legacy_dlc",
+  "binding_policy": {
+    "mapping_level": "member",
+    "translation_text_source": "titles/blue_reflection/translation",
+    "separate_translation_database": false,
+    "source_description": "transfer DLC from a selected first-game installation",
+    "raw_assets_embedded": false
+  },
+  "bindings": [
+    {
+      "binding_id": "legacy_dlc_south_island_family",
+      "family_id": "south_island",
+      "source_scope": "fe01_200-fe01_290 and fe03_210-fe14_270",
+      "target_scope": "Blue Reflection Quartet",
+      "status": "metadata_audit"
+    },
+    {
+      "binding_id": "legacy_dlc_ffxv_family",
+      "family_id": "ffxv",
+      "source_scope": "fe08_150-fe08_180",
+      "target_scope": "Blue Reflection Quartet",
+      "status": "metadata_audit"
+    },
+    {
+      "binding_id": "legacy_dlc_yy_family",
+      "family_id": "yy",
+      "source_scope": "yy01-yy04",
+      "target_scope": "Blue Reflection Quartet",
+      "status": "metadata_audit"
+    },
+    {
+      "binding_id": "legacy_dlc_system_registry",
+      "family_id": "system_registry",
+      "source_scope": "str_chat_msg.xml and str_costume.xml",
+      "target_scope": "Blue Reflection Quartet",
+      "status": "shared_dependency_audit"
+    }
+  ]
 }

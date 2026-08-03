@@ -420,7 +420,7 @@ func verifyQuartetTranslationBases(projectRoot string, report compositionRepackR
 }
 
 func buildCompositionArchivePreviews(projectRoot, gameRoot string, profiles []compositionProfilePreview, registry localProfileRegistry, translationBases map[string]compositionTranslationBase) []compositionArchivePreview {
-	targets := []string{"Data/PACK11.PAK", "Data/PACK10_01.PAK"}
+	targets := []string{"Data/PACK11.PAK", "Data/PACK10_01.PAK", "Data/PACK10_03.PAK"}
 	result := make([]compositionArchivePreview, 0, len(targets))
 	for _, target := range targets {
 		archive := compositionArchivePreview{
@@ -428,6 +428,33 @@ func buildCompositionArchivePreviews(projectRoot, gameRoot string, profiles []co
 			OutputPath:          filepath.ToSlash(filepath.Join(".local/build/composition", quartetTargetID, filepath.FromSlash(target))),
 			EligibleProfileIDs:  []string{}, Warnings: []string{}, Status: "not_selected",
 		}
+
+		baselineHashes := map[string]int64{}
+		overlayMembers := map[string]bool{}
+		for _, profile := range profiles {
+			if profile.TargetRelativePath != target || !profile.ProductionEligible {
+				continue
+			}
+			manifest := registry.Profiles[profile.ProfileID].Manifest
+			baselineHashes[manifest.BaselineSHA256] = manifest.BaselineSize
+			archive.EligibleProfileIDs = append(archive.EligibleProfileIDs, profile.ProfileID)
+			for _, member := range manifest.ChangedMembers {
+				overlayMembers[foldCompositionPath(member)] = true
+			}
+		}
+		sort.Strings(archive.EligibleProfileIDs)
+		archive.OverlayMemberCount = len(overlayMembers)
+		if len(archive.EligibleProfileIDs) == 0 {
+			if base, ok := translationBases[foldCompositionPath(target)]; ok {
+				archive.BaseSourceKind = "verified_translation_archive"
+				archive.BaseSourcePath = base.SourcePath
+			} else {
+				archive.BaseSourceKind = "installed_game_baseline"
+			}
+			result = append(result, archive)
+			continue
+		}
+
 		if base, ok := translationBases[foldCompositionPath(target)]; ok {
 			archive.BaseSourceKind = "verified_translation_archive"
 			archive.BaseSourcePath = base.SourcePath
@@ -446,21 +473,6 @@ func buildCompositionArchivePreviews(projectRoot, gameRoot string, profiles []co
 			}
 		}
 
-		baselineHashes := map[string]int64{}
-		overlayMembers := map[string]bool{}
-		for _, profile := range profiles {
-			if profile.TargetRelativePath != target || !profile.ProductionEligible {
-				continue
-			}
-			manifest := registry.Profiles[profile.ProfileID].Manifest
-			baselineHashes[manifest.BaselineSHA256] = manifest.BaselineSize
-			archive.EligibleProfileIDs = append(archive.EligibleProfileIDs, profile.ProfileID)
-			for _, member := range manifest.ChangedMembers {
-				overlayMembers[foldCompositionPath(member)] = true
-			}
-		}
-		sort.Strings(archive.EligibleProfileIDs)
-		archive.OverlayMemberCount = len(overlayMembers)
 		if len(baselineHashes) > 1 {
 			archive.Status = "blocked_inconsistent_profile_baselines"
 			archive.Warnings = append(archive.Warnings, fmt.Sprintf("runtime-validated profiles for %s do not share one baseline", target))
@@ -468,7 +480,7 @@ func buildCompositionArchivePreviews(projectRoot, gameRoot string, profiles []co
 		for hash, size := range baselineHashes {
 			archive.BaselineSHA256, archive.BaselineBytes = hash, size
 		}
-		if archive.BaseSourcePath != "" && archive.BaselineSHA256 != "" {
+		if archive.BaselineSHA256 != "" {
 			installedPath, _, err := resolveCaseInsensitiveCompositionPath(gameRoot, target)
 			if err != nil {
 				archive.Status = "blocked_installed_baseline"
@@ -485,7 +497,7 @@ func buildCompositionArchivePreviews(projectRoot, gameRoot string, profiles []co
 				}
 			}
 		}
-		if archive.Status == "not_selected" && len(archive.EligibleProfileIDs) > 0 {
+		if archive.Status == "not_selected" {
 			archive.Status = "ready_for_member_overlay"
 		}
 		result = append(result, archive)

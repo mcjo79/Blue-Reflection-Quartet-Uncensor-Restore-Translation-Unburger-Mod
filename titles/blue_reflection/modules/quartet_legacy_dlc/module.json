@@ -4,7 +4,7 @@
   "module_id": "quartet_legacy_dlc",
   "project": "blue_reflection",
   "module_type": "dlc_adapter",
-  "status": "planned_after_text_repack",
+  "status": "metadata_audit_active",
   "default_enabled": false,
   "targets": [
     "blue_reflection_quartet",
@@ -12,20 +12,22 @@
   ],
   "dependencies": [],
   "source_requirements": [
-    "legally_installed_blue_reflection_original",
-    "legally_owned_and_installed_original_dlc",
-    "legally_installed_blue_reflection_quartet"
+    "selected_blue_reflection_original_installation",
+    "blue_reflection_quartet_installation"
   ],
   "registries": {
     "content": "titles/blue_reflection/modules/quartet_legacy_dlc/registry/content_registry.json"
   },
   "mapping_sources": [
-    "titles/blue_reflection/modules/quartet_legacy_dlc/mappings/content_bindings.json"
+    "titles/blue_reflection/modules/quartet_legacy_dlc/mappings/content_bindings.json",
+    "titles/blue_reflection/modules/quartet_legacy_dlc/mappings/legacy_dlc_families.tsv",
+    "titles/blue_reflection/modules/quartet_legacy_dlc/mappings/text_candidate_units.tsv"
   ],
   "distribution_policy": {
-    "contains_paid_dlc_assets": false,
-    "migration_reads_owned_dlc_locally": true,
-    "public_package": "extractor_mappings_converters_integrations_only"
+    "contains_raw_game_assets": false,
+    "local_source_description": "transfer DLC from a selected first-game installation",
+    "public_package": "metadata_mappings_audit_tools_and_converters_only",
+    "contains_paid_dlc_assets": false
   },
   "build_namespace": "quartet_legacy_dlc"
 }

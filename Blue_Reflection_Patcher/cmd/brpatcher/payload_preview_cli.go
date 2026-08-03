@@ -101,5 +101,5 @@ func printHumanPayloadPreview(out io.Writer, preview payloadpreview.Preview) {
 		}
 	}
 	fmt.Fprintf(out, "\n%sPreview only:%s no transaction was prepared and no game file was modified.\n", ansiBold, ansiReset)
-	fmt.Fprintf(out, "%sFinal distribution still requires content-aware archive composition.%s\n", ansiDim, ansiReset)
+	fmt.Fprintf(out, "%sQuartet composition payloads can be built locally with quartet-composition-build; transaction commit remains disabled.%s\n", ansiDim, ansiReset)
 }
