@@ -94,6 +94,9 @@ func printHumanPayloadPreview(out io.Writer, preview payloadpreview.Preview) {
 					style = ansiYellow + ansiBold
 				}
 				fmt.Fprintf(out, "      %s%-7s%s %s\n", style, action, ansiReset, artifact.RelativePath)
+				if artifact.CompositionVerified {
+					fmt.Fprintf(out, "              %sverified content-aware composition%s\n", ansiDim, ansiReset)
+				}
 				if artifact.Error != "" {
 					fmt.Fprintf(out, "              %s%s%s\n", ansiYellow, artifact.Error, ansiReset)
 				}
@@ -101,5 +104,8 @@ func printHumanPayloadPreview(out io.Writer, preview payloadpreview.Preview) {
 		}
 	}
 	fmt.Fprintf(out, "\n%sPreview only:%s no transaction was prepared and no game file was modified.\n", ansiBold, ansiReset)
-	fmt.Fprintf(out, "%sQuartet composition payloads can be built locally with quartet-composition-build; transaction commit remains disabled.%s\n", ansiDim, ansiReset)
+	if preview.Status == "ready" {
+		fmt.Fprintf(out, "%sA fully ready single-installation preview may be installed through the guided start workflow or staged separately with transaction-prepare.%s\n", ansiDim, ansiReset)
+	}
+	fmt.Fprintf(out, "%sQuartet Translation+Restoration uses only a matching verified content-aware composition set; preview itself never writes game files, and every installation requires an explicit guided or command-line confirmation.%s\n", ansiDim, ansiReset)
 }

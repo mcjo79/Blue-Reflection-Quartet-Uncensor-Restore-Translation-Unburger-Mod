@@ -4,7 +4,7 @@
   "module_id": "quartet_legacy_dlc",
   "project": "blue_reflection",
   "module_type": "dlc_adapter",
-  "status": "metadata_audit_active",
+  "status": "scenario_nonscenario_technical_registry_exact_and_nested_closure_metadata_audit_active",
   "default_enabled": false,
   "targets": [
     "blue_reflection_quartet",
@@ -29,5 +29,39 @@
     "public_package": "metadata_mappings_audit_tools_and_converters_only",
     "contains_paid_dlc_assets": false
   },
-  "build_namespace": "quartet_legacy_dlc"
+  "build_namespace": "quartet_legacy_dlc",
+  "audit_tools": {
+    "scenario_inventory": "Blue_Reflection_Text_Tool/br_dlc_tool.py",
+    "nonscenario_inventory": "workstreams/quartet_legacy_dlc/br_dlc_nonscenario_tool.py",
+    "technical_registry": "workstreams/quartet_legacy_dlc/br_dlc_technical_registry_tool.py",
+    "exact_closure": "workstreams/quartet_legacy_dlc/br_dlc_exact_closure_tool.py",
+    "nested_container_inventory": "workstreams/quartet_legacy_dlc/br_dlc_nested_container_tool.py"
+  },
+  "scope_policy": {
+    "text_and_scene_candidate_list_is_complete_catalog": false,
+    "discover_nonscenario_dlc_from_full_first_game_inventory": true,
+    "mapping_level": "pak_member_and_system_record",
+    "translation_owned_by": "titles/blue_reflection/translation",
+    "br1_fallback_asset_allowed": true,
+    "fallback_requires_explicit_documentation_and_validation": true,
+    "seed_independent_technical_registry": true,
+    "text_candidate_units_required_for_technical_registry": false,
+    "technical_registry_types": [
+      "costume_or_outfit",
+      "accessory",
+      "item_or_reward",
+      "recipe_or_system_bonus",
+      "theme_or_ui_content",
+      "unlock_or_entitlement",
+      "shared_asset_dependency",
+      "unknown_legacy_dlc_candidate"
+    ],
+    "canonical_owner_triage": true,
+    "technical_registry_0_0_3_preserved": true,
+    "profile_build_allowed_after_closure_audit": false,
+    "selective_parent_container_inventory": true,
+    "full_pak_extraction_required": false,
+    "nested_raw_payload_exported": false,
+    "profile_build_allowed_after_nested_inventory": false
+  }
 }

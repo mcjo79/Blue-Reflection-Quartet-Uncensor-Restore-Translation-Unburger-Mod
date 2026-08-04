@@ -44,6 +44,173 @@
       "quartet_status": "not_mapped",
       "dependencies": [],
       "test_status": "not_tested"
+    },
+    {
+      "content_id": "legacy_dlc_nonscenario_costume_and_appearance",
+      "content_type": "generated_metadata_catalog",
+      "source": "selected_blue_reflection_original_installation",
+      "source_ownership": "requires_original_dlc",
+      "quartet_status": "metadata_inventory_only",
+      "dependencies": [
+        "legacy_dlc_nonscenario_entitlement_and_unlock",
+        "legacy_dlc_shared_system_registry"
+      ],
+      "test_status": "not_runtime_tested"
+    },
+    {
+      "content_id": "legacy_dlc_nonscenario_items_rewards_recipes",
+      "content_type": "generated_metadata_catalog",
+      "source": "selected_blue_reflection_original_installation",
+      "source_ownership": "requires_original_dlc",
+      "quartet_status": "metadata_inventory_only",
+      "dependencies": [
+        "legacy_dlc_nonscenario_entitlement_and_unlock",
+        "legacy_dlc_shared_system_registry"
+      ],
+      "test_status": "not_runtime_tested"
+    },
+    {
+      "content_id": "legacy_dlc_nonscenario_theme_ui_freespace",
+      "content_type": "generated_metadata_catalog",
+      "source": "selected_blue_reflection_original_installation",
+      "source_ownership": "requires_original_dlc",
+      "quartet_status": "metadata_inventory_only",
+      "dependencies": [
+        "legacy_dlc_nonscenario_entitlement_and_unlock",
+        "legacy_dlc_shared_system_registry"
+      ],
+      "test_status": "not_runtime_tested"
+    },
+    {
+      "content_id": "legacy_dlc_nonscenario_entitlement_and_unlock",
+      "content_type": "generated_dependency_catalog",
+      "source": "selected_blue_reflection_original_installation",
+      "source_ownership": "requires_original_dlc",
+      "quartet_status": "not_synthesized",
+      "dependencies": [],
+      "test_status": "not_runtime_tested"
+    },
+    {
+      "content_id": "legacy_dlc_technical_catalog_costume_or_outfit",
+      "content_type": "costume_or_outfit",
+      "source": "selected_blue_reflection_original_installation",
+      "source_ownership": "requires_original_dlc_when_applicable",
+      "quartet_status": "generated_metadata_registry_only",
+      "dependencies": [],
+      "test_status": "not_runtime_tested"
+    },
+    {
+      "content_id": "legacy_dlc_technical_catalog_accessory",
+      "content_type": "accessory",
+      "source": "selected_blue_reflection_original_installation",
+      "source_ownership": "requires_original_dlc_when_applicable",
+      "quartet_status": "generated_metadata_registry_only",
+      "dependencies": [],
+      "test_status": "not_runtime_tested"
+    },
+    {
+      "content_id": "legacy_dlc_technical_catalog_item_or_reward",
+      "content_type": "item_or_reward",
+      "source": "selected_blue_reflection_original_installation",
+      "source_ownership": "requires_original_dlc_when_applicable",
+      "quartet_status": "generated_metadata_registry_only",
+      "dependencies": [],
+      "test_status": "not_runtime_tested"
+    },
+    {
+      "content_id": "legacy_dlc_technical_catalog_recipe_or_system_bonus",
+      "content_type": "recipe_or_system_bonus",
+      "source": "selected_blue_reflection_original_installation",
+      "source_ownership": "requires_original_dlc_when_applicable",
+      "quartet_status": "generated_metadata_registry_only",
+      "dependencies": [],
+      "test_status": "not_runtime_tested"
+    },
+    {
+      "content_id": "legacy_dlc_technical_catalog_theme_or_ui_content",
+      "content_type": "theme_or_ui_content",
+      "source": "selected_blue_reflection_original_installation",
+      "source_ownership": "requires_original_dlc_when_applicable",
+      "quartet_status": "generated_metadata_registry_only",
+      "dependencies": [],
+      "test_status": "not_runtime_tested"
+    },
+    {
+      "content_id": "legacy_dlc_technical_catalog_unlock_or_entitlement",
+      "content_type": "unlock_or_entitlement",
+      "source": "selected_blue_reflection_original_installation",
+      "source_ownership": "requires_original_dlc_when_applicable",
+      "quartet_status": "generated_metadata_registry_only",
+      "dependencies": [],
+      "test_status": "not_runtime_tested"
+    },
+    {
+      "content_id": "legacy_dlc_technical_catalog_shared_asset_dependency",
+      "content_type": "shared_asset_dependency",
+      "source": "selected_blue_reflection_original_installation",
+      "source_ownership": "requires_original_dlc_when_applicable",
+      "quartet_status": "generated_metadata_registry_only",
+      "dependencies": [],
+      "test_status": "not_runtime_tested"
+    },
+    {
+      "content_id": "legacy_dlc_technical_catalog_unknown_legacy_dlc_candidate",
+      "content_type": "unknown_legacy_dlc_candidate",
+      "source": "selected_blue_reflection_original_installation",
+      "source_ownership": "requires_original_dlc_when_applicable",
+      "quartet_status": "generated_metadata_registry_only",
+      "dependencies": [],
+      "test_status": "not_runtime_tested"
+    },
+    {
+      "content_id": "legacy_dlc_nested_parent_container_closure",
+      "content_type": "generated_metadata_catalog",
+      "source": "selected_blue_reflection_original_installation",
+      "source_ownership": "requires_original_dlc",
+      "quartet_status": "nested_inventory_metadata_only",
+      "dependencies": [
+        "legacy_dlc_technical_catalog_costume_or_outfit",
+        "legacy_dlc_technical_catalog_accessory"
+      ],
+      "test_status": "not_runtime_tested"
     }
-  ]
+  ],
+  "generated_registry": {
+    "report": "DLC_TECHNICAL_REGISTRY.tsv",
+    "discovery_entry_point": "complete_br1_system_tables_flags_and_asset_member_inventories",
+    "text_candidate_units_required": false,
+    "technical_types": [
+      "costume_or_outfit",
+      "accessory",
+      "item_or_reward",
+      "recipe_or_system_bonus",
+      "theme_or_ui_content",
+      "unlock_or_entitlement",
+      "shared_asset_dependency",
+      "unknown_legacy_dlc_candidate"
+    ],
+    "status": "metadata_only_not_buildable",
+    "default_enabled": false,
+    "raw_assets_embedded": false
+  },
+  "generated_exact_closure": {
+    "report": "DLC_CANONICAL_CONTENT_CLOSURE.tsv",
+    "input_registry": "DLC_TECHNICAL_REGISTRY.tsv",
+    "preserves_input_registry": true,
+    "scope_triage": [
+      "canonical_owner",
+      "owner_candidate_table_only",
+      "companion_record",
+      "shared_dependency_pool",
+      "quarantined_contextual_false_positive",
+      "quarantined_contextual_candidate",
+      "quarantined_dummy_placeholder",
+      "unresolved_table_candidate"
+    ],
+    "status": "metadata_only_not_buildable",
+    "profile_build_allowed": false,
+    "default_enabled": false,
+    "runtime_validated": false,
+    "raw_assets_embedded": false
+  }
 }

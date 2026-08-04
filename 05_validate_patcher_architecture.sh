@@ -19,7 +19,28 @@ QUARTET_SELECTION_REPORT="$REPORT_DIR/BR_PATCHER_QUARTET_SELECTION_REPORT.json"
 TRANSACTION_REPORT="$REPORT_DIR/BR_PATCHER_TRANSACTION_ENGINE_REPORT.json"
 TRANSACTION_TEST_ROOT="$BUILD_DIR/transaction-self-test"
 PAYLOAD_PREVIEW_REPORT="$REPORT_DIR/BR_PATCHER_LOCAL_PAYLOAD_PREVIEW_REPORT.json"
+TRANSACTION_PREPARE_REPORT="$REPORT_DIR/BR_PATCHER_TRANSACTION_PREPARE_REPORT.json"
+TRANSACTION_STATUS_REPORT="$REPORT_DIR/BR_PATCHER_TRANSACTION_STATUS_REPORT.json"
+TRANSACTION_DISCARD_REPORT="$REPORT_DIR/BR_PATCHER_TRANSACTION_DISCARD_REPORT.json"
+TRANSACTION_INSTALL_PREPARE_REPORT="$REPORT_DIR/BR_PATCHER_TRANSACTION_INSTALL_PREPARE_REPORT.json"
+TRANSACTION_COMMIT_REPORT="$REPORT_DIR/BR_PATCHER_TRANSACTION_COMMIT_REPORT.json"
+TRANSACTION_ROLLBACK_REPORT="$REPORT_DIR/BR_PATCHER_TRANSACTION_ROLLBACK_REPORT.json"
+INSTALLATION_ACTIVE_STATUS_REPORT="$REPORT_DIR/BR_PATCHER_INSTALLATION_ACTIVE_STATUS_REPORT.json"
+INSTALLATION_ROLLED_BACK_STATUS_REPORT="$REPORT_DIR/BR_PATCHER_INSTALLATION_ROLLED_BACK_STATUS_REPORT.json"
+GUIDED_INSTALL_SELECTION_REPORT="$REPORT_DIR/BR_PATCHER_GUIDED_INSTALL_SELECTION_REPORT.json"
+GUIDED_INSTALL_PAYLOAD_REPORT="$REPORT_DIR/BR_PATCHER_GUIDED_INSTALL_PAYLOAD_REPORT.json"
+GUIDED_INSTALL_STATUS_REPORT="$REPORT_DIR/BR_PATCHER_GUIDED_INSTALL_STATUS_REPORT.json"
+GUIDED_INSTALL_TRANSACTION_REPORT="$REPORT_DIR/BR_PATCHER_GUIDED_INSTALL_TRANSACTION_REPORT.json"
+GUIDED_LOCAL_BUILD_SELECTION_REPORT="$REPORT_DIR/BR_PATCHER_GUIDED_LOCAL_BUILD_SELECTION_REPORT.json"
+GUIDED_LOCAL_BUILD_PAYLOAD_REPORT="$REPORT_DIR/BR_PATCHER_GUIDED_LOCAL_BUILD_PAYLOAD_REPORT.json"
+GUIDED_LOCAL_BUILD_STATUS_REPORT="$REPORT_DIR/BR_PATCHER_GUIDED_LOCAL_BUILD_STATUS_REPORT.json"
+GUIDED_LOCAL_BUILD_TRANSACTION_REPORT="$REPORT_DIR/BR_PATCHER_GUIDED_LOCAL_BUILD_TRANSACTION_REPORT.json"
+BASELINE_STATUS_REPORT="$REPORT_DIR/BR_PATCHER_BASELINE_STATUS_REPORT.json"
+BASELINE_CHANGED_STATUS_REPORT="$REPORT_DIR/BR_PATCHER_BASELINE_CHANGED_STATUS_REPORT.json"
+INSTALLATION_STATUS_REPORT="$REPORT_DIR/BR_PATCHER_INSTALLATION_STATUS_REPORT.json"
+COMPOSED_PAYLOAD_PREVIEW_REPORT="$REPORT_DIR/BR_PATCHER_QUARTET_COMPOSED_PAYLOAD_PREVIEW_REPORT.json"
 PAYLOAD_PREVIEW_TEST_ROOT="$BUILD_DIR/payload-preview-self-test"
+TRANSACTION_PREPARE_STATE_ROOT="$PAYLOAD_PREVIEW_TEST_ROOT/state"
 COMPOSITION_PREVIEW_REPORT="$REPORT_DIR/BR_PATCHER_QUARTET_COMPOSITION_PREFLIGHT_REPORT.json"
 COMPOSITION_BUILD_REPORT="$REPORT_DIR/BR_PATCHER_QUARTET_COMPOSITION_BUILD_REPORT.json"
 COMPOSITION_PREVIEW_TEST_ROOT="$BUILD_DIR/quartet-composition-preflight-self-test"
@@ -35,6 +56,17 @@ done
 [[ -f "$PATHS_FILE" ]] || fail "Missing local path configuration: $PATHS_FILE"
 [[ -f "$TOOL" ]] || fail "Distribution validator is missing: $TOOL"
 [[ -f "$MANIFEST" ]] || fail "Bundle manifest template is missing: $MANIFEST"
+[[ -x "$PROJECT_ROOT/workstreams/core/07_prepare_local_translation_payloads.sh" ]] || fail "One-command Translation workflow is missing or not executable"
+[[ -f "$PROJECT_ROOT/workstreams/core/local_translation_workflow.py" ]] || fail "Local Translation workflow implementation is missing"
+
+python3 -m unittest discover \
+  -s "$PROJECT_ROOT/workstreams/core/tests" \
+  -p 'test_*.py'
+python3 -m unittest discover \
+  -s "$PROJECT_ROOT/workstreams/translation_tooling/tests" \
+  -p 'test_current_baseline_rebase.py'
+python3 "$PROJECT_ROOT/workstreams/translation_tooling/blue_reflection_title_marker.py" --self-test >/dev/null
+"$PROJECT_ROOT/workstreams/core/07_prepare_local_translation_payloads.sh" --help >/dev/null
 
 # shellcheck source=/dev/null
 source "$PATHS_FILE"
@@ -192,6 +224,10 @@ required = {
     "new_file_committed": True,
     "original_file_restored": True,
     "added_file_removed": True,
+    "persistent_baseline_created": True,
+    "active_state_recorded": True,
+    "active_state_matched_installed": True,
+    "active_state_cleared_after_rollback": True,
     "final_journal_status": "rolled_back",
 }
 if report.get("status") != "ok":
@@ -245,6 +281,51 @@ report_path.parent.mkdir(parents=True, exist_ok=True)
 report_path.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
 PYPAYLOADBUILD
 
+  cp -a \
+    "$PAYLOAD_PREVIEW_TEST_ROOT/project/.local/reports/translation/BR_TRANSLATION_PAK_REPACK_REPORT.json" \
+    "$PAYLOAD_PREVIEW_TEST_ROOT/project/.local/reports/translation/BR_TRANSLATION_PAK_REPACK_REPORT.fixture.json"
+  printf '# synthetic local workflow marker\n' \
+    > "$PAYLOAD_PREVIEW_TEST_ROOT/project/workstreams/core/local_translation_workflow.py"
+  cat > "$PAYLOAD_PREVIEW_TEST_ROOT/project/workstreams/core/07_prepare_local_translation_payloads.sh" <<'PYGUIDEDLOCALBUILDER'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+PROJECT_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
+GAME_ROOT=""
+MODULES=""
+REPORT=""
+PREVIEW_ONLY=0
+while (($#)); do
+  case "$1" in
+    --game-dir) GAME_ROOT="$2"; shift 2 ;;
+    --modules) MODULES="$2"; shift 2 ;;
+    --preview-only) PREVIEW_ONLY=1; shift ;;
+    --json) REPORT="$2"; shift 2 ;;
+    *) printf 'unexpected synthetic workflow argument: %s\n' "$1" >&2; exit 2 ;;
+  esac
+done
+[[ "$PREVIEW_ONLY" == 1 ]] || exit 3
+[[ "$MODULES" == blue_reflection_translation ]] || exit 4
+cp -a \
+  "$PROJECT_ROOT/.local/reports/translation/BR_TRANSLATION_PAK_REPACK_REPORT.fixture.json" \
+  "$PROJECT_ROOT/.local/reports/translation/BR_TRANSLATION_PAK_REPACK_REPORT.json"
+python3 - "$GAME_ROOT" "$REPORT" <<'PYGUIDEDLOCALREPORT'
+import json
+import sys
+from pathlib import Path
+game = str(Path(sys.argv[1]).resolve())
+report = Path(sys.argv[2])
+report.parent.mkdir(parents=True, exist_ok=True)
+report.write_text(json.dumps({
+    "type": "br_local_translation_workflow_report",
+    "status": "ready_preview_only",
+    "target_id": "blue_reflection_original",
+    "game_root": game,
+    "game_files_modified": False,
+}, indent=2) + "\n", encoding="utf-8")
+PYGUIDEDLOCALREPORT
+PYGUIDEDLOCALBUILDER
+  chmod 0755 "$PAYLOAD_PREVIEW_TEST_ROOT/project/workstreams/core/07_prepare_local_translation_payloads.sh"
+
   "$BUILD_DIR/blue-reflection-patcher-linux-x86_64" payload-preview \
     --game-dir "$PAYLOAD_PREVIEW_TEST_ROOT/game" \
     --modules blue_reflection_translation \
@@ -275,6 +356,381 @@ for artifact in modules[0].get("artifacts", []):
         raise SystemExit(f"Unexpected synthetic desired action: {artifact!r}")
 print("Verified local translation archives and title marker are connected to a non-destructive transaction preview.")
 PYPAYLOADCHECK
+
+  rm -rf -- "$TRANSACTION_PREPARE_STATE_ROOT"
+  mkdir -p -- "$TRANSACTION_PREPARE_STATE_ROOT"
+  game_hashes_before="$(find "$PAYLOAD_PREVIEW_TEST_ROOT/game" -type f -print0 | sort -z | xargs -0 sha256sum)"
+  XDG_STATE_HOME="$TRANSACTION_PREPARE_STATE_ROOT" \
+    "$BUILD_DIR/blue-reflection-patcher-linux-x86_64" transaction-prepare \
+      --game-dir "$PAYLOAD_PREVIEW_TEST_ROOT/game" \
+      --modules blue_reflection_translation \
+      --no-prompt \
+      --project-root "$PAYLOAD_PREVIEW_TEST_ROOT/project" \
+      --json "$TRANSACTION_PREPARE_REPORT"
+
+  XDG_STATE_HOME="$TRANSACTION_PREPARE_STATE_ROOT" \
+    "$BUILD_DIR/blue-reflection-patcher-linux-x86_64" transaction-status \
+      --game-dir "$PAYLOAD_PREVIEW_TEST_ROOT/game" \
+      --json "$TRANSACTION_STATUS_REPORT"
+
+  XDG_STATE_HOME="$TRANSACTION_PREPARE_STATE_ROOT" \
+    "$BUILD_DIR/blue-reflection-patcher-linux-x86_64" baseline-status \
+      --game-dir "$PAYLOAD_PREVIEW_TEST_ROOT/game" \
+      --json "$BASELINE_STATUS_REPORT"
+
+  XDG_STATE_HOME="$TRANSACTION_PREPARE_STATE_ROOT" \
+    "$BUILD_DIR/blue-reflection-patcher-linux-x86_64" installation-status \
+      --game-dir "$PAYLOAD_PREVIEW_TEST_ROOT/game" \
+      --json "$INSTALLATION_STATUS_REPORT"
+
+  python3 - "$TRANSACTION_PREPARE_REPORT" "$TRANSACTION_STATUS_REPORT" "$BASELINE_STATUS_REPORT" "$INSTALLATION_STATUS_REPORT" <<'PYTRANSACTIONPREPARE'
+import json
+import sys
+from pathlib import Path
+
+prepared = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+status = json.loads(Path(sys.argv[2]).read_text(encoding="utf-8"))
+baseline = json.loads(Path(sys.argv[3]).read_text(encoding="utf-8"))
+installation = json.loads(Path(sys.argv[4]).read_text(encoding="utf-8"))
+if prepared.get("type") != "br_transaction_prepare_report" or prepared.get("status") != "prepared":
+    raise SystemExit(f"Translation transaction was not prepared: {prepared!r}")
+if prepared.get("commit_enabled") is not True:
+    raise SystemExit(f"Prepared transaction does not expose explicit commit: {prepared!r}")
+if prepared.get("format_version") != 4:
+    raise SystemExit(f"Unexpected transaction prepare format: {prepared!r}")
+if prepared.get("baseline_action") != "created" or not prepared.get("baseline_id"):
+    raise SystemExit(f"Persistent baseline was not created: {prepared!r}")
+if prepared.get("baseline_source") != "observed_current_preinstall_state" or prepared.get("active_state_status") != "not_active":
+    raise SystemExit(f"Unexpected initial active/baseline source state: {prepared!r}")
+manifest = Path(prepared.get("baseline_manifest_path", ""))
+if not manifest.is_file():
+    raise SystemExit(f"Persistent baseline manifest is missing: {manifest}")
+inspection = baseline.get("inspection", {})
+if inspection.get("status") != "matches_known_baseline" or inspection.get("baseline_count") != 1:
+    raise SystemExit(f"Current synthetic game does not match its preserved baseline: {baseline!r}")
+if inspection.get("matching_baseline_id") != prepared.get("baseline_id"):
+    raise SystemExit(f"Baseline identity mismatch: prepared={prepared!r} status={baseline!r}")
+if installation.get("status") != "inactive_matches_known_baseline" or installation.get("automatic_prepare_allowed") is not True:
+    raise SystemExit(f"Inactive installation status is not safely classified: {installation!r}")
+if prepared.get("prepared_change_count") != 3 or prepared.get("backup_count") != 3 or prepared.get("staged_count") != 3:
+    raise SystemExit(f"Unexpected prepared transaction counts: {prepared!r}")
+journal = Path(prepared.get("journal_path", ""))
+if not journal.is_file():
+    raise SystemExit(f"Prepared transaction journal is missing: {journal}")
+for item in prepared.get("files", []):
+    if not item.get("backup_prepared") or not item.get("staged_prepared"):
+        raise SystemExit(f"Prepared file lacks verified private state: {item!r}")
+if status.get("transaction_count") != 1 or status.get("transactions", [{}])[0].get("status") != "prepared":
+    raise SystemExit(f"Prepared transaction was not discoverable: {status!r}")
+print("Verified translation payloads were staged from an immutable persistent baseline with backups and a journal; installation still required explicit confirmation.")
+PYTRANSACTIONPREPARE
+
+  if XDG_STATE_HOME="$TRANSACTION_PREPARE_STATE_ROOT" \
+      "$BUILD_DIR/blue-reflection-patcher-linux-x86_64" transaction-prepare \
+        --game-dir "$PAYLOAD_PREVIEW_TEST_ROOT/game" \
+        --modules blue_reflection_translation \
+        --no-prompt \
+        --project-root "$PAYLOAD_PREVIEW_TEST_ROOT/project" >/dev/null 2>&1; then
+    fail "A second transaction prepare was accepted while a prepared transaction was active"
+  fi
+
+  prepared_journal="$(python3 - "$TRANSACTION_PREPARE_REPORT" <<'PYJOURNAL'
+import json
+import sys
+from pathlib import Path
+print(json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))["journal_path"])
+PYJOURNAL
+)"
+  "$BUILD_DIR/blue-reflection-patcher-linux-x86_64" transaction-discard \
+    --journal "$prepared_journal" \
+    --json "$TRANSACTION_DISCARD_REPORT"
+
+  game_hashes_after="$(find "$PAYLOAD_PREVIEW_TEST_ROOT/game" -type f -print0 | sort -z | xargs -0 sha256sum)"
+  [[ "$game_hashes_after" == "$game_hashes_before" ]] || fail "Transaction prepare/discard modified synthetic game files"
+
+  python3 - "$TRANSACTION_DISCARD_REPORT" "$prepared_journal" <<'PYTRANSACTIONDISCARD'
+import json
+import sys
+from pathlib import Path
+
+report = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+journal_path = Path(sys.argv[2])
+if report.get("status") != "discarded" or report.get("game_files_edited") is not False:
+    raise SystemExit(f"Prepared transaction was not safely discarded: {report!r}")
+journal = json.loads(journal_path.read_text(encoding="utf-8"))
+if journal.get("status") != "discarded":
+    raise SystemExit(f"Discard audit journal was not retained: {journal!r}")
+root = journal_path.parent
+if (root / "staged").exists() or (root / "backup").exists():
+    raise SystemExit("Discard retained staged payloads or backups")
+print("Prepared transaction discard retained the audit journal, removed private payload copies and left the game unchanged.")
+PYTRANSACTIONDISCARD
+
+  XDG_STATE_HOME="$TRANSACTION_PREPARE_STATE_ROOT" \
+    "$BUILD_DIR/blue-reflection-patcher-linux-x86_64" transaction-prepare \
+      --game-dir "$PAYLOAD_PREVIEW_TEST_ROOT/game" \
+      --modules blue_reflection_translation \
+      --no-prompt \
+      --project-root "$PAYLOAD_PREVIEW_TEST_ROOT/project" \
+      --json "$TRANSACTION_INSTALL_PREPARE_REPORT"
+
+  install_journal="$(python3 - "$TRANSACTION_INSTALL_PREPARE_REPORT" <<'PYINSTALLJOURNAL'
+import json
+import sys
+from pathlib import Path
+print(json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))["journal_path"])
+PYINSTALLJOURNAL
+)"
+
+  if "$BUILD_DIR/blue-reflection-patcher-linux-x86_64" transaction-commit \
+      --journal "$install_journal" >/dev/null 2>&1; then
+    fail "Transaction commit was accepted without explicit --yes confirmation"
+  fi
+
+  "$BUILD_DIR/blue-reflection-patcher-linux-x86_64" transaction-commit \
+    --journal "$install_journal" \
+    --yes \
+    --json "$TRANSACTION_COMMIT_REPORT"
+
+  XDG_STATE_HOME="$TRANSACTION_PREPARE_STATE_ROOT" \
+    "$BUILD_DIR/blue-reflection-patcher-linux-x86_64" installation-status \
+      --game-dir "$PAYLOAD_PREVIEW_TEST_ROOT/game" \
+      --json "$INSTALLATION_ACTIVE_STATUS_REPORT"
+
+  python3 - "$TRANSACTION_COMMIT_REPORT" "$INSTALLATION_ACTIVE_STATUS_REPORT" "$TRANSACTION_INSTALL_PREPARE_REPORT" <<'PYTRANSACTIONCOMMIT'
+import hashlib
+import json
+import sys
+from pathlib import Path
+
+commit = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+status = json.loads(Path(sys.argv[2]).read_text(encoding="utf-8"))
+prepared = json.loads(Path(sys.argv[3]).read_text(encoding="utf-8"))
+if commit.get("status") != "installed" or commit.get("game_files_modified") is not True:
+    raise SystemExit(f"Transaction was not publicly committed: {commit!r}")
+if commit.get("atomic_per_file") is not True or commit.get("file_count") != 3:
+    raise SystemExit(f"Commit safety metadata is incomplete: {commit!r}")
+if status.get("status") != "active_matches_installed" or status.get("automatic_prepare_allowed") is not True:
+    raise SystemExit(f"Committed installation is not tracked as active: {status!r}")
+for item in prepared.get("files", []):
+    if item.get("desired_action") not in {"add", "replace"}:
+        continue
+    installed = Path(item["target_path"])
+    payload = Path(item["source_path"])
+    if hashlib.sha256(installed.read_bytes()).hexdigest() != hashlib.sha256(payload.read_bytes()).hexdigest():
+        raise SystemExit(f"Committed payload mismatch: {item.get('relative_path')}")
+print("Explicit transaction commit atomically installed verified payloads and published the active installation state.")
+PYTRANSACTIONCOMMIT
+
+  if "$BUILD_DIR/blue-reflection-patcher-linux-x86_64" transaction-rollback \
+      --journal "$install_journal" >/dev/null 2>&1; then
+    fail "Transaction rollback was accepted without explicit --yes confirmation"
+  fi
+
+  "$BUILD_DIR/blue-reflection-patcher-linux-x86_64" transaction-rollback \
+    --journal "$install_journal" \
+    --yes \
+    --json "$TRANSACTION_ROLLBACK_REPORT"
+
+  XDG_STATE_HOME="$TRANSACTION_PREPARE_STATE_ROOT" \
+    "$BUILD_DIR/blue-reflection-patcher-linux-x86_64" installation-status \
+      --game-dir "$PAYLOAD_PREVIEW_TEST_ROOT/game" \
+      --json "$INSTALLATION_ROLLED_BACK_STATUS_REPORT"
+
+  game_hashes_after_rollback="$(find "$PAYLOAD_PREVIEW_TEST_ROOT/game" -type f -print0 | sort -z | xargs -0 sha256sum)"
+  [[ "$game_hashes_after_rollback" == "$game_hashes_before" ]] || fail "Public rollback did not restore synthetic game files"
+
+  python3 - "$TRANSACTION_ROLLBACK_REPORT" "$INSTALLATION_ROLLED_BACK_STATUS_REPORT" <<'PYTRANSACTIONROLLBACK'
+import json
+import sys
+from pathlib import Path
+rollback = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+status = json.loads(Path(sys.argv[2]).read_text(encoding="utf-8"))
+if rollback.get("status") != "rolled_back" or rollback.get("game_files_modified") is not True:
+    raise SystemExit(f"Transaction was not publicly rolled back: {rollback!r}")
+if rollback.get("active_after_rollback") is not False:
+    raise SystemExit(f"First-install rollback unexpectedly retained an active state: {rollback!r}")
+if status.get("status") != "inactive_matches_known_baseline":
+    raise SystemExit(f"Rolled-back installation does not match its persistent baseline: {status!r}")
+print("Explicit rollback restored the persistent baseline and cleared the first active installation state.")
+PYTRANSACTIONROLLBACK
+
+  printf '{"status":"ok","archives":[]}\n' \
+    > "$PAYLOAD_PREVIEW_TEST_ROOT/project/.local/reports/translation/BR_TRANSLATION_PAK_REPACK_REPORT.json"
+
+  XDG_STATE_HOME="$TRANSACTION_PREPARE_STATE_ROOT" \
+    "$BUILD_DIR/blue-reflection-patcher-linux-x86_64" start \
+      --game-dir "$PAYLOAD_PREVIEW_TEST_ROOT/game" \
+      --modules blue_reflection_translation \
+      --project-root "$PAYLOAD_PREVIEW_TEST_ROOT/project" \
+      --no-prompt \
+      --build-local \
+      --install \
+      --yes \
+      --json "$GUIDED_LOCAL_BUILD_SELECTION_REPORT" \
+      --payload-json "$GUIDED_LOCAL_BUILD_PAYLOAD_REPORT"
+
+  XDG_STATE_HOME="$TRANSACTION_PREPARE_STATE_ROOT" \
+    "$BUILD_DIR/blue-reflection-patcher-linux-x86_64" installation-status \
+      --game-dir "$PAYLOAD_PREVIEW_TEST_ROOT/game" \
+      --json "$GUIDED_LOCAL_BUILD_STATUS_REPORT"
+
+  XDG_STATE_HOME="$TRANSACTION_PREPARE_STATE_ROOT" \
+    "$BUILD_DIR/blue-reflection-patcher-linux-x86_64" transaction-status \
+      --game-dir "$PAYLOAD_PREVIEW_TEST_ROOT/game" \
+      --json "$GUIDED_LOCAL_BUILD_TRANSACTION_REPORT"
+
+  guided_local_journal="$(python3 - "$GUIDED_LOCAL_BUILD_TRANSACTION_REPORT" <<'PYGUIDEDLOCALJOURNAL'
+import json
+import sys
+from pathlib import Path
+report = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+items = [item for item in report.get("transactions", []) if item.get("status") == "committed"]
+if not items:
+    raise SystemExit("Guided local build did not create a committed transaction")
+items.sort(key=lambda item: item.get("created_utc", ""))
+print(items[-1]["journal_path"])
+PYGUIDEDLOCALJOURNAL
+)"
+
+  python3 - "$GUIDED_LOCAL_BUILD_PAYLOAD_REPORT" "$GUIDED_LOCAL_BUILD_STATUS_REPORT" <<'PYGUIDEDLOCALCHECK'
+import json
+import sys
+from pathlib import Path
+payload = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+status = json.loads(Path(sys.argv[2]).read_text(encoding="utf-8"))
+if payload.get("status") != "ready":
+    raise SystemExit(f"Guided local build did not refresh payload readiness: {payload!r}")
+if status.get("status") != "active_matches_installed":
+    raise SystemExit(f"Guided local build did not install the refreshed payloads: {status!r}")
+print("Guided start rebuilt an absent target-specific repack set, refreshed preview and installed only after explicit confirmation.")
+PYGUIDEDLOCALCHECK
+
+  "$BUILD_DIR/blue-reflection-patcher-linux-x86_64" transaction-rollback \
+    --journal "$guided_local_journal" \
+    --yes >/dev/null
+
+  game_hashes_after_guided_local_rollback="$(find "$PAYLOAD_PREVIEW_TEST_ROOT/game" -type f -print0 | sort -z | xargs -0 sha256sum)"
+  [[ "$game_hashes_after_guided_local_rollback" == "$game_hashes_before" ]] || fail "Guided local build rollback did not restore synthetic game files"
+
+  if XDG_STATE_HOME="$TRANSACTION_PREPARE_STATE_ROOT" \
+      "$BUILD_DIR/blue-reflection-patcher-linux-x86_64" start \
+        --game-dir "$PAYLOAD_PREVIEW_TEST_ROOT/game" \
+        --modules blue_reflection_translation \
+        --project-root "$PAYLOAD_PREVIEW_TEST_ROOT/project" \
+        --no-prompt \
+        --install >/dev/null 2>&1; then
+    fail "Guided non-interactive installation was accepted without --yes"
+  fi
+
+  XDG_STATE_HOME="$TRANSACTION_PREPARE_STATE_ROOT" \
+    "$BUILD_DIR/blue-reflection-patcher-linux-x86_64" start \
+      --game-dir "$PAYLOAD_PREVIEW_TEST_ROOT/game" \
+      --modules blue_reflection_translation \
+      --project-root "$PAYLOAD_PREVIEW_TEST_ROOT/project" \
+      --no-prompt \
+      --install \
+      --yes \
+      --json "$GUIDED_INSTALL_SELECTION_REPORT" \
+      --payload-json "$GUIDED_INSTALL_PAYLOAD_REPORT"
+
+  XDG_STATE_HOME="$TRANSACTION_PREPARE_STATE_ROOT" \
+    "$BUILD_DIR/blue-reflection-patcher-linux-x86_64" installation-status \
+      --game-dir "$PAYLOAD_PREVIEW_TEST_ROOT/game" \
+      --json "$GUIDED_INSTALL_STATUS_REPORT"
+
+  XDG_STATE_HOME="$TRANSACTION_PREPARE_STATE_ROOT" \
+    "$BUILD_DIR/blue-reflection-patcher-linux-x86_64" transaction-status \
+      --game-dir "$PAYLOAD_PREVIEW_TEST_ROOT/game" \
+      --json "$GUIDED_INSTALL_TRANSACTION_REPORT"
+
+  guided_journal="$(python3 - "$GUIDED_INSTALL_TRANSACTION_REPORT" <<'PYGUIDEDJOURNAL'
+import json
+import sys
+from pathlib import Path
+report = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+items = [item for item in report.get("transactions", []) if item.get("status") == "committed"]
+if not items:
+    raise SystemExit("Guided start did not create a committed transaction")
+items.sort(key=lambda item: item.get("created_utc", ""))
+print(items[-1]["journal_path"])
+PYGUIDEDJOURNAL
+)"
+
+  python3 - "$GUIDED_INSTALL_SELECTION_REPORT" "$GUIDED_INSTALL_PAYLOAD_REPORT" "$GUIDED_INSTALL_STATUS_REPORT" <<'PYGUIDEDCHECK'
+import json
+import sys
+from pathlib import Path
+selection = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+payload = json.loads(Path(sys.argv[2]).read_text(encoding="utf-8"))
+status = json.loads(Path(sys.argv[3]).read_text(encoding="utf-8"))
+if selection.get("targets", [{}])[0].get("selected_module_ids") != ["blue_reflection_translation"]:
+    raise SystemExit(f"Guided selection mismatch: {selection!r}")
+if payload.get("status") != "ready" or payload.get("commit_enabled") is not False:
+    raise SystemExit(f"Guided payload preview mismatch: {payload!r}")
+if status.get("status") != "active_matches_installed":
+    raise SystemExit(f"Guided start did not install and publish active state: {status!r}")
+print("Guided start joined detection, module selection, verified preview, prepare and explicit installation in one workflow.")
+PYGUIDEDCHECK
+
+  if XDG_STATE_HOME="$TRANSACTION_PREPARE_STATE_ROOT" \
+      "$BUILD_DIR/blue-reflection-patcher-linux-x86_64" start \
+        --game-dir "$PAYLOAD_PREVIEW_TEST_ROOT/game" \
+        --no-prompt \
+        --remove >/dev/null 2>&1; then
+    fail "Guided non-interactive complete removal was accepted without --yes"
+  fi
+
+  XDG_STATE_HOME="$TRANSACTION_PREPARE_STATE_ROOT" \
+    "$BUILD_DIR/blue-reflection-patcher-linux-x86_64" start \
+      --game-dir "$PAYLOAD_PREVIEW_TEST_ROOT/game" \
+      --no-prompt \
+      --remove \
+      --yes
+
+  game_hashes_after_guided_rollback="$(find "$PAYLOAD_PREVIEW_TEST_ROOT/game" -type f -print0 | sort -z | xargs -0 sha256sum)"
+  [[ "$game_hashes_after_guided_rollback" == "$game_hashes_before" ]] || fail "Guided complete removal did not restore synthetic game files"
+
+  XDG_STATE_HOME="$TRANSACTION_PREPARE_STATE_ROOT" \
+    "$BUILD_DIR/blue-reflection-patcher-linux-x86_64" installation-status \
+      --game-dir "$PAYLOAD_PREVIEW_TEST_ROOT/game" \
+      --json "$GUIDED_INSTALL_STATUS_REPORT"
+
+  python3 - "$GUIDED_INSTALL_STATUS_REPORT" <<'PYGUIDEDREMOVECHECK'
+import json
+import sys
+from pathlib import Path
+status = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+if status.get("status") != "inactive_matches_known_baseline":
+    raise SystemExit(f"Guided complete removal did not retire active state at baseline: {status!r}")
+print("Guided start manages an active installation and removes the complete managed update chain back to the persistent baseline only after explicit confirmation.")
+PYGUIDEDREMOVECHECK
+
+  XDG_STATE_HOME="$TRANSACTION_PREPARE_STATE_ROOT" \
+    "$BUILD_DIR/blue-reflection-patcher-linux-x86_64" baseline-status \
+      --game-dir "$PAYLOAD_PREVIEW_TEST_ROOT/game" \
+      --json "$BASELINE_STATUS_REPORT"
+
+  printf 'synthetic-game-update' > "$PAYLOAD_PREVIEW_TEST_ROOT/game/DATA/PACK01.PAK"
+  XDG_STATE_HOME="$TRANSACTION_PREPARE_STATE_ROOT" \
+    "$BUILD_DIR/blue-reflection-patcher-linux-x86_64" baseline-status \
+      --game-dir "$PAYLOAD_PREVIEW_TEST_ROOT/game" \
+      --json "$BASELINE_CHANGED_STATUS_REPORT"
+  python3 - "$BASELINE_STATUS_REPORT" "$BASELINE_CHANGED_STATUS_REPORT" <<'PYBASELINESTATUS'
+import json
+import sys
+from pathlib import Path
+
+steady = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))["inspection"]
+changed = json.loads(Path(sys.argv[2]).read_text(encoding="utf-8"))["inspection"]
+if steady.get("status") != "matches_known_baseline" or steady.get("baseline_count") != 1:
+    raise SystemExit(f"Persistent baseline was lost after transaction discard: {steady!r}")
+if changed.get("status") != "mixed_changes":
+    raise SystemExit(f"Changed installation was not classified conservatively: {changed!r}")
+print("Persistent baselines survive transaction discard and classify a changed installation without assuming whether it is a game update or an external modification.")
+PYBASELINESTATUS
+
+  printf 'stock-DATA/PACK01.PAK' > "$PAYLOAD_PREVIEW_TEST_ROOT/game/DATA/PACK01.PAK"
 
   rm -rf -- "$COMPOSITION_PREVIEW_TEST_ROOT"
   mkdir -p -- "$COMPOSITION_PREVIEW_TEST_ROOT/project/workstreams/core" \
@@ -489,12 +945,18 @@ root = Path(sys.argv[2])
 gust_pak = Path(sys.argv[3])
 project = root / "project"
 game = root / "game"
-if report.get("type") != "br_quartet_translation_restoration_composition_build":
-    raise SystemExit(f"Unexpected composition build type: {report!r}")
+if report.get("type") != "br_quartet_translation_restoration_composition_build" or report.get("format_version") != 2:
+    raise SystemExit(f"Unexpected composition build type/version: {report!r}")
 if report.get("status") != "ok" or report.get("commit_enabled") is not False:
     raise SystemExit(f"Composition build is not safe and complete: {report!r}")
 if report.get("published_archive_count") != 3 or report.get("composed_archive_count") != 1:
     raise SystemExit(f"Unexpected composition build summary: {report!r}")
+for key in ("translation_loose_report_sha256", "translation_repack_report_sha256"):
+    if len(report.get(key, "")) != 64:
+        raise SystemExit(f"Missing composition input fingerprint {key}: {report!r}")
+profile_inputs = report.get("profile_inputs", [])
+if len(profile_inputs) != 1 or profile_inputs[0].get("profile_id") != "synthetic_runtime_validated_profile":
+    raise SystemExit(f"Composition profile inputs were not fingerprinted: {profile_inputs!r}")
 archives = {item["archive_relative_path"]: item for item in report.get("archives", [])}
 pack11 = archives.get("Data/PACK11.PAK")
 if not pack11 or not pack11.get("full_reextract_verified") or not pack11.get("manifest_declaration_checked"):
@@ -517,6 +979,44 @@ if current_game_hash != expected_game_hash:
     raise SystemExit("Composition build modified the synthetic game installation")
 print("Content-aware composer preserved translation, applied only the declared restoration member, fully re-extracted the result and left the game untouched.")
 PYCOMPOSEVERIFY
+
+  "$BUILD_DIR/blue-reflection-patcher-linux-x86_64" payload-preview \
+    --game-dir "$COMPOSITION_PREVIEW_TEST_ROOT/game" \
+    --modules blue_reflection_translation,quartet_restoration \
+    --no-prompt \
+    --project-root "$COMPOSITION_PREVIEW_TEST_ROOT/project" \
+    --json "$COMPOSED_PAYLOAD_PREVIEW_REPORT"
+
+  python3 - "$COMPOSED_PAYLOAD_PREVIEW_REPORT" "$COMPOSITION_PREVIEW_TEST_ROOT" <<'PYCOMPOSEDPREVIEW'
+import json
+import sys
+from pathlib import Path
+
+preview = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+root = Path(sys.argv[2])
+if preview.get("format_version") != 2 or preview.get("status") != "ready" or preview.get("commit_enabled") is not False:
+    raise SystemExit(f"Composed payload preview is not safe and ready: {preview!r}")
+targets = preview.get("targets", [])
+if len(targets) != 1 or targets[0].get("pending_module_count") != 0 or targets[0].get("ready_artifact_count") != 3:
+    raise SystemExit(f"Unexpected composed payload target: {targets!r}")
+modules = {item["module_id"]: item for item in targets[0].get("modules", [])}
+translation = modules.get("blue_reflection_translation")
+restoration = modules.get("quartet_restoration")
+if not translation or not translation.get("ready") or len(translation.get("artifacts", [])) != 3:
+    raise SystemExit(f"Composed Translation module is not ready: {translation!r}")
+if not restoration or not restoration.get("ready") or restoration.get("artifacts"):
+    raise SystemExit(f"Restoration was not represented by the shared composition set: {restoration!r}")
+composition_root = root / "project/.local/build/composition/blue_reflection_quartet"
+for artifact in translation["artifacts"]:
+    if not artifact.get("report_verified") or not artifact.get("composition_verified") or not artifact.get("transaction_ready"):
+        raise SystemExit(f"Unverified composition artifact entered transaction preview: {artifact!r}")
+    source = Path(artifact["source_path"])
+    try:
+        source.relative_to(composition_root)
+    except ValueError:
+        raise SystemExit(f"Raw translation artifact was used instead of composition output: {artifact!r}")
+print("Verified composed Quartet payloads are connected to transaction preview without preparing or committing a transaction.")
+PYCOMPOSEDPREVIEW
 
   composed_hash_before="$(sha256sum -- "$COMPOSITION_PREVIEW_TEST_ROOT/project/.local/build/composition/blue_reflection_quartet/Data/PACK11.PAK" | awk '{print $1}')"
   python3 - "$COMPOSITION_PREVIEW_TEST_ROOT" "$GUST_PAK_BIN" <<'PYCOMPOSEBAD'
@@ -607,6 +1107,21 @@ package_files=(
 [[ -f "$QUARTET_SELECTION_REPORT" ]] && package_files+=(.local/reports/BR_PATCHER_QUARTET_SELECTION_REPORT.json)
 [[ -f "$TRANSACTION_REPORT" ]] && package_files+=(.local/reports/BR_PATCHER_TRANSACTION_ENGINE_REPORT.json)
 [[ -f "$PAYLOAD_PREVIEW_REPORT" ]] && package_files+=(.local/reports/BR_PATCHER_LOCAL_PAYLOAD_PREVIEW_REPORT.json)
+[[ -f "$TRANSACTION_PREPARE_REPORT" ]] && package_files+=(.local/reports/BR_PATCHER_TRANSACTION_PREPARE_REPORT.json)
+[[ -f "$TRANSACTION_STATUS_REPORT" ]] && package_files+=(.local/reports/BR_PATCHER_TRANSACTION_STATUS_REPORT.json)
+[[ -f "$TRANSACTION_DISCARD_REPORT" ]] && package_files+=(.local/reports/BR_PATCHER_TRANSACTION_DISCARD_REPORT.json)
+[[ -f "$BASELINE_STATUS_REPORT" ]] && package_files+=(.local/reports/BR_PATCHER_BASELINE_STATUS_REPORT.json)
+[[ -f "$BASELINE_CHANGED_STATUS_REPORT" ]] && package_files+=(.local/reports/BR_PATCHER_BASELINE_CHANGED_STATUS_REPORT.json)
+[[ -f "$INSTALLATION_STATUS_REPORT" ]] && package_files+=(.local/reports/BR_PATCHER_INSTALLATION_STATUS_REPORT.json)
+[[ -f "$GUIDED_INSTALL_SELECTION_REPORT" ]] && package_files+=(.local/reports/BR_PATCHER_GUIDED_INSTALL_SELECTION_REPORT.json)
+[[ -f "$GUIDED_INSTALL_PAYLOAD_REPORT" ]] && package_files+=(.local/reports/BR_PATCHER_GUIDED_INSTALL_PAYLOAD_REPORT.json)
+[[ -f "$GUIDED_INSTALL_STATUS_REPORT" ]] && package_files+=(.local/reports/BR_PATCHER_GUIDED_INSTALL_STATUS_REPORT.json)
+[[ -f "$GUIDED_INSTALL_TRANSACTION_REPORT" ]] && package_files+=(.local/reports/BR_PATCHER_GUIDED_INSTALL_TRANSACTION_REPORT.json)
+[[ -f "$GUIDED_LOCAL_BUILD_SELECTION_REPORT" ]] && package_files+=(.local/reports/BR_PATCHER_GUIDED_LOCAL_BUILD_SELECTION_REPORT.json)
+[[ -f "$GUIDED_LOCAL_BUILD_PAYLOAD_REPORT" ]] && package_files+=(.local/reports/BR_PATCHER_GUIDED_LOCAL_BUILD_PAYLOAD_REPORT.json)
+[[ -f "$GUIDED_LOCAL_BUILD_STATUS_REPORT" ]] && package_files+=(.local/reports/BR_PATCHER_GUIDED_LOCAL_BUILD_STATUS_REPORT.json)
+[[ -f "$GUIDED_LOCAL_BUILD_TRANSACTION_REPORT" ]] && package_files+=(.local/reports/BR_PATCHER_GUIDED_LOCAL_BUILD_TRANSACTION_REPORT.json)
+[[ -f "$COMPOSED_PAYLOAD_PREVIEW_REPORT" ]] && package_files+=(.local/reports/BR_PATCHER_QUARTET_COMPOSED_PAYLOAD_PREVIEW_REPORT.json)
 [[ -f "$COMPOSITION_PREVIEW_REPORT" ]] && package_files+=(.local/reports/BR_PATCHER_QUARTET_COMPOSITION_PREFLIGHT_REPORT.json)
 [[ -f "$COMPOSITION_BUILD_REPORT" ]] && package_files+=(.local/reports/BR_PATCHER_QUARTET_COMPOSITION_BUILD_REPORT.json)
 [[ -f "$REPORT_DIR/BR_PATCHER_DEVELOPMENT_PLAN.json" ]] && package_files+=(.local/reports/BR_PATCHER_DEVELOPMENT_PLAN.json)
@@ -614,6 +1129,6 @@ package_files=(
 tar -C "$PROJECT_ROOT" --zstd -cf "$REPORT_PACKAGE" "${package_files[@]}"
 
 printf '\nValidated unified Windows/Linux patcher architecture.\n'
-printf 'The guided installer still does not modify configured game files.\n'
-printf 'The transaction engine, local payload preview, Quartet composition preflight and content-aware composer were validated on isolated synthetic files.\n'
+printf 'Configured game installations were only detected and previewed; guided write operations ran exclusively on isolated synthetic files.\n'
+printf 'The interactive/non-interactive guided install and complete-removal paths, automatic guided local Translation rebuild, transaction engine, explicit commit/rollback, versioned persistent baselines, active installation-state tracking, one-command local Translation workflow, payload preview, prepare/discard, Quartet composition preflight, content-aware composer and composed-payload preview were validated.\n'
 printf 'Created report package:\n  %s\n' "$REPORT_PACKAGE"

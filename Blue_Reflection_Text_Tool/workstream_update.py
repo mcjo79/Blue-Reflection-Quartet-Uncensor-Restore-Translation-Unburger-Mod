@@ -42,7 +42,7 @@ TRANSLATION_RECORDS_ENTRY_KEYS = {
     "mode",
 }
 TRANSLATION_RECORDS_PATH_RE = re.compile(
-    r"^titles/(?:blue_reflection|second_light)/translation/.+\.json$"
+    r"^titles/(?:blue_reflection|second_light|blue_reflection_sun|blue_reflection_ray)/translation/.+\.json$"
 )
 _MISSING = object()
 

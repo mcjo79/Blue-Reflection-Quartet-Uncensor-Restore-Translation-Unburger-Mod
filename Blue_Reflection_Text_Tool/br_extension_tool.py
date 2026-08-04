@@ -412,9 +412,10 @@ def cmd_validate_project(args: argparse.Namespace) -> int:
         )
 
     translation_report: dict[str, Any] = {}
-    for project in ("blue_reflection", "second_light"):
+    for project in ("blue_reflection", "second_light", "blue_reflection_sun", "blue_reflection_ray"):
+        required = args.require_translation and project in ("blue_reflection", "second_light")
         result, project_errors = validate_translation_project(
-            project_root, project, args.require_translation
+            project_root, project, required
         )
         translation_report[project] = result
         errors.extend(project_errors)

@@ -15,6 +15,9 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"local/blue-reflection-patcher/internal/plan/archivepolicy"
+	"local/blue-reflection-patcher/internal/plan/gamepath"
 )
 
 const (
@@ -28,11 +31,13 @@ const (
 	StatusCommitted   = "committed"
 	StatusRollingBack = "rolling_back"
 	StatusRolledBack  = "rolled_back"
+	StatusDiscarded   = "discarded"
 )
 
 type ChangeSpec struct {
-	RelativePath string
-	StagedPath   string
+	RelativePath       string
+	StagedPath         string
+	VerifiedBackupPath string
 }
 
 type FileRecord struct {
@@ -163,7 +168,22 @@ func Prepare(gameRoot, stateRoot string, changes []ChangeSpec, selectedModules [
 			}
 			backupRelative := filepath.Join("backup", relative)
 			backup := filepath.Join(transactionRoot, backupRelative)
-			if err := copyRegularFile(target, backup, info.Mode().Perm()); err != nil {
+			backupSource := target
+			if strings.TrimSpace(change.VerifiedBackupPath) != "" {
+				verified, verifyErr := regularFile(change.VerifiedBackupPath, "verified persistent baseline")
+				if verifyErr != nil {
+					return Prepared{}, verifyErr
+				}
+				verifiedHash, verifyErr := hashFile(verified)
+				if verifyErr != nil {
+					return Prepared{}, verifyErr
+				}
+				if verifiedHash != record.OriginalSHA256 {
+					return Prepared{}, fmt.Errorf("persistent baseline does not match current target: %s", relative)
+				}
+				backupSource = verified
+			}
+			if err := linkOrCopyRegularFile(backupSource, backup, info.Mode().Perm()); err != nil {
 				return Prepared{}, fmt.Errorf("backup %s: %w", relative, err)
 			}
 			if hash, err := hashFile(backup); err != nil || hash != record.OriginalSHA256 {
@@ -195,6 +215,74 @@ func Prepare(gameRoot, stateRoot string, changes []ChangeSpec, selectedModules [
 	}
 	cleanup = false
 	return Prepared{JournalPath: journalPath, Journal: journal}, nil
+}
+
+func ValidatePrepared(journalPath string) (Journal, error) {
+	journal, err := Load(journalPath)
+	if err != nil {
+		return Journal{}, err
+	}
+	if journal.Status != StatusPrepared {
+		return Journal{}, fmt.Errorf("cannot validate prepared transaction in status %s", journal.Status)
+	}
+	for _, record := range journal.Files {
+		target, staged, backup, err := resolveRecordPaths(journal, record)
+		if err != nil {
+			return Journal{}, err
+		}
+		currentHash, exists, err := currentRegularHash(target)
+		if err != nil {
+			return Journal{}, err
+		}
+		if record.OriginalExisted {
+			if !exists || currentHash != record.OriginalSHA256 {
+				return Journal{}, fmt.Errorf("target changed after prepare: %s", record.RelativePath)
+			}
+			backupHash, err := hashFile(backup)
+			if err != nil {
+				return Journal{}, err
+			}
+			if backupHash != record.OriginalSHA256 {
+				return Journal{}, fmt.Errorf("backup changed: %s", record.RelativePath)
+			}
+		} else if exists {
+			return Journal{}, fmt.Errorf("new target appeared after prepare: %s", record.RelativePath)
+		}
+		stagedHash, err := hashFile(staged)
+		if err != nil {
+			return Journal{}, err
+		}
+		if stagedHash != record.DesiredSHA256 {
+			return Journal{}, fmt.Errorf("staged payload changed: %s", record.RelativePath)
+		}
+	}
+	return journal, nil
+}
+
+func DiscardPrepared(journalPath string) (Journal, error) {
+	journal, err := ValidatePrepared(journalPath)
+	if err != nil {
+		return Journal{}, err
+	}
+	for _, directory := range []string{"staged", "backup"} {
+		path, err := secureJoin(journal.TransactionRoot, directory)
+		if err != nil {
+			return Journal{}, err
+		}
+		if err := os.RemoveAll(path); err != nil {
+			return Journal{}, fmt.Errorf("remove transaction %s: %w", directory, err)
+		}
+	}
+	for index := range journal.Files {
+		journal.Files[index].CommitState = "discarded"
+		journal.Files[index].RollbackState = "not_needed"
+	}
+	journal.Status = StatusDiscarded
+	journal.UpdatedUTC = time.Now().UTC()
+	if err := writeJournal(journalPath, journal); err != nil {
+		return Journal{}, err
+	}
+	return journal, nil
 }
 
 func Commit(journalPath string) (Journal, error) {
@@ -456,6 +544,9 @@ func cleanRelativePath(path string) (string, error) {
 	if clean == "." || clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
 		return "", fmt.Errorf("transaction path escapes root: %q", path)
 	}
+	if err := archivepolicy.RejectAnalyticalArchivePath(clean, "transaction"); err != nil {
+		return "", err
+	}
 	return clean, nil
 }
 
@@ -473,27 +564,11 @@ func secureJoin(root, relative string) (string, error) {
 }
 
 func secureGameJoin(root, relative string) (string, error) {
-	joined, err := secureJoin(root, relative)
+	resolved, _, err := gamepath.Resolve(root, relative)
 	if err != nil {
 		return "", err
 	}
-	clean, _ := cleanRelativePath(relative)
-	parts := strings.Split(filepath.Clean(clean), string(filepath.Separator))
-	current := root
-	for _, part := range parts[:len(parts)-1] {
-		current = filepath.Join(current, part)
-		info, statErr := os.Lstat(current)
-		if errors.Is(statErr, os.ErrNotExist) {
-			break
-		}
-		if statErr != nil {
-			return "", fmt.Errorf("inspect target parent: %w", statErr)
-		}
-		if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
-			return "", fmt.Errorf("transaction target parent is not a real directory: %s", current)
-		}
-	}
-	return joined, nil
+	return resolved, nil
 }
 
 func regularFile(path, label string) (string, error) {
@@ -537,6 +612,20 @@ func hashFile(path string) (string, error) {
 		return "", err
 	}
 	return hex.EncodeToString(hash.Sum(nil)), nil
+}
+
+func linkOrCopyRegularFile(source, destination string, mode fs.FileMode) error {
+	input, err := regularFile(source, "backup source")
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(destination), 0o700); err != nil {
+		return err
+	}
+	if err := os.Link(input, destination); err == nil {
+		return syncParent(destination)
+	}
+	return copyRegularFile(input, destination, mode)
 }
 
 func copyRegularFile(source, destination string, mode fs.FileMode) error {

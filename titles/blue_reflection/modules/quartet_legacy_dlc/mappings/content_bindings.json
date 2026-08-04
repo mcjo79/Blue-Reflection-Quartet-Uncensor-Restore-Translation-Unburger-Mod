@@ -7,7 +7,13 @@
     "translation_text_source": "titles/blue_reflection/translation",
     "separate_translation_database": false,
     "source_description": "transfer DLC from a selected first-game installation",
-    "raw_assets_embedded": false
+    "raw_assets_embedded": false,
+    "text_and_scene_inventory_is_complete_catalog": false,
+    "nonscenario_discovery_source": "full BR1 asset inventories and JP system-table records",
+    "fallback_asset_from_br1_allowed": true,
+    "fallback_requires_explicit_documentation_and_validation": true,
+    "technical_registry_discovery_source": "complete BR1 system tables, flags, system records and asset-member inventories",
+    "technical_registry_requires_text_seed": false
   },
   "bindings": [
     {
@@ -37,6 +43,62 @@
       "source_scope": "str_chat_msg.xml and str_costume.xml",
       "target_scope": "Blue Reflection Quartet",
       "status": "shared_dependency_audit"
+    },
+    {
+      "binding_id": "legacy_dlc_costume_and_appearance_catalog",
+      "family_id": "costume_and_appearance",
+      "source_scope": "costumes, swimwear, towels, collaboration outfits, accessories and appearance variants discovered from BR1 members and tables",
+      "target_scope": "Blue Reflection Quartet",
+      "status": "independent_metadata_audit"
+    },
+    {
+      "binding_id": "legacy_dlc_items_rewards_and_recipes_catalog",
+      "family_id": "items_rewards_and_recipes",
+      "source_scope": "DLC item, reward, recipe, equipment and availability records discovered from BR1 tables",
+      "target_scope": "Blue Reflection Quartet",
+      "status": "independent_metadata_audit"
+    },
+    {
+      "binding_id": "legacy_dlc_theme_ui_and_freespace_catalog",
+      "family_id": "theme_ui_and_freespace",
+      "source_scope": "themes, FreeSpace skins, icons, descriptions and installation/system records",
+      "target_scope": "Blue Reflection Quartet",
+      "status": "independent_metadata_audit"
+    },
+    {
+      "binding_id": "legacy_dlc_entitlement_and_unlock_catalog",
+      "family_id": "entitlement_and_unlock",
+      "source_scope": "DLC flags, entitlement identifiers, release conditions and availability records",
+      "target_scope": "Blue Reflection Quartet",
+      "status": "dependency_audit"
+    },
+    {
+      "binding_id": "legacy_dlc_nonscenario_member_closure",
+      "family_id": "nonscenario_member_closure",
+      "source_scope": "table record, unlock flag, model, texture, material, physics, icon, description and optional event links",
+      "target_scope": "Blue Reflection Quartet",
+      "status": "member_closure_incomplete"
+    },
+    {
+      "binding_id": "legacy_dlc_seed_independent_technical_registry",
+      "family_id": "seed_independent_technical_registry",
+      "source_scope": "complete BR1 system tables, flags, unlock conditions and asset-member inventories; text seed is optional overlap annotation only",
+      "target_scope": "Blue Reflection Quartet",
+      "status": "independent_metadata_audit"
+    },
+    {
+      "binding_id": "legacy_dlc_canonical_owner_exact_closure",
+      "family_id": "canonical_owner_exact_closure",
+      "source_scope": "seed-independent registry owners, companion records, shared pools, exact member/table/flag roles and closure gaps",
+      "target_scope": "Blue Reflection Quartet",
+      "status": "metadata_closure_audit_profile_build_disabled"
+    },
+    {
+      "binding_id": "legacy_dlc_canonical_parent_nested_inventory",
+      "family_id": "canonical_parent_nested_inventory",
+      "source_scope": "canonical costume/accessory BR1 parent Elixir members selected by exact closure and read selectively from their containing PAKs",
+      "target_scope": "matching Quartet parent members when present",
+      "status": "metadata_nested_member_inventory_profile_build_disabled"
     }
   ]
 }

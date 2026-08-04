@@ -67,7 +67,13 @@ GUST_PAK_BIN="$(find_gust_pak || true)"
   blue_reflection_quartet "$BR1_QUARTET_ROOT" blue_reflection quartet Data/PACK11.PAK \
   blue_reflection_quartet "$BR1_QUARTET_ROOT" blue_reflection quartet Data/PACK12.PAK \
   second_light_original "$BR_SECOND_LIGHT_ROOT" second_light original Data/PACK01.PAK \
-  second_light_original "$BR_SECOND_LIGHT_ROOT" second_light original Data/PACK02.PAK
+  second_light_original "$BR_SECOND_LIGHT_ROOT" second_light original Data/PACK02.PAK \
+  second_light_quartet "$BR1_QUARTET_ROOT" second_light quartet Data/PACK01_01.PAK \
+  second_light_quartet "$BR1_QUARTET_ROOT" second_light quartet Data/PACK02_01.PAK \
+  blue_reflection_sun_quartet "$BR1_QUARTET_ROOT" blue_reflection_sun quartet Data/PACK01_02.PAK \
+  blue_reflection_sun_quartet "$BR1_QUARTET_ROOT" blue_reflection_sun quartet Data/PACK02_02.PAK \
+  blue_reflection_ray_quartet "$BR1_QUARTET_ROOT" blue_reflection_ray quartet Data/PACK01_03.PAK \
+  blue_reflection_ray_quartet "$BR1_QUARTET_ROOT" blue_reflection_ray quartet Data/PACK02_03.PAK
 
 mkdir -p -- "$REPORT_DIR"
 rm -f -- "$REPORT_FILE"
@@ -79,7 +85,10 @@ tar -C "$PROJECT_ROOT" --zstd -cf "$REPORT_FILE" \
   .local/reports/BR_text_extraction_summary.tsv \
   titles/blue_reflection/workspace/original/archives \
   titles/blue_reflection/workspace/quartet/archives \
-  titles/second_light/workspace/original/archives
+  titles/second_light/workspace/original/archives \
+  titles/second_light/workspace/quartet/archives \
+  titles/blue_reflection_sun/workspace/quartet/archives \
+  titles/blue_reflection_ray/workspace/quartet/archives
 
 printf '\nCreated analysis package:\n  %s\n' "$REPORT_FILE"
 printf 'It contains extracted text-source archives and PAK reconstruction manifests, not the source PAK files.\n'

@@ -24,7 +24,7 @@ import (
 
 const (
 	quartetCompositionBuildType       = "br_quartet_translation_restoration_composition_build"
-	quartetCompositionBuildVersion    = 1
+	quartetCompositionBuildVersion    = 2
 	quartetCompositionOutputRelative  = ".local/build/composition/blue_reflection_quartet"
 	quartetCompositionReportRelative  = ".local/reports/core/BR_QUARTET_COMPOSITION_BUILD_REPORT.json"
 	quartetCompositionEmbeddedReport  = "BR_QUARTET_COMPOSITION_BUILD_REPORT.json"
@@ -44,6 +44,20 @@ type compositionBuildMember struct {
 type compositionOverlaySource struct {
 	Member     compositionBuildMember
 	SourcePath string
+}
+
+type compositionBuildProfileInput struct {
+	ProfileID          string `json:"profile_id"`
+	ManifestPath       string `json:"manifest_path"`
+	ManifestSHA256     string `json:"manifest_sha256"`
+	ManifestBytes      int64  `json:"manifest_bytes"`
+	PayloadPath        string `json:"payload_path"`
+	PayloadSHA256      string `json:"payload_sha256"`
+	PayloadBytes       int64  `json:"payload_bytes"`
+	TargetRelativePath string `json:"target_relative_path"`
+	BaselineSHA256     string `json:"baseline_sha256"`
+	BaselineBytes      int64  `json:"baseline_bytes"`
+	RuntimeValidated   bool   `json:"runtime_validated"`
 }
 
 type compositionBuildArchive struct {
@@ -72,29 +86,36 @@ type compositionBuildArchive struct {
 }
 
 type quartetCompositionBuildReport struct {
-	Type                    string                    `json:"type"`
-	FormatVersion           int                       `json:"format_version"`
-	Status                  string                    `json:"status"`
-	GeneratedUTC            time.Time                 `json:"generated_utc"`
-	ProjectRoot             string                    `json:"project_root"`
-	GameRoot                string                    `json:"game_root"`
-	TargetID                string                    `json:"target_id"`
-	CommitEnabled           bool                      `json:"commit_enabled"`
-	PreflightStatus         string                    `json:"preflight_status"`
-	CompositionPolicy       string                    `json:"composition_policy"`
-	GustPakPath             string                    `json:"gust_pak_path"`
-	GustPakSHA256           string                    `json:"gust_pak_sha256"`
-	GustPakBytes            int64                     `json:"gust_pak_bytes"`
-	OutputRoot              string                    `json:"output_root"`
-	EmbeddedReportPath      string                    `json:"embedded_report_path"`
-	ProductionProfileIDs    []string                  `json:"production_profile_ids"`
-	Archives                []compositionBuildArchive `json:"archives"`
-	PublishedArchiveCount   int                       `json:"published_archive_count"`
-	ComposedArchiveCount    int                       `json:"composed_archive_count"`
-	PassthroughArchiveCount int                       `json:"passthrough_archive_count"`
-	FullReextractCount      int                       `json:"full_reextract_count"`
-	Errors                  []string                  `json:"errors"`
-	Warnings                []string                  `json:"warnings"`
+	Type                          string                         `json:"type"`
+	FormatVersion                 int                            `json:"format_version"`
+	Status                        string                         `json:"status"`
+	GeneratedUTC                  time.Time                      `json:"generated_utc"`
+	ProjectRoot                   string                         `json:"project_root"`
+	GameRoot                      string                         `json:"game_root"`
+	TargetID                      string                         `json:"target_id"`
+	CommitEnabled                 bool                           `json:"commit_enabled"`
+	PreflightStatus               string                         `json:"preflight_status"`
+	CompositionPolicy             string                         `json:"composition_policy"`
+	GustPakPath                   string                         `json:"gust_pak_path"`
+	GustPakSHA256                 string                         `json:"gust_pak_sha256"`
+	GustPakBytes                  int64                          `json:"gust_pak_bytes"`
+	OutputRoot                    string                         `json:"output_root"`
+	EmbeddedReportPath            string                         `json:"embedded_report_path"`
+	TranslationLooseReportPath    string                         `json:"translation_loose_report_path"`
+	TranslationLooseReportSHA256  string                         `json:"translation_loose_report_sha256"`
+	TranslationLooseReportBytes   int64                          `json:"translation_loose_report_bytes"`
+	TranslationRepackReportPath   string                         `json:"translation_repack_report_path"`
+	TranslationRepackReportSHA256 string                         `json:"translation_repack_report_sha256"`
+	TranslationRepackReportBytes  int64                          `json:"translation_repack_report_bytes"`
+	ProductionProfileIDs          []string                       `json:"production_profile_ids"`
+	ProfileInputs                 []compositionBuildProfileInput `json:"profile_inputs"`
+	Archives                      []compositionBuildArchive      `json:"archives"`
+	PublishedArchiveCount         int                            `json:"published_archive_count"`
+	ComposedArchiveCount          int                            `json:"composed_archive_count"`
+	PassthroughArchiveCount       int                            `json:"passthrough_archive_count"`
+	FullReextractCount            int                            `json:"full_reextract_count"`
+	Errors                        []string                       `json:"errors"`
+	Warnings                      []string                       `json:"warnings"`
 }
 
 type compositionArchiveTool interface {
@@ -323,11 +344,13 @@ func buildQuartetComposition(projectRoot, gameRoot string, tool compositionArchi
 	report := quartetCompositionBuildReport{
 		Type: quartetCompositionBuildType, FormatVersion: quartetCompositionBuildVersion,
 		Status: "failed", GeneratedUTC: time.Now().UTC(), TargetID: quartetTargetID,
-		CommitEnabled:        false,
-		CompositionPolicy:    "verify installed restoration baselines, prove translation archives differ only at declared translation members, prove each profile differs only at manifest-declared members, overlay by member, fully re-extract composed archives, publish locally without touching the game installation",
-		OutputRoot:           filepath.ToSlash(quartetCompositionOutputRelative),
-		EmbeddedReportPath:   filepath.ToSlash(filepath.Join(quartetCompositionOutputRelative, quartetCompositionEmbeddedReport)),
-		ProductionProfileIDs: []string{}, Archives: []compositionBuildArchive{}, Errors: []string{}, Warnings: []string{},
+		CommitEnabled:               false,
+		CompositionPolicy:           "verify installed restoration baselines, prove translation archives differ only at declared translation members, prove each profile differs only at manifest-declared members, overlay by member, fully re-extract composed archives, publish locally without touching the game installation",
+		OutputRoot:                  filepath.ToSlash(quartetCompositionOutputRelative),
+		EmbeddedReportPath:          filepath.ToSlash(filepath.Join(quartetCompositionOutputRelative, quartetCompositionEmbeddedReport)),
+		TranslationLooseReportPath:  filepath.ToSlash(translationLooseReportRelative),
+		TranslationRepackReportPath: filepath.ToSlash(translationRepackReportRelative),
+		ProductionProfileIDs:        []string{}, ProfileInputs: []compositionBuildProfileInput{}, Archives: []compositionBuildArchive{}, Errors: []string{}, Warnings: []string{},
 	}
 	projectRoot, err := filepath.Abs(projectRoot)
 	if err != nil {
@@ -340,6 +363,26 @@ func buildQuartetComposition(projectRoot, gameRoot string, tool compositionArchi
 		return report, err
 	}
 	report.ProjectRoot, report.GameRoot = projectRoot, gameRoot
+	looseReportPath, err := secureJoin(projectRoot, translationLooseReportRelative)
+	if err != nil {
+		report.Errors = append(report.Errors, err.Error())
+		return report, err
+	}
+	report.TranslationLooseReportSHA256, report.TranslationLooseReportBytes, err = checkedFile(looseReportPath)
+	if err != nil {
+		report.Errors = append(report.Errors, fmt.Sprintf("fingerprint translation loose report: %v", err))
+		return report, err
+	}
+	repackReportPath, err := secureJoin(projectRoot, translationRepackReportRelative)
+	if err != nil {
+		report.Errors = append(report.Errors, err.Error())
+		return report, err
+	}
+	report.TranslationRepackReportSHA256, report.TranslationRepackReportBytes, err = checkedFile(repackReportPath)
+	if err != nil {
+		report.Errors = append(report.Errors, fmt.Sprintf("fingerprint translation repack report: %v", err))
+		return report, err
+	}
 	toolPath, toolHash, toolSize, err := tool.Identity()
 	if err != nil {
 		report.Errors = append(report.Errors, fmt.Sprintf("validate archive tool: %v", err))
@@ -377,8 +420,35 @@ func buildQuartetComposition(projectRoot, gameRoot string, tool compositionArchi
 		}
 		eligibleProfiles[profile.ProfileID] = item
 		report.ProductionProfileIDs = append(report.ProductionProfileIDs, profile.ProfileID)
+		manifestAbsolute, pathErr := secureJoin(projectRoot, item.ManifestPath)
+		if pathErr != nil {
+			err := fmt.Errorf("resolve profile manifest %s: %w", profile.ProfileID, pathErr)
+			report.Errors = append(report.Errors, err.Error())
+			return report, err
+		}
+		manifestHash, manifestBytes, hashErr := checkedFile(manifestAbsolute)
+		if hashErr != nil {
+			err := fmt.Errorf("fingerprint profile manifest %s: %w", profile.ProfileID, hashErr)
+			report.Errors = append(report.Errors, err.Error())
+			return report, err
+		}
+		payloadHash, payloadBytes, hashErr := checkedFile(item.SourcePath)
+		if hashErr != nil {
+			err := fmt.Errorf("fingerprint profile payload %s: %w", profile.ProfileID, hashErr)
+			report.Errors = append(report.Errors, err.Error())
+			return report, err
+		}
+		report.ProfileInputs = append(report.ProfileInputs, compositionBuildProfileInput{
+			ProfileID:    profile.ProfileID,
+			ManifestPath: filepath.ToSlash(item.ManifestPath), ManifestSHA256: manifestHash, ManifestBytes: manifestBytes,
+			PayloadPath: relativeDisplayPath(projectRoot, item.SourcePath), PayloadSHA256: payloadHash, PayloadBytes: payloadBytes,
+			TargetRelativePath: item.Manifest.TargetRelativePath,
+			BaselineSHA256:     item.Manifest.BaselineSHA256, BaselineBytes: item.Manifest.BaselineSize,
+			RuntimeValidated: item.Manifest.RuntimeValidated,
+		})
 	}
 	sort.Strings(report.ProductionProfileIDs)
+	sort.Slice(report.ProfileInputs, func(i, j int) bool { return report.ProfileInputs[i].ProfileID < report.ProfileInputs[j].ProfileID })
 	if len(eligibleProfiles) == 0 {
 		err := fmt.Errorf("composition preflight selected no production-eligible restoration profiles")
 		report.Errors = append(report.Errors, err.Error())

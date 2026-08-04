@@ -20,6 +20,12 @@ done
   fail "Blue Reflection text workspace is missing. Run 02_extract_text_sources.sh first."
 [[ -d "$PROJECT_ROOT/titles/second_light/workspace/original/archives/PACK01" ]] || \
   fail "Second Light text workspace is missing. Run 02_extract_text_sources.sh first."
+[[ -d "$PROJECT_ROOT/titles/second_light/workspace/quartet/archives/PACK01_01" ]] || \
+  fail "Second Light Quartet b2 workspace is missing. Run 02_extract_text_sources.sh first."
+[[ -d "$PROJECT_ROOT/titles/blue_reflection_sun/workspace/quartet/archives/PACK01_02" ]] || \
+  fail "BLUE REFLECTION SUN Quartet workspace is missing. Run 02_extract_text_sources.sh first."
+[[ -d "$PROJECT_ROOT/titles/blue_reflection_ray/workspace/quartet/archives/PACK01_03" ]] || \
+  fail "BLUE REFLECTION RAY Quartet workspace is missing. Run 02_extract_text_sources.sh first."
 
 python3 "$TOOL" export --project-root "$PROJECT_ROOT"
 
@@ -33,11 +39,15 @@ tar -C "$PROJECT_ROOT" --zstd -cf "$REPORT_PACKAGE" \
   .local/reports/BR_TRANSLATION_EXPORT_REPORT.json \
   .local/reports/BR_ALIGNMENT_EXCEPTIONS.json \
   titles/blue_reflection/translation/translation_manifest.json \
-  titles/second_light/translation/translation_manifest.json
+  titles/second_light/translation/translation_manifest.json \
+  titles/blue_reflection_sun/translation/translation_manifest.json \
+  titles/blue_reflection_ray/translation/translation_manifest.json
 
 printf '\nCreated canonical translation databases in:\n'
 printf '  %s\n' "$PROJECT_ROOT/titles/blue_reflection/translation"
 printf '  %s\n' "$PROJECT_ROOT/titles/second_light/translation"
+printf '  %s\n' "$PROJECT_ROOT/titles/blue_reflection_sun/translation"
+printf '  %s\n' "$PROJECT_ROOT/titles/blue_reflection_ray/translation"
 printf '\nEditable field: en\n'
 printf 'Frozen reference fields: jp, en_original, en_auxiliary\n'
 printf '\nCreated report package:\n  %s\n' "$REPORT_PACKAGE"

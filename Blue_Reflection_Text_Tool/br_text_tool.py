@@ -25,7 +25,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable, Optional
 
-TOOL_VERSION = "translation-0.0.14"
+TOOL_VERSION = "translation-0.0.15"
 FORMAT_VERSION = 1
 MAX_STRING_SIZE = 2048
 DURATION1_LENGTHS = (0, 2)
@@ -758,6 +758,8 @@ class EventSet:
     target_templates: dict[str, Path]
     auxiliary_jp_root: Optional[Path] = None
     auxiliary_en_root: Optional[Path] = None
+    allow_auxiliary_fallback: bool = True
+    export_auxiliary_extensions: bool = False
 
 
 @dataclass(frozen=True)
@@ -769,6 +771,7 @@ class SystemSet:
     target_templates: dict[str, Path]
     auxiliary_jp_root: Optional[Path] = None
     auxiliary_en_root: Optional[Path] = None
+    allow_auxiliary_fallback: bool = True
 
 
 def files_by_relative(root: Path, suffix: str) -> dict[str, Path]:
@@ -852,7 +855,8 @@ def export_event_set(spec: EventSet, project_root: Path, report: dict[str, Any])
                 alignment_status = official_status[msg.index]
                 source_of_initial_en = "official_en"
             elif (
-                auxiliary_text is not None
+                spec.allow_auxiliary_fallback
+                and auxiliary_text is not None
                 and not auxiliary_redacted
                 and auxiliary_classification is None
             ):
@@ -955,6 +959,11 @@ def export_event_set(spec: EventSet, project_root: Path, report: dict[str, Any])
             "alignment_status_counts": dict(sorted(Counter(r["alignment"]["status"] for r in records).items())),
         })
 
+    extension_units, extension_exceptions = export_event_extension_units(
+        spec, project_root, source_files, aux_jp_files, aux_en_files
+    )
+    units.extend(extension_units)
+    exceptions.extend(extension_exceptions)
     missing_official = sorted(set(source_files) - set(official_files))
     extra_official = sorted(set(official_files) - set(source_files))
     report[spec.project]["events"] = {
@@ -962,12 +971,112 @@ def export_event_set(spec: EventSet, project_root: Path, report: dict[str, Any])
         "official_en_files": len(official_files),
         "missing_official_files": missing_official,
         "extra_official_files": extra_official,
+        "quartet_extension_files": len(extension_units),
         "records": sum(unit["records"] for unit in units),
         "status_counts": dict(sorted(project_counts.items())),
         "exceptions": exceptions,
     }
     return units
 
+
+
+def export_event_extension_units(
+    spec: EventSet,
+    project_root: Path,
+    source_files: dict[str, Path],
+    aux_jp_files: dict[str, Path],
+    aux_en_files: dict[str, Path],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Export target-only event units found in an auxiliary Quartet branch."""
+    if not spec.export_auxiliary_extensions or not spec.auxiliary_jp_root:
+        return [], []
+    units: list[dict[str, Any]] = []
+    exceptions: list[dict[str, Any]] = []
+    for logical_path in sorted(set(aux_jp_files) - set(source_files)):
+        source_path = aux_jp_files[logical_path]
+        official_path = aux_en_files.get(logical_path)
+        source = parse_ebm(source_path)
+        official = parse_ebm(official_path) if official_path else None
+        official_map, official_status = align_messages(source, official)
+        output_path = spec.translation_root / "events_quartet_extensions" / Path(logical_path).parent / f"{Path(logical_path).name}.json"
+        existing = load_existing_edits(output_path, "br_event_translation_unit")
+        records: list[dict[str, Any]] = []
+        carried = 0
+        target_id = next((key for key in spec.target_templates if key.endswith("quartet")), None)
+        for msg in source.messages:
+            primary_index = official_map[msg.index]
+            primary_text = official.messages[primary_index].text if official is not None and primary_index is not None else None
+            logical_id = f"{spec.project}:event_quartet_extension:{logical_path}:source_index:{msg.index}:msg_id:{msg.msg_id}"
+            record: dict[str, Any] = {
+                "index": msg.index,
+                "logical_id": logical_id,
+                "msg_id": msg.msg_id,
+                "voice_id": msg.voice_id,
+                "name_id": msg.name_id,
+                "expr_id": msg.expr_id,
+                "metadata": msg.metadata(),
+                "jp": msg.text,
+                "en_original": primary_text,
+                "en_auxiliary": None,
+                "en": primary_text or "",
+                "alignment": {
+                    "status": official_status[msg.index] if primary_text is not None else "manual_required",
+                    "initial_en_source": "quartet_official_en" if primary_text is not None else "none",
+                    "official_en_index": primary_index,
+                    "official_en_mapping": official_status[msg.index],
+                    "auxiliary_en_index": None,
+                    "auxiliary_mapping": "not_applicable_target_extension",
+                    "target_indices": {target_id: primary_index} if target_id else {},
+                    "target_mapping": {target_id: official_status[msg.index]} if target_id else {},
+                },
+            }
+            if apply_existing(record, existing):
+                carried += 1
+            records.append(record)
+            if primary_text is None:
+                exceptions.append({"logical_path": logical_path, "logical_id": logical_id, "status": "manual_required", "source_role": "quartet_extension"})
+        targets = {}
+        if target_id:
+            targets[target_id] = {
+                "template_language": "en",
+                "template_path": rel_posix(official_path, project_root) if official_path else None,
+                "template_sha256": sha256_file(official_path) if official_path else None,
+                "message_count": len(official.messages) if official else None,
+                "mapping_status_counts": dict(sorted(Counter(official_status).items())),
+                "complete_mapping": all(index is not None for index in official_map),
+            }
+        unit = {
+            "type": "br_event_translation_unit",
+            "format_version": FORMAT_VERSION,
+            "tool_version": TOOL_VERSION,
+            "project": spec.project,
+            "category": "event",
+            "source_role": "quartet_extension",
+            "logical_path": logical_path,
+            "source": {
+                "jp_path": rel_posix(source_path, project_root),
+                "jp_sha256": sha256_file(source_path),
+                "signed_message_count": source.signed_count,
+                "record_structure": {"duration1_words": source.d1_len, "duration2_words": source.d2_len},
+                "official_en_path": rel_posix(official_path, project_root) if official_path else None,
+                "official_en_sha256": sha256_file(official_path) if official_path else None,
+                "auxiliary_jp_path": None,
+                "auxiliary_en_path": None,
+            },
+            "targets": targets,
+            "records": records,
+        }
+        atomic_json(output_path, unit)
+        units.append({
+            "path": rel_posix(output_path, spec.translation_root),
+            "category": "event",
+            "source_role": "quartet_extension",
+            "logical_path": logical_path,
+            "records": len(records),
+            "carried_over": carried,
+            "alignment_status_counts": dict(sorted(Counter(r["alignment"]["status"] for r in records).items())),
+        })
+    return units, exceptions
 
 def xml_output_path(translation_root: Path, group: str, logical_path: str) -> Path:
     relative = Path(logical_path)
@@ -1030,7 +1139,7 @@ def export_xml_unit(
             editable = primary_text
             alignment_status = official_status[row.index]
             initial_source = "official_en"
-        elif auxiliary_text is not None and auxiliary_classification is None:
+        elif spec.allow_auxiliary_fallback and auxiliary_text is not None and auxiliary_classification is None:
             editable = auxiliary_text
             alignment_status = "auxiliary_fallback_review"
             initial_source = "quartet_en"
@@ -1252,9 +1361,14 @@ def validate_all_ebm(project_root: Path) -> dict[str, Any]:
 def project_specs(project_root: Path) -> tuple[list[EventSet], list[SystemSet]]:
     br = project_root / "titles/blue_reflection"
     sl = project_root / "titles/second_light"
+    sun = project_root / "titles/blue_reflection_sun"
+    ray = project_root / "titles/blue_reflection_ray"
     br_orig = br / "workspace/original/archives"
     br_quart = br / "workspace/quartet/archives"
     sl_orig = sl / "workspace/original/archives"
+    sl_quart = sl / "workspace/quartet/archives"
+    sun_quart = sun / "workspace/quartet/archives"
+    ray_quart = ray / "workspace/quartet/archives"
 
     event_sets = [
         EventSet(
@@ -1274,8 +1388,31 @@ def project_specs(project_root: Path) -> tuple[list[EventSet], list[SystemSet]]:
             translation_root=sl / "translation",
             source_jp_root=sl_orig / "PACK01/event/event_jp",
             official_en_root=sl_orig / "PACK01/event/event_en",
+            auxiliary_jp_root=sl_quart / "PACK01_01/event/b2/event_jp",
+            auxiliary_en_root=sl_quart / "PACK01_01/event/b2/event_en",
+            allow_auxiliary_fallback=False,
+            export_auxiliary_extensions=True,
             target_templates={
                 "second_light_original": sl_orig / "PACK01/event/event_en",
+                "second_light_quartet": sl_quart / "PACK01_01/event/b2/event_en",
+            },
+        ),
+        EventSet(
+            project="blue_reflection_sun",
+            translation_root=sun / "translation",
+            source_jp_root=sun_quart / "PACK01_02/event/b3/event_jp",
+            official_en_root=sun_quart / "PACK01_02/event/b3/event_en",
+            target_templates={
+                "blue_reflection_sun_quartet": sun_quart / "PACK01_02/event/b3/event_en",
+            },
+        ),
+        EventSet(
+            project="blue_reflection_ray",
+            translation_root=ray / "translation",
+            source_jp_root=ray_quart / "PACK01_03/event/b4/event_jp",
+            official_en_root=ray_quart / "PACK01_03/event/b4/event_en",
+            target_templates={
+                "blue_reflection_ray_quartet": ray_quart / "PACK01_03/event/b4/event_en",
             },
         ),
     ]
@@ -1297,8 +1434,30 @@ def project_specs(project_root: Path) -> tuple[list[EventSet], list[SystemSet]]:
             translation_root=sl / "translation",
             source_jp_root=sl_orig / "PACK02/saves/text_jp",
             official_en_root=sl_orig / "PACK02/saves/text_en",
+            auxiliary_jp_root=sl_quart / "PACK02_01/saves/b2/text_jp",
+            auxiliary_en_root=sl_quart / "PACK02_01/saves/b2/text_en",
+            allow_auxiliary_fallback=False,
             target_templates={
                 "second_light_original": sl_orig / "PACK02/saves/text_en",
+                "second_light_quartet": sl_quart / "PACK02_01/saves/b2/text_en",
+            },
+        ),
+        SystemSet(
+            project="blue_reflection_sun",
+            translation_root=sun / "translation",
+            source_jp_root=sun_quart / "PACK02_02/saves/b3/text_jp",
+            official_en_root=sun_quart / "PACK02_02/saves/b3/text_en",
+            target_templates={
+                "blue_reflection_sun_quartet": sun_quart / "PACK02_02/saves/b3/text_en",
+            },
+        ),
+        SystemSet(
+            project="blue_reflection_ray",
+            translation_root=ray / "translation",
+            source_jp_root=ray_quart / "PACK02_03/saves/b4/text_jp",
+            official_en_root=ray_quart / "PACK02_03/saves/b4/text_en",
+            target_templates={
+                "blue_reflection_ray_quartet": ray_quart / "PACK02_03/saves/b4/text_en",
             },
         ),
     ]
@@ -1341,6 +1500,8 @@ def cmd_export(args: argparse.Namespace) -> int:
         "ebm_validation": validate_all_ebm(project_root),
         "blue_reflection": {},
         "second_light": {},
+        "blue_reflection_sun": {},
+        "blue_reflection_ray": {},
     }
     if report["ebm_validation"]["failures"]:
         raise ToolError(
@@ -1360,21 +1521,19 @@ def cmd_export(args: argparse.Namespace) -> int:
         translation_root = project_root / "titles" / project / "translation"
         write_manifest(translation_root, project, units)
 
+    project_ids = ("blue_reflection", "second_light", "blue_reflection_sun", "blue_reflection_ray")
     exceptions = {
         "type": "br_alignment_exceptions",
         "format_version": FORMAT_VERSION,
         "tool_version": TOOL_VERSION,
-        "blue_reflection": {
-            "events": report["blue_reflection"]["events"]["exceptions"],
-            "system": report["blue_reflection"]["system"]["exceptions"],
-        },
-        "second_light": {
-            "events": report["second_light"]["events"]["exceptions"],
-            "system": report["second_light"]["system"]["exceptions"],
-        },
     }
+    for project in project_ids:
+        exceptions[project] = {
+            "events": report[project]["events"]["exceptions"],
+            "system": report[project]["system"]["exceptions"],
+        }
     # Keep the main report concise; detailed exception rows live separately.
-    for project in ("blue_reflection", "second_light"):
+    for project in project_ids:
         for category in ("events", "system"):
             rows = report[project][category].pop("exceptions")
             report[project][category]["exception_records"] = len(rows)
@@ -1427,7 +1586,7 @@ def cmd_export(args: argparse.Namespace) -> int:
     print("Translation databases created successfully.")
     print(f"EBM files validated: {report['ebm_validation']['files']}")
     print(f"EBM byte-exact roundtrip: {report['ebm_validation']['byte_exact_roundtrip']}")
-    for project in ("blue_reflection", "second_light"):
+    for project in ("blue_reflection", "second_light", "blue_reflection_sun", "blue_reflection_ray"):
         manifest = json.loads(
             (project_root / "titles" / project / "translation/translation_manifest.json").read_text(encoding="utf-8")
         )
@@ -1442,6 +1601,93 @@ def cmd_export(args: argparse.Namespace) -> int:
 
 BUILD_FORMAT_VERSION = 1
 MAX_OUTPUT_STRING_BYTES = 1024 * 1024
+
+
+@dataclass(frozen=True)
+class TargetWorkspaceOverride:
+    target_id: str
+    archive_stem: str
+    workspace_archive_root: Path
+    source_manifest: Path
+    source_archive_relative: str
+    source_archive_sha256: str
+    source_archive_bytes: int
+
+
+def load_target_workspace_overrides(
+    project_root: Path, raw_path: Optional[str]
+) -> dict[tuple[str, str], TargetWorkspaceOverride]:
+    if not raw_path:
+        return {}
+    path = Path(raw_path).expanduser()
+    if not path.is_absolute():
+        path = project_root / path
+    path = path.resolve()
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError as exc:
+        raise ToolError(f"Target workspace map is missing: {path}") from exc
+    except json.JSONDecodeError as exc:
+        raise ToolError(f"Invalid target workspace map {path}: {exc}") from exc
+    if data.get("type") != "br_target_workspace_map" or data.get("format_version") != 1:
+        raise ToolError(f"Unsupported target workspace map: {path}")
+    result: dict[tuple[str, str], TargetWorkspaceOverride] = {}
+    for row in data.get("archives", []):
+        if not isinstance(row, dict):
+            raise ToolError(f"Invalid target workspace map row: {path}")
+        target_id = str(row.get("target_id", ""))
+        archive_stem = str(row.get("archive_stem", ""))
+        root_value = str(row.get("workspace_archive_root", ""))
+        manifest_value = str(row.get("source_manifest", ""))
+        if not target_id or not archive_stem or not root_value or not manifest_value:
+            raise ToolError(f"Incomplete target workspace map row: {row!r}")
+        root = (project_root / root_value).resolve()
+        manifest = (project_root / manifest_value).resolve()
+        try:
+            root.relative_to(project_root)
+            manifest.relative_to(project_root)
+        except ValueError as exc:
+            raise ToolError("Target workspace map paths must remain inside the project root") from exc
+        if not root.is_dir() or not manifest.is_file():
+            raise ToolError(f"Target workspace extraction is incomplete: {root}")
+        key = (target_id, archive_stem)
+        if key in result:
+            raise ToolError(f"Duplicate target workspace override: {target_id}/{archive_stem}")
+        result[key] = TargetWorkspaceOverride(
+            target_id=target_id,
+            archive_stem=archive_stem,
+            workspace_archive_root=root,
+            source_manifest=manifest,
+            source_archive_relative=str(row.get("source_archive_relative", "")),
+            source_archive_sha256=str(row.get("source_archive_sha256", "")),
+            source_archive_bytes=int(row.get("source_archive_bytes", -1)),
+        )
+    return result
+
+
+def resolve_workspace_template(
+    project_root: Path,
+    target_id: str,
+    template_path_value: str,
+    overrides: dict[tuple[str, str], TargetWorkspaceOverride],
+) -> tuple[str, str, str, str, Path, Path]:
+    project, workspace, archive_stem, internal_path, canonical = parse_workspace_template(
+        project_root, template_path_value
+    )
+    override = overrides.get((target_id, archive_stem))
+    current = override.workspace_archive_root / internal_path if override else canonical
+    return project, workspace, archive_stem, internal_path, canonical, current
+
+
+def resolve_related_workspace_file(
+    project_root: Path,
+    target_id: str,
+    path_value: str,
+    overrides: dict[tuple[str, str], TargetWorkspaceOverride],
+) -> Path:
+    _, _, archive_stem, internal_path, canonical = parse_workspace_template(project_root, path_value)
+    override = overrides.get((target_id, archive_stem))
+    return override.workspace_archive_root / internal_path if override else canonical
 
 
 def encode_xml_text(value: str) -> str:
@@ -1606,12 +1852,20 @@ def apply_event_unit(
     target_id: str,
     quartet_policy: Optional[dict[str, Any]] = None,
     runtime_canary: bool = False,
+    workspace_overrides: Optional[dict[tuple[str, str], TargetWorkspaceOverride]] = None,
 ) -> tuple[bytes, dict[str, Any]]:
+    overrides = workspace_overrides or {}
     target = unit.get("targets", {}).get(target_id)
     if not isinstance(target, dict) or not target.get("template_path"):
         raise ToolError(f"Unit does not support target {target_id}: {unit_path}")
-    template_path = project_root / target["template_path"]
+    _, _, _, _, canonical_path, template_path = resolve_workspace_template(
+        project_root, target_id, str(target["template_path"]), overrides
+    )
+    if not template_path.is_file():
+        raise ToolError(f"Target template is missing: {template_path}")
     template = parse_ebm(template_path)
+    canonical_template = template if template_path == canonical_path else parse_ebm(canonical_path)
+    canonical_to_current, canonical_status = align_messages(canonical_template, template)
     texts = [message.text for message in template.messages]
 
     quartet_jp: Optional[EBMFile] = None
@@ -1625,13 +1879,19 @@ def apply_event_unit(
         )
         if not isinstance(value, str):
             raise ToolError(f"Quartet Japanese target template is missing: {unit_path}")
-        quartet_jp = parse_ebm(project_root / value)
+        quartet_jp_path = resolve_related_workspace_file(
+            project_root, target_id, value, overrides
+        )
+        quartet_jp = parse_ebm(quartet_jp_path)
         quartet_en_to_jp, _ = align_messages(template, quartet_jp)
 
     assignments: dict[int, tuple[str, str]] = {}
     adaptation_counts: Counter[str] = Counter()
+    version_alignment_counts: Counter[str] = Counter()
     blank_preserved = 0
     target_template_preserved = 0
+    version_unmapped = 0
+    version_rebased = 0
     applied = 0
 
     for record in unit["records"]:
@@ -1641,23 +1901,34 @@ def apply_event_unit(
         target_indices = alignment.get("target_indices")
         if not isinstance(target_indices, dict):
             raise ToolError(f"Record has no target_indices: {unit_path}")
-        target_index = target_indices.get(target_id)
-        if target_index is None:
+        canonical_index = target_indices.get(target_id)
+        if canonical_index is None:
             continue
-        if not isinstance(target_index, int) or not (0 <= target_index < len(texts)):
+        if not isinstance(canonical_index, int) or not (0 <= canonical_index < len(canonical_template.messages)):
             raise ToolError(
-                f"Target index out of range in {unit_path}: {target_index}"
+                f"Canonical target index out of range in {unit_path}: {canonical_index}"
             )
+        target_index = canonical_to_current[canonical_index]
+        status = canonical_status[canonical_index]
+        version_alignment_counts[status] += 1
+        # Index-only fallback can silently apply a translation to a newly inserted
+        # or reordered record. Preserve the current game's text instead.
+        if target_index is None or status in {"unmatched", "missing_target", "index_fallback_review"}:
+            version_unmapped += 1
+            continue
+        if not (0 <= target_index < len(texts)):
+            raise ToolError(f"Rebased target index out of range in {unit_path}: {target_index}")
+        if template_path != canonical_path or target_index != canonical_index:
+            version_rebased += 1
+
         editable: Optional[str] = validate_record_text(record, unit_path)
         logical_id = str(record.get("logical_id", ""))
         if target_id == QUARTET_TARGET_ID:
             assert quartet_jp is not None and quartet_policy is not None
             quartet_jp_index = quartet_en_to_jp[target_index]
             if quartet_jp_index is None:
-                raise ToolError(
-                    f"Quartet EN target has no JP counterpart in {unit_path} "
-                    f"at index {target_index}"
-                )
+                version_unmapped += 1
+                continue
             editable, adaptation = adapt_quartet_text(
                 record=record,
                 editable=editable,
@@ -1708,13 +1979,16 @@ def apply_event_unit(
         "target_template_preserved_records": target_template_preserved,
         "quartet_adaptation_counts": dict(sorted(adaptation_counts.items())),
         "runtime_canary_records": runtime_canary_applied,
+        "version_rebased_records": version_rebased,
+        "version_unmapped_records": version_unmapped,
+        "version_alignment_counts": dict(sorted(version_alignment_counts.items())),
         "mapped_records": sum(
             1
             for record in unit["records"]
             if isinstance(record.get("alignment"), dict)
             and isinstance(record["alignment"].get("target_indices"), dict)
             and record["alignment"]["target_indices"].get(target_id) is not None
-        ),
+        ) - version_unmapped,
     }
 
 
@@ -1725,12 +1999,20 @@ def apply_system_unit(
     unit: dict[str, Any],
     target_id: str,
     quartet_policy: Optional[dict[str, Any]] = None,
+    workspace_overrides: Optional[dict[tuple[str, str], TargetWorkspaceOverride]] = None,
 ) -> tuple[bytes, dict[str, Any]]:
+    overrides = workspace_overrides or {}
     target = unit.get("targets", {}).get(target_id)
     if not isinstance(target, dict) or not target.get("template_path"):
         raise ToolError(f"Unit does not support target {target_id}: {unit_path}")
-    template_path = project_root / target["template_path"]
+    _, _, _, _, canonical_path, template_path = resolve_workspace_template(
+        project_root, target_id, str(target["template_path"]), overrides
+    )
+    if not template_path.is_file():
+        raise ToolError(f"Target XML template is missing: {template_path}")
     template = parse_xml_table(template_path)
+    canonical_template = template if template_path == canonical_path else parse_xml_table(canonical_path)
+    canonical_to_current, canonical_status = align_rows(canonical_template, template)
 
     quartet_jp: Optional[XMLTable] = None
     quartet_en_to_jp: list[Optional[int]] = []
@@ -1743,13 +2025,19 @@ def apply_system_unit(
         )
         if not isinstance(value, str):
             raise ToolError(f"Quartet Japanese XML target is missing: {unit_path}")
-        quartet_jp = parse_xml_table(project_root / value)
+        quartet_jp_path = resolve_related_workspace_file(
+            project_root, target_id, value, overrides
+        )
+        quartet_jp = parse_xml_table(quartet_jp_path)
         quartet_en_to_jp, _ = align_rows(template, quartet_jp)
 
     assignments: dict[int, tuple[str, str]] = {}
     adaptation_counts: Counter[str] = Counter()
+    version_alignment_counts: Counter[str] = Counter()
     blank_preserved = 0
     target_template_preserved = 0
+    version_unmapped = 0
+    version_rebased = 0
 
     for record in unit["records"]:
         alignment = record.get("alignment")
@@ -1758,23 +2046,32 @@ def apply_system_unit(
         target_indices = alignment.get("target_indices")
         if not isinstance(target_indices, dict):
             raise ToolError(f"Record has no target_indices: {unit_path}")
-        target_index = target_indices.get(target_id)
-        if target_index is None:
+        canonical_index = target_indices.get(target_id)
+        if canonical_index is None:
             continue
-        if not isinstance(target_index, int) or not (0 <= target_index < len(template.rows)):
+        if not isinstance(canonical_index, int) or not (0 <= canonical_index < len(canonical_template.rows)):
             raise ToolError(
-                f"Target XML row out of range in {unit_path}: {target_index}"
+                f"Canonical target XML row out of range in {unit_path}: {canonical_index}"
             )
+        target_index = canonical_to_current[canonical_index]
+        status = canonical_status[canonical_index]
+        version_alignment_counts[status] += 1
+        if target_index is None or status in {"unmatched", "missing_target", "index_fallback_review"}:
+            version_unmapped += 1
+            continue
+        if not (0 <= target_index < len(template.rows)):
+            raise ToolError(f"Rebased target XML row out of range in {unit_path}: {target_index}")
+        if template_path != canonical_path or target_index != canonical_index:
+            version_rebased += 1
+
         editable: Optional[str] = validate_record_text(record, unit_path)
         logical_id = str(record.get("logical_id", ""))
         if target_id == QUARTET_TARGET_ID:
             assert quartet_jp is not None and quartet_policy is not None
             quartet_jp_index = quartet_en_to_jp[target_index]
             if quartet_jp_index is None:
-                raise ToolError(
-                    f"Quartet EN XML target has no JP counterpart in {unit_path} "
-                    f"at row {target_index}"
-                )
+                version_unmapped += 1
+                continue
             editable, adaptation = adapt_quartet_text(
                 record=record,
                 editable=editable,
@@ -1816,14 +2113,18 @@ def apply_system_unit(
         "blank_preserved_records": blank_preserved,
         "target_template_preserved_records": target_template_preserved,
         "quartet_adaptation_counts": dict(sorted(adaptation_counts.items())),
+        "version_rebased_records": version_rebased,
+        "version_unmapped_records": version_unmapped,
+        "version_alignment_counts": dict(sorted(version_alignment_counts.items())),
         "mapped_records": sum(
             1
             for record in unit["records"]
             if isinstance(record.get("alignment"), dict)
             and isinstance(record["alignment"].get("target_indices"), dict)
             and record["alignment"]["target_indices"].get(target_id) is not None
-        ),
+        ) - version_unmapped,
     }
+
 
 def development_targets() -> dict[str, str]:
     return {
@@ -2060,8 +2361,27 @@ def ensure_archive_plan(
     project: str,
     workspace: str,
     archive_stem: str,
+    project_root: Path,
+    workspace_overrides: Optional[dict[tuple[str, str], TargetWorkspaceOverride]] = None,
 ) -> dict[str, Any]:
     archive_key = (target_id, archive_stem)
+    overrides = workspace_overrides or {}
+    override = overrides.get(archive_key)
+    if override:
+        workspace_root = rel_posix(override.workspace_archive_root, project_root)
+        source_manifest = rel_posix(override.source_manifest, project_root)
+        source_policy = "current_installation_baseline_extraction"
+        source_archive_sha256 = override.source_archive_sha256
+        source_archive_bytes = override.source_archive_bytes
+    else:
+        workspace_root = f"titles/{project}/workspace/{workspace}/archives/{archive_stem}"
+        source_manifest = (
+            f"titles/{project}/workspace/{workspace}/archives/"
+            f"{archive_stem}/{archive_stem}.json"
+        )
+        source_policy = "canonical_development_workspace"
+        source_archive_sha256 = ""
+        source_archive_bytes = -1
     return archive_plans.setdefault(
         archive_key,
         {
@@ -2072,13 +2392,11 @@ def ensure_archive_plan(
             "archive_relative_path": target_archive_relative(
                 target_id, archive_stem
             ),
-            "workspace_archive_root": (
-                f"titles/{project}/workspace/{workspace}/archives/{archive_stem}"
-            ),
-            "source_manifest": (
-                f"titles/{project}/workspace/{workspace}/archives/"
-                f"{archive_stem}/{archive_stem}.json"
-            ),
+            "workspace_archive_root": workspace_root,
+            "source_manifest": source_manifest,
+            "source_policy": source_policy,
+            "source_archive_sha256": source_archive_sha256,
+            "source_archive_bytes": source_archive_bytes,
             "files": [],
         },
     )
@@ -2091,6 +2409,7 @@ def add_title_marker_outputs(
     marker: str | None,
     archive_plans: dict[tuple[str, str], dict[str, Any]],
     target_report: dict[str, Any],
+    workspace_overrides: Optional[dict[tuple[str, str], TargetWorkspaceOverride]] = None,
 ) -> None:
     if marker is None:
         return
@@ -2104,15 +2423,12 @@ def add_title_marker_outputs(
         workspace = spec["workspace"]
         archive_stem = spec["archive_stem"]
         internal_path = spec["internal_path"]
+        override = (workspace_overrides or {}).get((target_id, archive_stem))
         template_path = (
-            project_root
-            / "titles"
-            / project
-            / "workspace"
-            / workspace
-            / "archives"
-            / archive_stem
-            / internal_path
+            override.workspace_archive_root / internal_path
+            if override
+            else project_root / "titles" / project / "workspace" / workspace
+            / "archives" / archive_stem / internal_path
         )
         if not template_path.is_file():
             raise ToolError(f"Title marker template is missing: {template_path}")
@@ -2166,6 +2482,8 @@ def add_title_marker_outputs(
             project,
             workspace,
             archive_stem,
+            project_root,
+            workspace_overrides,
         )
         archive["files"].append(
             {
@@ -2232,6 +2550,7 @@ def add_active_runtime_canary_output(
     enabled: bool,
     archive_plans: dict[tuple[str, str], dict[str, Any]],
     target_report: dict[str, Any],
+    workspace_overrides: Optional[dict[tuple[str, str], TargetWorkspaceOverride]] = None,
 ) -> None:
     """Patch the first dialogue available from the user's test save.
 
@@ -2249,13 +2568,17 @@ def add_active_runtime_canary_output(
     archive_stem = str(spec["archive_stem"])
     string_no = str(spec["string_no"])
     archive = ensure_archive_plan(
-        archive_plans, target_id, project, workspace, archive_stem
+        archive_plans, target_id, project, workspace, archive_stem,
+        project_root, workspace_overrides
     )
 
     for internal_path_value in spec["internal_paths"]:
         internal_path = str(internal_path_value)
+        override = (workspace_overrides or {}).get((target_id, archive_stem))
         template_path = (
-            project_root / "titles" / project / "workspace" / workspace
+            override.workspace_archive_root / internal_path
+            if override
+            else project_root / "titles" / project / "workspace" / workspace
             / "archives" / archive_stem / internal_path
         )
         if not template_path.is_file():
@@ -2349,6 +2672,9 @@ def cmd_build_loose(args: argparse.Namespace) -> int:
 
     target_filter = set(args.target or development_targets())
     unknown = target_filter - set(development_targets())
+    workspace_overrides = load_target_workspace_overrides(
+        project_root, getattr(args, "target_workspace_map", None)
+    )
     title_marker = validate_title_marker(args.title_marker)
     runtime_canary = bool(args.runtime_canary)
     if unknown:
@@ -2378,6 +2704,8 @@ def cmd_build_loose(args: argparse.Namespace) -> int:
             "blank_preserved_records": 0,
             "target_template_preserved_records": 0,
             "quartet_adapted_records": 0,
+            "version_rebased_records": 0,
+            "version_unmapped_records": 0,
             "title_marker_files": 0,
             "runtime_canary_records": 0,
             "errors": 0,
@@ -2399,6 +2727,9 @@ def cmd_build_loose(args: argparse.Namespace) -> int:
             "applied_records": 0,
             "blank_preserved_records": 0,
             "target_template_preserved_records": 0,
+            "version_rebased_records": 0,
+            "version_unmapped_records": 0,
+            "version_alignment_counts": {},
             "quartet_adaptation_counts": {},
             "title_marker_files": 0,
             "runtime_canary_records": 0,
@@ -2416,8 +2747,8 @@ def cmd_build_loose(args: argparse.Namespace) -> int:
             if not isinstance(target_info, dict) or not target_info.get("template_path"):
                 continue
 
-            _, workspace, archive_stem, internal_path, template_path = parse_workspace_template(
-                project_root, target_info["template_path"]
+            _, workspace, archive_stem, internal_path, canonical_template_path, template_path = resolve_workspace_template(
+                project_root, target_id, target_info["template_path"], workspace_overrides
             )
             if not template_path.is_file():
                 raise ToolError(f"Target template is missing: {template_path}")
@@ -2430,6 +2761,7 @@ def cmd_build_loose(args: argparse.Namespace) -> int:
                     unit,
                     target_id,
                     quartet_policy=quartet_policy,
+                    workspace_overrides=workspace_overrides,
                 )
             else:
                 output, stats = apply_system_unit(
@@ -2439,6 +2771,7 @@ def cmd_build_loose(args: argparse.Namespace) -> int:
                     unit,
                     target_id,
                     quartet_policy=quartet_policy,
+                    workspace_overrides=workspace_overrides,
                 )
 
             output_path = loose_root / target_id / archive_stem / internal_path
@@ -2471,6 +2804,11 @@ def cmd_build_loose(args: argparse.Namespace) -> int:
             target_report["target_template_preserved_records"] += stats.get(
                 "target_template_preserved_records", 0
             )
+            target_report["version_rebased_records"] += stats.get("version_rebased_records", 0)
+            target_report["version_unmapped_records"] += stats.get("version_unmapped_records", 0)
+            version_alignment_totals = Counter(target_report["version_alignment_counts"])
+            version_alignment_totals.update(stats.get("version_alignment_counts", {}))
+            target_report["version_alignment_counts"] = dict(sorted(version_alignment_totals.items()))
             adaptation_totals = Counter(target_report["quartet_adaptation_counts"])
             adaptation_totals.update(stats.get("quartet_adaptation_counts", {}))
             target_report["quartet_adaptation_counts"] = dict(
@@ -2488,6 +2826,8 @@ def cmd_build_loose(args: argparse.Namespace) -> int:
                 project,
                 workspace,
                 archive_stem,
+                project_root,
+                workspace_overrides,
             )
             if changed:
                 archive["files"].append(
@@ -2506,6 +2846,7 @@ def cmd_build_loose(args: argparse.Namespace) -> int:
             title_marker,
             archive_plans,
             target_report,
+            workspace_overrides,
         )
         add_active_runtime_canary_output(
             project_root,
@@ -2514,6 +2855,7 @@ def cmd_build_loose(args: argparse.Namespace) -> int:
             runtime_canary,
             archive_plans,
             target_report,
+            workspace_overrides,
         )
 
         archive_counts = {}
@@ -2530,6 +2872,7 @@ def cmd_build_loose(args: argparse.Namespace) -> int:
             "units", "output_files", "changed_files", "records",
             "applied_records", "blank_preserved_records",
             "target_template_preserved_records",
+            "version_rebased_records", "version_unmapped_records",
             "title_marker_files", "runtime_canary_records",
         ):
             report["summary"][key] += target_report[key]
@@ -2905,6 +3248,13 @@ def build_parser() -> argparse.ArgumentParser:
         help=(
             "legacy experimental UIL marker; use none to disable "
             "(default: none; runtime rendering was not confirmed)"
+        ),
+    )
+    build.add_argument(
+        "--target-workspace-map",
+        help=(
+            "JSON map of per-installation extracted target archives; translations are "
+            "rebased structurally onto those current templates and repacked from them"
         ),
     )
     build.add_argument(

@@ -16,7 +16,7 @@ import (
 	"local/blue-reflection-patcher/internal/targets"
 )
 
-const version = "0.0.24-dev"
+const version = "0.0.38-dev"
 
 type rootsFlag []string
 
@@ -54,6 +54,24 @@ func main() {
 		err = commandQuartetCompositionPreview(os.Args[2:])
 	case "quartet-composition-build":
 		err = commandQuartetCompositionBuild(os.Args[2:])
+	case "transaction-prepare":
+		err = commandTransactionPrepare(os.Args[2:])
+	case "baseline-status":
+		err = commandBaselineStatus(os.Args[2:])
+	case "installation-status":
+		err = commandInstallationStatus(os.Args[2:])
+	case "installation-reset-state":
+		err = commandInstallationResetState(os.Args[2:])
+	case "installation-remove":
+		err = commandInstallationRemove(os.Args[2:])
+	case "transaction-status":
+		err = commandTransactionStatus(os.Args[2:])
+	case "transaction-commit":
+		err = commandTransactionCommit(os.Args[2:])
+	case "transaction-rollback":
+		err = commandTransactionRollback(os.Args[2:])
+	case "transaction-discard":
+		err = commandTransactionDiscard(os.Args[2:])
 	case "transaction-self-test":
 		err = commandTransactionSelfTest(os.Args[2:])
 	case "quartet-profile-activate":
@@ -87,11 +105,22 @@ func main() {
 	}
 }
 
+func boolCount(values ...bool) int {
+	count := 0
+	for _, value := range values {
+		if value {
+			count++
+		}
+	}
+	return count
+}
+
 func commandStart(args []string) error {
 	flags := flag.NewFlagSet("start", flag.ContinueOnError)
 	var roots rootsFlag
 	var noPrompt bool
 	var moduleList, output, projectRoot, payloadOutput string
+	var guidedPrepare, guidedInstall, guidedRemove, confirmed, buildLocal bool
 	flags.Var(&roots, "game-dir", "game directory; may be repeated")
 	flags.Var(&roots, "root", "alias for --game-dir")
 	flags.BoolVar(&noPrompt, "no-prompt", false, "use default modules and fail instead of prompting for a game directory")
@@ -99,8 +128,19 @@ func commandStart(args []string) error {
 	flags.StringVar(&output, "json", "", "write the selected desired state to this JSON file")
 	flags.StringVar(&projectRoot, "project-root", "", "project root containing verified local build artifacts")
 	flags.StringVar(&payloadOutput, "payload-json", "", "write local payload transaction preview JSON to this file")
+	flags.BoolVar(&guidedPrepare, "prepare", false, "prepare the verified selected payloads without modifying game files")
+	flags.BoolVar(&guidedInstall, "install", false, "prepare and install the verified selected payloads")
+	flags.BoolVar(&guidedRemove, "remove", false, "remove all patcher-installed modules and restore the persistent baseline")
+	flags.BoolVar(&confirmed, "yes", false, "confirm game-file modification for non-interactive --install or --remove")
+	flags.BoolVar(&buildLocal, "build-local", false, "rebuild current local Translation payloads before guided preparation or installation")
 	if err := flags.Parse(args); err != nil {
 		return err
+	}
+	if boolCount(guidedPrepare, guidedInstall, guidedRemove) > 1 {
+		return fmt.Errorf("--prepare, --install and --remove are mutually exclusive")
+	}
+	if confirmed && !guidedInstall && !guidedRemove {
+		return fmt.Errorf("--yes is only valid with --install or --remove")
 	}
 	specs, err := targets.Load()
 	if err != nil {
@@ -115,6 +155,38 @@ func commandStart(args []string) error {
 		return fmt.Errorf("no supported installation detected; run from the game directory or pass --game-dir PATH")
 	}
 	printHumanDetections(os.Stdout, items)
+	if guidedRemove {
+		if !confirmed {
+			return fmt.Errorf("non-interactive --remove modifies game files when a managed installation is active; pass --yes or use the interactive management menu")
+		}
+		if len(items) != 1 {
+			return fmt.Errorf("--remove requires exactly one detected installation; found %d", len(items))
+		}
+		report, err := removeManagedInstallation(items[0].TargetID, items[0].DisplayName, items[0].Root)
+		if err != nil {
+			return err
+		}
+		printHumanInstallationRemove(os.Stdout, report)
+		return nil
+	}
+	if prompt && len(items) == 1 {
+		managementAction, _, managementErr := chooseGuidedInstallationManagement(items[0], os.Stdin, os.Stdout)
+		if managementErr != nil {
+			return managementErr
+		}
+		switch managementAction {
+		case guidedManagementRemove:
+			report, removeErr := removeManagedInstallation(items[0].TargetID, items[0].DisplayName, items[0].Root)
+			if removeErr != nil {
+				return removeErr
+			}
+			printHumanInstallationRemove(os.Stdout, report)
+			return nil
+		case guidedManagementCancel:
+			fmt.Println("No game files were modified.")
+			return nil
+		}
+	}
 	modules, err := catalog.Load()
 	if err != nil {
 		return err
@@ -128,7 +200,8 @@ func commandStart(args []string) error {
 	if err := printTransactionFoundation(os.Stdout, chosen); err != nil {
 		return err
 	}
-	if preview, previewErr := buildPayloadPreview(projectRoot, chosen); previewErr != nil {
+	preview, previewErr := buildPayloadPreview(projectRoot, chosen)
+	if previewErr != nil {
 		fmt.Fprintf(os.Stdout, "\nLocal payload preview unavailable: %v\n", previewErr)
 	} else {
 		printHumanPayloadPreview(os.Stdout, preview)
@@ -139,6 +212,37 @@ func commandStart(args []string) error {
 			fmt.Printf("Payload preview report: %s\n", payloadOutput)
 		}
 	}
+
+	previewNeedsBuild := previewErr != nil || !previewReadyForGuidedAction(preview)
+	buildRequested := buildLocal
+	if buildRequested && !selectionSupportsLocalTranslationBuild(chosen) {
+		return fmt.Errorf("--build-local supports Translation and optional Quartet Restoration only")
+	}
+	if !buildRequested && previewNeedsBuild && prompt && localTranslationBuildAvailable(projectRoot, chosen) {
+		buildRequested, err = chooseLocalTranslationBuild(os.Stdin, os.Stdout)
+		if err != nil {
+			return err
+		}
+	}
+	if buildRequested {
+		reportPath, buildErr := runLocalTranslationPreviewBuild(projectRoot, chosen, os.Stdout)
+		if buildErr != nil {
+			return buildErr
+		}
+		fmt.Printf("Local Translation build report: %s\n", reportPath)
+		preview, previewErr = buildPayloadPreview(projectRoot, chosen)
+		if previewErr != nil {
+			return fmt.Errorf("local Translation build completed but payload preview is unavailable: %w", previewErr)
+		}
+		printHumanPayloadPreview(os.Stdout, preview)
+		if payloadOutput != "" {
+			if err := emit(preview, payloadOutput); err != nil {
+				return err
+			}
+			fmt.Printf("Payload preview report: %s\n", payloadOutput)
+		}
+	}
+
 	if quartetRoot, requested := selectionRequestsQuartetComposition(chosen); requested {
 		if composition, compositionErr := buildQuartetCompositionPreview(projectRoot, quartetRoot); compositionErr != nil {
 			fmt.Fprintf(os.Stdout, "\nQuartet composition preflight unavailable: %v\n", compositionErr)
@@ -152,7 +256,35 @@ func commandStart(args []string) error {
 		}
 		fmt.Printf("Selection report: %s\n", output)
 	}
-	fmt.Println("No game files were modified. Verified local translation artifacts and restoration composition inputs are connected in preview-only mode; commit remains disabled.")
+
+	action := guidedActionCancel
+	if guidedPrepare {
+		action = guidedActionPrepare
+	} else if guidedInstall {
+		if !confirmed {
+			return fmt.Errorf("non-interactive --install modifies game files; pass --yes or use the interactive action menu")
+		}
+		action = guidedActionInstall
+	} else if prompt && previewErr == nil && previewReadyForGuidedAction(preview) {
+		action, err = chooseGuidedPayloadAction(preview, os.Stdin, os.Stdout)
+		if err != nil {
+			return err
+		}
+	}
+	if action != guidedActionCancel {
+		if previewErr != nil {
+			return fmt.Errorf("cannot execute selected action because payload preview is unavailable: %w", previewErr)
+		}
+		if _, err := executeGuidedPayloadAction(preview, action, os.Stdout); err != nil {
+			return err
+		}
+		return nil
+	}
+	if previewErr == nil && previewReadyForGuidedAction(preview) {
+		fmt.Println("No game files were modified. Run interactively to choose Install / update now, or use start --install --yes for automation.")
+	} else {
+		fmt.Println("No game files were modified. Resolve the reported payload readiness issue before installation.")
+	}
 	return nil
 }
 
@@ -288,7 +420,7 @@ func usage() {
 	fmt.Print(`Blue Reflection unified PC patcher planner
 
 Commands:
-  start [--game-dir PATH] [--modules ID,ID|none] [--no-prompt] [--json FILE]
+  start [--game-dir PATH] [--modules ID,ID|none] [--project-root PATH] [--build-local] [--prepare|--install --yes|--remove --yes] [--no-prompt] [--json FILE]
   version
   detect [--game-dir PATH] [--prompt] [--json FILE]
   inspect-bundle --bundle FILE
@@ -297,6 +429,15 @@ Commands:
   payload-preview [--game-dir PATH] [--modules ID,ID|none] [--project-root PATH] [--json FILE]
   quartet-composition-preview [--game-dir PATH] [--project-root PATH] [--json FILE]
   quartet-composition-build [--game-dir PATH] [--project-root PATH] [--gust-pak PATH] [--timeout DURATION] [--json FILE]
+  transaction-prepare [--game-dir PATH] [--modules ID,ID|none] [--project-root PATH] [--json FILE]
+  baseline-status [--game-dir PATH] [--json FILE]
+  installation-status [--game-dir PATH] [--json FILE]
+  installation-reset-state --game-dir PATH --adopt-current --yes [--json FILE]
+  installation-remove --game-dir PATH --yes [--json FILE]
+  transaction-status [--game-dir PATH] [--json FILE]
+  transaction-commit --journal FILE --yes [--json FILE]
+  transaction-rollback --journal FILE --yes [--json FILE]
+  transaction-discard --journal FILE [--json FILE]
   transaction-self-test --work-dir PATH [--json FILE]
   quartet-profile-activate --project-root PATH --game-root PATH PROFILE_ID
   quartet-profile-status --project-root PATH --game-root PATH
@@ -309,10 +450,10 @@ Commands:
   quartet-field-profile-rollback --project-root PATH --game-root PATH
   quartet-local-profile-list --project-root PATH --game-root PATH
 
-The general apply/repack engine remains gated until EBM/XML import and PAK rebuild
-validation are complete. This development binary already validates bundle
-manifests, identifies installations from structural game files, previews verified local payloads and creates deterministic plans.
-Run the binary directly from a game directory to use the guided detector.
+The guided start command detects the game, selects target-aware modules, previews verified payloads,
+shows and manages an existing active installation, offers complete removal to the preserved baseline, offers a local rebuild when development payloads are missing or stale, and then offers Install / update now, Prepare only, or Cancel. Installation preserves versioned baselines,
+stages verified payloads, commits atomically per file, records active state and remains rollback-capable.
+Run the binary directly from a game directory to use the complete guided workflow.
 `)
 }
 
