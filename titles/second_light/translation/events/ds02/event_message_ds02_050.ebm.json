@@ -1,7 +1,7 @@
 {
   "type": "br_event_translation_unit",
   "format_version": 1,
-  "tool_version": "translation-0.0.11",
+  "tool_version": "translation-0.0.15",
   "project": "second_light",
   "category": "event",
   "logical_path": "ds02/event_message_ds02_050.ebm",
@@ -15,13 +15,23 @@
     },
     "official_en_path": "titles/second_light/workspace/original/archives/PACK01/event/event_en/ds02/event_message_ds02_050.ebm",
     "official_en_sha256": "b1b4e8df891c0753997bbf87d05438e26f4fd0497fdcf5ba83bfaffa4b6ab78c",
-    "auxiliary_jp_path": null,
-    "auxiliary_en_path": null
+    "auxiliary_jp_path": "titles/second_light/workspace/quartet/archives/PACK01_03/event/b4/event_jp/ds02/event_message_ds02_050.ebm",
+    "auxiliary_en_path": "titles/second_light/workspace/quartet/archives/PACK01_03/event/b4/event_en/ds02/event_message_ds02_050.ebm"
   },
   "targets": {
     "second_light_original": {
       "template_language": "en",
       "template_path": "titles/second_light/workspace/original/archives/PACK01/event/event_en/ds02/event_message_ds02_050.ebm",
+      "template_sha256": "b1b4e8df891c0753997bbf87d05438e26f4fd0497fdcf5ba83bfaffa4b6ab78c",
+      "message_count": 7,
+      "mapping_status_counts": {
+        "exact_index_msg_id": 7
+      },
+      "complete_mapping": true
+    },
+    "second_light_quartet": {
+      "template_language": "en",
+      "template_path": "titles/second_light/workspace/quartet/archives/PACK01_03/event/b4/event_en/ds02/event_message_ds02_050.ebm",
       "template_sha256": "b1b4e8df891c0753997bbf87d05438e26f4fd0497fdcf5ba83bfaffa4b6ab78c",
       "message_count": 7,
       "mapping_status_counts": {
@@ -54,21 +64,27 @@
       },
       "jp": "こころって、何かで表彰されたこととかある？<CR>私はないんだけど",
       "en_original": "Have you ever gotten any awards or anything, Kokoro? I haven't.",
-      "en_auxiliary": null,
+      "en_auxiliary": "Have you ever gotten any awards or anything, Kokoro? I haven't.",
       "en": "Have you ever received an award for anything, Kokoro?<CR>I haven't.",
       "alignment": {
         "status": "exact_index_msg_id",
         "initial_en_source": "official_en",
         "official_en_index": 0,
         "official_en_mapping": "exact_index_msg_id",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 0,
+        "auxiliary_mapping": "exact_index_msg_id+exact_index_msg_id",
         "target_indices": {
-          "second_light_original": 0
+          "second_light_original": 0,
+          "second_light_quartet": 0
         },
         "target_mapping": {
-          "second_light_original": "exact_index_msg_id"
-        }
+          "second_light_original": "exact_index_msg_id",
+          "second_light_quartet": "exact_index_msg_id"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_index_msg_id[exact_structural]+exact_index_msg_id[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -94,21 +110,27 @@
       },
       "jp": "うーんと……。<CR>あー、学校で賞状もらったことはあった気がする",
       "en_original": "Hmm... Oh, I think I was honored for something at school before.",
-      "en_auxiliary": null,
+      "en_auxiliary": "Hmm... Oh, I think I was honored for something at school before.",
       "en": "Let's see...<CR>Oh, I think I did receive a certificate at school once.",
       "alignment": {
         "status": "exact_index_msg_id",
         "initial_en_source": "official_en",
         "official_en_index": 1,
         "official_en_mapping": "exact_index_msg_id",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 1,
+        "auxiliary_mapping": "exact_index_msg_id+exact_index_msg_id",
         "target_indices": {
-          "second_light_original": 1
+          "second_light_original": 1,
+          "second_light_quartet": 1
         },
         "target_mapping": {
-          "second_light_original": "exact_index_msg_id"
-        }
+          "second_light_original": "exact_index_msg_id",
+          "second_light_quartet": "exact_index_msg_id"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_index_msg_id[exact_structural]+exact_index_msg_id[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -134,21 +156,27 @@
       },
       "jp": "へえ！　何の賞？<CR>部活とか？　それとも作文コンクールとか？",
       "en_original": "Really?! What for? Did you get on the honor roll, or win a writing competition?",
-      "en_auxiliary": null,
+      "en_auxiliary": "Really?! What for? Did you get on the honor roll, or win a writing competition?",
       "en": "Really? What award?<CR>Was it for a club? Or an essay contest?",
       "alignment": {
         "status": "exact_index_msg_id",
         "initial_en_source": "official_en",
         "official_en_index": 2,
         "official_en_mapping": "exact_index_msg_id",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 2,
+        "auxiliary_mapping": "exact_index_msg_id+exact_index_msg_id",
         "target_indices": {
-          "second_light_original": 2
+          "second_light_original": 2,
+          "second_light_quartet": 2
         },
         "target_mapping": {
-          "second_light_original": "exact_index_msg_id"
-        }
+          "second_light_original": "exact_index_msg_id",
+          "second_light_quartet": "exact_index_msg_id"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_index_msg_id[exact_structural]+exact_index_msg_id[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -174,21 +202,27 @@
       },
       "jp": "えっと……小学校の皆勤賞",
       "en_original": "Perfect attendance...in elementary school.",
-      "en_auxiliary": null,
+      "en_auxiliary": "Perfect attendance...in elementary school.",
       "en": "Um... A perfect-attendance award in elementary school.",
       "alignment": {
         "status": "exact_index_msg_id",
         "initial_en_source": "official_en",
         "official_en_index": 3,
         "official_en_mapping": "exact_index_msg_id",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 3,
+        "auxiliary_mapping": "exact_index_msg_id+exact_index_msg_id",
         "target_indices": {
-          "second_light_original": 3
+          "second_light_original": 3,
+          "second_light_quartet": 3
         },
         "target_mapping": {
-          "second_light_original": "exact_index_msg_id"
-        }
+          "second_light_original": "exact_index_msg_id",
+          "second_light_quartet": "exact_index_msg_id"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_index_msg_id[exact_structural]+exact_index_msg_id[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -214,21 +248,27 @@
       },
       "jp": "え……それって、<CR>無遅刻無欠席で過ごしたっていう……",
       "en_original": "You mean...you got an award for never being tardy or absent?",
-      "en_auxiliary": null,
+      "en_auxiliary": "You mean...you got an award for never being tardy or absent?",
       "en": "Wait... You mean the one you get<CR>for never being late or absent...?",
       "alignment": {
         "status": "exact_index_msg_id",
         "initial_en_source": "official_en",
         "official_en_index": 4,
         "official_en_mapping": "exact_index_msg_id",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 4,
+        "auxiliary_mapping": "exact_index_msg_id+exact_index_msg_id",
         "target_indices": {
-          "second_light_original": 4
+          "second_light_original": 4,
+          "second_light_quartet": 4
         },
         "target_mapping": {
-          "second_light_original": "exact_index_msg_id"
-        }
+          "second_light_original": "exact_index_msg_id",
+          "second_light_quartet": "exact_index_msg_id"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_index_msg_id[exact_structural]+exact_index_msg_id[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -254,21 +294,27 @@
       },
       "jp": "そう。えらいでしょ？",
       "en_original": "Yep. Aren't you proud of me?",
-      "en_auxiliary": null,
+      "en_auxiliary": "Yep. Aren't you proud of me?",
       "en": "Yeah. Pretty admirable, right?",
       "alignment": {
         "status": "exact_index_msg_id",
         "initial_en_source": "official_en",
         "official_en_index": 5,
         "official_en_mapping": "exact_index_msg_id",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 5,
+        "auxiliary_mapping": "exact_index_msg_id+exact_index_msg_id",
         "target_indices": {
-          "second_light_original": 5
+          "second_light_original": 5,
+          "second_light_quartet": 5
         },
         "target_mapping": {
-          "second_light_original": "exact_index_msg_id"
-        }
+          "second_light_original": "exact_index_msg_id",
+          "second_light_quartet": "exact_index_msg_id"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_index_msg_id[exact_structural]+exact_index_msg_id[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -294,21 +340,27 @@
       },
       "jp": "いや、確かにえらいけど……<CR>なんか想像してたのと違う",
       "en_original": "Sure, but...that's not exactly what I had in mind.",
-      "en_auxiliary": null,
+      "en_auxiliary": "Sure, but...that's not exactly what I had in mind.",
       "en": "I mean, sure, it is admirable, but...<CR>That's not quite what I was imagining.",
       "alignment": {
         "status": "exact_index_msg_id",
         "initial_en_source": "official_en",
         "official_en_index": 6,
         "official_en_mapping": "exact_index_msg_id",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 6,
+        "auxiliary_mapping": "exact_index_msg_id+exact_index_msg_id",
         "target_indices": {
-          "second_light_original": 6
+          "second_light_original": 6,
+          "second_light_quartet": 6
         },
         "target_mapping": {
-          "second_light_original": "exact_index_msg_id"
-        }
+          "second_light_original": "exact_index_msg_id",
+          "second_light_quartet": "exact_index_msg_id"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_index_msg_id[exact_structural]+exact_index_msg_id[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     }
   ]

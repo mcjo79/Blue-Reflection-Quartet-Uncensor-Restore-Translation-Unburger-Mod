@@ -1,7 +1,7 @@
 {
   "type": "br_event_translation_unit",
   "format_version": 1,
-  "tool_version": "translation-0.0.11",
+  "tool_version": "translation-0.0.15",
   "project": "second_light",
   "category": "event",
   "logical_path": "mm10/event_message_mm10_060.ebm",
@@ -15,13 +15,23 @@
     },
     "official_en_path": "titles/second_light/workspace/original/archives/PACK01/event/event_en/mm10/event_message_mm10_060.ebm",
     "official_en_sha256": "493102b70daaa5b75c4a8a22ac3daf36f682f08fc220b6a61c9a2d4cc76b0947",
-    "auxiliary_jp_path": null,
-    "auxiliary_en_path": null
+    "auxiliary_jp_path": "titles/second_light/workspace/quartet/archives/PACK01_03/event/b4/event_jp/mm10/event_message_mm10_060.ebm",
+    "auxiliary_en_path": "titles/second_light/workspace/quartet/archives/PACK01_03/event/b4/event_en/mm10/event_message_mm10_060.ebm"
   },
   "targets": {
     "second_light_original": {
       "template_language": "en",
       "template_path": "titles/second_light/workspace/original/archives/PACK01/event/event_en/mm10/event_message_mm10_060.ebm",
+      "template_sha256": "493102b70daaa5b75c4a8a22ac3daf36f682f08fc220b6a61c9a2d4cc76b0947",
+      "message_count": 20,
+      "mapping_status_counts": {
+        "exact_index_msg_id": 20
+      },
+      "complete_mapping": true
+    },
+    "second_light_quartet": {
+      "template_language": "en",
+      "template_path": "titles/second_light/workspace/quartet/archives/PACK01_03/event/b4/event_en/mm10/event_message_mm10_060.ebm",
       "template_sha256": "493102b70daaa5b75c4a8a22ac3daf36f682f08fc220b6a61c9a2d4cc76b0947",
       "message_count": 20,
       "mapping_status_counts": {
@@ -54,21 +64,27 @@
       },
       "jp": "みんな、注意して……",
       "en_original": "Everyone, be careful...",
-      "en_auxiliary": null,
+      "en_auxiliary": "Everyone, be careful...",
       "en": "Everyone, be careful...",
       "alignment": {
         "status": "exact_index_msg_id",
         "initial_en_source": "official_en",
         "official_en_index": 0,
         "official_en_mapping": "exact_index_msg_id",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 0,
+        "auxiliary_mapping": "exact_index_msg_id+exact_index_msg_id",
         "target_indices": {
-          "second_light_original": 0
+          "second_light_original": 0,
+          "second_light_quartet": 0
         },
         "target_mapping": {
-          "second_light_original": "exact_index_msg_id"
-        }
+          "second_light_original": "exact_index_msg_id",
+          "second_light_quartet": "exact_index_msg_id"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_index_msg_id[exact_structural]+exact_index_msg_id[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -94,21 +110,27 @@
       },
       "jp": "…………ひとまずは、何も起きてない？",
       "en_original": "Nothing's happening for now...",
-      "en_auxiliary": null,
+      "en_auxiliary": "Nothing's happening for now...",
       "en": "Nothing's happening for now...",
       "alignment": {
         "status": "exact_index_msg_id",
         "initial_en_source": "official_en",
         "official_en_index": 1,
         "official_en_mapping": "exact_index_msg_id",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 1,
+        "auxiliary_mapping": "exact_index_msg_id+exact_index_msg_id",
         "target_indices": {
-          "second_light_original": 1
+          "second_light_original": 1,
+          "second_light_quartet": 1
         },
         "target_mapping": {
-          "second_light_original": "exact_index_msg_id"
-        }
+          "second_light_original": "exact_index_msg_id",
+          "second_light_quartet": "exact_index_msg_id"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_index_msg_id[exact_structural]+exact_index_msg_id[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -134,21 +156,27 @@
       },
       "jp": "そう、みたいだね",
       "en_original": "It certainly seems that way.",
-      "en_auxiliary": null,
+      "en_auxiliary": "It certainly seems that way.",
       "en": "It certainly seems that way.",
       "alignment": {
         "status": "exact_index_msg_id",
         "initial_en_source": "official_en",
         "official_en_index": 2,
         "official_en_mapping": "exact_index_msg_id",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 2,
+        "auxiliary_mapping": "exact_index_msg_id+exact_index_msg_id",
         "target_indices": {
-          "second_light_original": 2
+          "second_light_original": 2,
+          "second_light_quartet": 2
         },
         "target_mapping": {
-          "second_light_original": "exact_index_msg_id"
-        }
+          "second_light_original": "exact_index_msg_id",
+          "second_light_quartet": "exact_index_msg_id"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_index_msg_id[exact_structural]+exact_index_msg_id[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -174,21 +202,27 @@
       },
       "jp": "ココロトープの様子、落ち着いてるね",
       "en_original": "It's a lot calmer than last time.",
-      "en_auxiliary": null,
+      "en_auxiliary": "It's a lot calmer than last time.",
       "en": "It's a lot calmer than last time.",
       "alignment": {
         "status": "exact_index_msg_id",
         "initial_en_source": "official_en",
         "official_en_index": 3,
         "official_en_mapping": "exact_index_msg_id",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 3,
+        "auxiliary_mapping": "exact_index_msg_id+exact_index_msg_id",
         "target_indices": {
-          "second_light_original": 3
+          "second_light_original": 3,
+          "second_light_quartet": 3
         },
         "target_mapping": {
-          "second_light_original": "exact_index_msg_id"
-        }
+          "second_light_original": "exact_index_msg_id",
+          "second_light_quartet": "exact_index_msg_id"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_index_msg_id[exact_structural]+exact_index_msg_id[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -214,21 +248,27 @@
       },
       "jp": "詩さん、どうかな？<CR>また調子が悪くなったりしてない？",
       "en_original": "How about you, Uta? Are you feeling okay?",
-      "en_auxiliary": null,
+      "en_auxiliary": "How about you, Uta? Are you feeling okay?",
       "en": "How about you, Uta-san? Are you feeling okay?",
       "alignment": {
         "status": "exact_index_msg_id",
         "initial_en_source": "official_en",
         "official_en_index": 4,
         "official_en_mapping": "exact_index_msg_id",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 4,
+        "auxiliary_mapping": "exact_index_msg_id+exact_index_msg_id",
         "target_indices": {
-          "second_light_original": 4
+          "second_light_original": 4,
+          "second_light_quartet": 4
         },
         "target_mapping": {
-          "second_light_original": "exact_index_msg_id"
-        }
+          "second_light_original": "exact_index_msg_id",
+          "second_light_quartet": "exact_index_msg_id"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_index_msg_id[exact_structural]+exact_index_msg_id[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -254,21 +294,27 @@
       },
       "jp": "……はい、今のところは大丈夫です",
       "en_original": "Yes, I feel fine.",
-      "en_auxiliary": null,
+      "en_auxiliary": "Yes, I feel fine.",
       "en": "Yes, I feel fine.",
       "alignment": {
         "status": "exact_index_msg_id",
         "initial_en_source": "official_en",
         "official_en_index": 5,
         "official_en_mapping": "exact_index_msg_id",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 5,
+        "auxiliary_mapping": "exact_index_msg_id+exact_index_msg_id",
         "target_indices": {
-          "second_light_original": 5
+          "second_light_original": 5,
+          "second_light_quartet": 5
         },
         "target_mapping": {
-          "second_light_original": "exact_index_msg_id"
-        }
+          "second_light_original": "exact_index_msg_id",
+          "second_light_quartet": "exact_index_msg_id"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_index_msg_id[exact_structural]+exact_index_msg_id[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -294,21 +340,27 @@
       },
       "jp": "私も……私を受け入れる準備ができたんだと思います",
       "en_original": "I... I think I'm prepared to finally accept myself.",
-      "en_auxiliary": null,
+      "en_auxiliary": "I... I think I'm prepared to finally accept myself.",
       "en": "I... I think I'm prepared to finally accept myself.",
       "alignment": {
         "status": "exact_index_msg_id",
         "initial_en_source": "official_en",
         "official_en_index": 6,
         "official_en_mapping": "exact_index_msg_id",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 6,
+        "auxiliary_mapping": "exact_index_msg_id+exact_index_msg_id",
         "target_indices": {
-          "second_light_original": 6
+          "second_light_original": 6,
+          "second_light_quartet": 6
         },
         "target_mapping": {
-          "second_light_original": "exact_index_msg_id"
-        }
+          "second_light_original": "exact_index_msg_id",
+          "second_light_quartet": "exact_index_msg_id"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_index_msg_id[exact_structural]+exact_index_msg_id[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -334,21 +386,27 @@
       },
       "jp": "陽桜莉さんと美弦さんに、<CR>かつての私のことをいろいろと聞きました",
       "en_original": "I spoke with Hiori and Mio about my past self.",
-      "en_auxiliary": null,
+      "en_auxiliary": "I spoke with Hiori and Mio about my past self.",
       "en": "I spoke with Hiori-san and Mio-san about my past self.",
       "alignment": {
         "status": "exact_index_msg_id",
         "initial_en_source": "official_en",
         "official_en_index": 7,
         "official_en_mapping": "exact_index_msg_id",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 7,
+        "auxiliary_mapping": "exact_index_msg_id+exact_index_msg_id",
         "target_indices": {
-          "second_light_original": 7
+          "second_light_original": 7,
+          "second_light_quartet": 7
         },
         "target_mapping": {
-          "second_light_original": "exact_index_msg_id"
-        }
+          "second_light_original": "exact_index_msg_id",
+          "second_light_quartet": "exact_index_msg_id"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_index_msg_id[exact_structural]+exact_index_msg_id[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -374,21 +432,27 @@
       },
       "jp": "私が今まで何をしてきたのか、<CR>どういう人物だったのか……",
       "en_original": "About what I had done, what kind of person I was...",
-      "en_auxiliary": null,
+      "en_auxiliary": "About what I had done, what kind of person I was...",
       "en": "About what I had done, what kind of person I was...",
       "alignment": {
         "status": "exact_index_msg_id",
         "initial_en_source": "official_en",
         "official_en_index": 8,
         "official_en_mapping": "exact_index_msg_id",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 8,
+        "auxiliary_mapping": "exact_index_msg_id+exact_index_msg_id",
         "target_indices": {
-          "second_light_original": 8
+          "second_light_original": 8,
+          "second_light_quartet": 8
         },
         "target_mapping": {
-          "second_light_original": "exact_index_msg_id"
-        }
+          "second_light_original": "exact_index_msg_id",
+          "second_light_quartet": "exact_index_msg_id"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_index_msg_id[exact_structural]+exact_index_msg_id[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -414,21 +478,27 @@
       },
       "jp": "それに、あの構造物を見た時の胸のざわつき……。<CR>私も、その正体が知りたい",
       "en_original": "That twinge in my chest I felt when I looked at that structure... I want to know what it is.",
-      "en_auxiliary": null,
+      "en_auxiliary": "That twinge in my chest I felt when I looked at that structure... I want to know what it is.",
       "en": "That twinge in my chest I felt when I looked at that structure... I want to know what it is.",
       "alignment": {
         "status": "exact_index_msg_id",
         "initial_en_source": "official_en",
         "official_en_index": 9,
         "official_en_mapping": "exact_index_msg_id",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 9,
+        "auxiliary_mapping": "exact_index_msg_id+exact_index_msg_id",
         "target_indices": {
-          "second_light_original": 9
+          "second_light_original": 9,
+          "second_light_quartet": 9
         },
         "target_mapping": {
-          "second_light_original": "exact_index_msg_id"
-        }
+          "second_light_original": "exact_index_msg_id",
+          "second_light_quartet": "exact_index_msg_id"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_index_msg_id[exact_structural]+exact_index_msg_id[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -454,21 +524,27 @@
       },
       "jp": "記憶を取り戻したそのとき、<CR>私がどうなってしまうかはわかりませんが……",
       "en_original": "Though I don't know what will happen to me when my memories return...",
-      "en_auxiliary": null,
+      "en_auxiliary": "Though I don't know what will happen to me when my memories return...",
       "en": "Though I don't know what will happen to me when my memories return...",
       "alignment": {
         "status": "exact_index_msg_id",
         "initial_en_source": "official_en",
         "official_en_index": 10,
         "official_en_mapping": "exact_index_msg_id",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 10,
+        "auxiliary_mapping": "exact_index_msg_id+exact_index_msg_id",
         "target_indices": {
-          "second_light_original": 10
+          "second_light_original": 10,
+          "second_light_quartet": 10
         },
         "target_mapping": {
-          "second_light_original": "exact_index_msg_id"
-        }
+          "second_light_original": "exact_index_msg_id",
+          "second_light_quartet": "exact_index_msg_id"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_index_msg_id[exact_structural]+exact_index_msg_id[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -494,21 +570,27 @@
       },
       "jp": "大丈夫",
       "en_original": "Don't worry.",
-      "en_auxiliary": null,
+      "en_auxiliary": "Don't worry.",
       "en": "Don't worry.",
       "alignment": {
         "status": "exact_index_msg_id",
         "initial_en_source": "official_en",
         "official_en_index": 11,
         "official_en_mapping": "exact_index_msg_id",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 11,
+        "auxiliary_mapping": "exact_index_msg_id+exact_index_msg_id",
         "target_indices": {
-          "second_light_original": 11
+          "second_light_original": 11,
+          "second_light_quartet": 11
         },
         "target_mapping": {
-          "second_light_original": "exact_index_msg_id"
-        }
+          "second_light_original": "exact_index_msg_id",
+          "second_light_quartet": "exact_index_msg_id"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_index_msg_id[exact_structural]+exact_index_msg_id[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -534,21 +616,27 @@
       },
       "jp": "少なくとも、今の詩ちゃんは悪い人じゃない",
       "en_original": "You aren't the person who did those things.",
-      "en_auxiliary": null,
+      "en_auxiliary": "You aren't the person who did those things.",
       "en": "At least you're not a bad person now, Uta-chan.",
       "alignment": {
         "status": "exact_index_msg_id",
         "initial_en_source": "official_en",
         "official_en_index": 12,
         "official_en_mapping": "exact_index_msg_id",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 12,
+        "auxiliary_mapping": "exact_index_msg_id+exact_index_msg_id",
         "target_indices": {
-          "second_light_original": 12
+          "second_light_original": 12,
+          "second_light_quartet": 12
         },
         "target_mapping": {
-          "second_light_original": "exact_index_msg_id"
-        }
+          "second_light_original": "exact_index_msg_id",
+          "second_light_quartet": "exact_index_msg_id"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_index_msg_id[exact_structural]+exact_index_msg_id[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -574,21 +662,27 @@
       },
       "jp": "もし、記憶を取り戻して……<CR>詩ちゃんが昔のようになったとしても、私が止める",
       "en_original": "If worse comes to worst and you return to who you were... I'll stop you.",
-      "en_auxiliary": null,
+      "en_auxiliary": "If worse comes to worst and you return to who you were... I'll stop you.",
       "en": "Even if you regain your memories and become like you were before, I'll stop you.",
       "alignment": {
         "status": "exact_index_msg_id",
         "initial_en_source": "official_en",
         "official_en_index": 13,
         "official_en_mapping": "exact_index_msg_id",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 13,
+        "auxiliary_mapping": "exact_index_msg_id+exact_index_msg_id",
         "target_indices": {
-          "second_light_original": 13
+          "second_light_original": 13,
+          "second_light_quartet": 13
         },
         "target_mapping": {
-          "second_light_original": "exact_index_msg_id"
-        }
+          "second_light_original": "exact_index_msg_id",
+          "second_light_quartet": "exact_index_msg_id"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_index_msg_id[exact_structural]+exact_index_msg_id[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -614,21 +708,27 @@
       },
       "jp": "陽桜莉さん……",
       "en_original": "Hiori...",
-      "en_auxiliary": null,
+      "en_auxiliary": "Hiori...",
       "en": "Hiori-san...",
       "alignment": {
         "status": "exact_index_msg_id",
         "initial_en_source": "official_en",
         "official_en_index": 14,
         "official_en_mapping": "exact_index_msg_id",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 14,
+        "auxiliary_mapping": "exact_index_msg_id+exact_index_msg_id",
         "target_indices": {
-          "second_light_original": 14
+          "second_light_original": 14,
+          "second_light_quartet": 14
         },
         "target_mapping": {
-          "second_light_original": "exact_index_msg_id"
-        }
+          "second_light_original": "exact_index_msg_id",
+          "second_light_quartet": "exact_index_msg_id"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_index_msg_id[exact_structural]+exact_index_msg_id[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -654,21 +754,27 @@
       },
       "jp": "だから、あんまり気を張りすぎないで行こうよ！",
       "en_original": "So let's not worry too much about it!",
-      "en_auxiliary": null,
+      "en_auxiliary": "So let's not worry too much about it!",
       "en": "So let's not worry too much about it!",
       "alignment": {
         "status": "exact_index_msg_id",
         "initial_en_source": "official_en",
         "official_en_index": 15,
         "official_en_mapping": "exact_index_msg_id",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 15,
+        "auxiliary_mapping": "exact_index_msg_id+exact_index_msg_id",
         "target_indices": {
-          "second_light_original": 15
+          "second_light_original": 15,
+          "second_light_quartet": 15
         },
         "target_mapping": {
-          "second_light_original": "exact_index_msg_id"
-        }
+          "second_light_original": "exact_index_msg_id",
+          "second_light_quartet": "exact_index_msg_id"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_index_msg_id[exact_structural]+exact_index_msg_id[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -694,21 +800,27 @@
       },
       "jp": "リラックスしていた方が、<CR>この世界も安定するかもしれないですしね",
       "en_original": "Staying relaxed will likely help this world stay calm as well.",
-      "en_auxiliary": null,
+      "en_auxiliary": "Staying relaxed will likely help this world stay calm as well.",
       "en": "Staying relaxed will likely help this world stay calm as well.",
       "alignment": {
         "status": "exact_index_msg_id",
         "initial_en_source": "official_en",
         "official_en_index": 16,
         "official_en_mapping": "exact_index_msg_id",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 16,
+        "auxiliary_mapping": "exact_index_msg_id+exact_index_msg_id",
         "target_indices": {
-          "second_light_original": 16
+          "second_light_original": 16,
+          "second_light_quartet": 16
         },
         "target_mapping": {
-          "second_light_original": "exact_index_msg_id"
-        }
+          "second_light_original": "exact_index_msg_id",
+          "second_light_quartet": "exact_index_msg_id"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_index_msg_id[exact_structural]+exact_index_msg_id[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -734,21 +846,27 @@
       },
       "jp": "みなさん……",
       "en_original": "Thank you...",
-      "en_auxiliary": null,
+      "en_auxiliary": "Thank you...",
       "en": "Thank you...",
       "alignment": {
         "status": "exact_index_msg_id",
         "initial_en_source": "official_en",
         "official_en_index": 17,
         "official_en_mapping": "exact_index_msg_id",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 17,
+        "auxiliary_mapping": "exact_index_msg_id+exact_index_msg_id",
         "target_indices": {
-          "second_light_original": 17
+          "second_light_original": 17,
+          "second_light_quartet": 17
         },
         "target_mapping": {
-          "second_light_original": "exact_index_msg_id"
-        }
+          "second_light_original": "exact_index_msg_id",
+          "second_light_quartet": "exact_index_msg_id"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_index_msg_id[exact_structural]+exact_index_msg_id[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -774,21 +892,27 @@
       },
       "jp": "詩さんの記憶を取り戻すことが、<CR>あの構造物の謎を解明する道にもなる……",
       "en_original": "Getting your memory back might also be the key to solving the mystery of that structure...",
-      "en_auxiliary": null,
+      "en_auxiliary": "Getting your memory back might also be the key to solving the mystery of that structure...",
       "en": "Recovering your memories, Uta-san, might also lead us to the truth behind that structure...",
       "alignment": {
         "status": "exact_index_msg_id",
         "initial_en_source": "official_en",
         "official_en_index": 18,
         "official_en_mapping": "exact_index_msg_id",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 18,
+        "auxiliary_mapping": "exact_index_msg_id+exact_index_msg_id",
         "target_indices": {
-          "second_light_original": 18
+          "second_light_original": 18,
+          "second_light_quartet": 18
         },
         "target_mapping": {
-          "second_light_original": "exact_index_msg_id"
-        }
+          "second_light_original": "exact_index_msg_id",
+          "second_light_quartet": "exact_index_msg_id"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_index_msg_id[exact_structural]+exact_index_msg_id[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -814,21 +938,27 @@
       },
       "jp": "見に行こう。詩さんの記憶",
       "en_original": "Now let's go find your memories.",
-      "en_auxiliary": null,
+      "en_auxiliary": "Now let's go find your memories.",
       "en": "Let's go see your memories, Uta-san.",
       "alignment": {
         "status": "exact_index_msg_id",
         "initial_en_source": "official_en",
         "official_en_index": 19,
         "official_en_mapping": "exact_index_msg_id",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 19,
+        "auxiliary_mapping": "exact_index_msg_id+exact_index_msg_id",
         "target_indices": {
-          "second_light_original": 19
+          "second_light_original": 19,
+          "second_light_quartet": 19
         },
         "target_mapping": {
-          "second_light_original": "exact_index_msg_id"
-        }
+          "second_light_original": "exact_index_msg_id",
+          "second_light_quartet": "exact_index_msg_id"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_index_msg_id[exact_structural]+exact_index_msg_id[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     }
   ]

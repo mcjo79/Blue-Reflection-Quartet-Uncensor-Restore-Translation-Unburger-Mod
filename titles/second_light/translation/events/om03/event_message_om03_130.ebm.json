@@ -1,7 +1,7 @@
 {
   "type": "br_event_translation_unit",
   "format_version": 1,
-  "tool_version": "translation-0.0.11",
+  "tool_version": "translation-0.0.15",
   "project": "second_light",
   "category": "event",
   "logical_path": "om03/event_message_om03_130.ebm",
@@ -15,13 +15,23 @@
     },
     "official_en_path": "titles/second_light/workspace/original/archives/PACK01/event/event_en/om03/event_message_om03_130.ebm",
     "official_en_sha256": "f2849ffe72d794bca19b00f99c59da547dbfd12254d3b5ef288db6077cef7cbe",
-    "auxiliary_jp_path": null,
-    "auxiliary_en_path": null
+    "auxiliary_jp_path": "titles/second_light/workspace/quartet/archives/PACK01_03/event/b4/event_jp/om03/event_message_om03_130.ebm",
+    "auxiliary_en_path": "titles/second_light/workspace/quartet/archives/PACK01_03/event/b4/event_en/om03/event_message_om03_130.ebm"
   },
   "targets": {
     "second_light_original": {
       "template_language": "en",
       "template_path": "titles/second_light/workspace/original/archives/PACK01/event/event_en/om03/event_message_om03_130.ebm",
+      "template_sha256": "f2849ffe72d794bca19b00f99c59da547dbfd12254d3b5ef288db6077cef7cbe",
+      "message_count": 1,
+      "mapping_status_counts": {
+        "exact_index_msg_id": 1
+      },
+      "complete_mapping": true
+    },
+    "second_light_quartet": {
+      "template_language": "en",
+      "template_path": "titles/second_light/workspace/quartet/archives/PACK01_03/event/b4/event_en/om03/event_message_om03_130.ebm",
       "template_sha256": "f2849ffe72d794bca19b00f99c59da547dbfd12254d3b5ef288db6077cef7cbe",
       "message_count": 1,
       "mapping_status_counts": {
@@ -52,21 +62,27 @@
       },
       "jp": "徃纃宁",
       "en_original": "徃纃宁",
-      "en_auxiliary": null,
+      "en_auxiliary": "徃纃宁",
       "en": "徃纃宁",
       "alignment": {
         "status": "exact_index_msg_id",
         "initial_en_source": "official_en",
         "official_en_index": 0,
         "official_en_mapping": "exact_index_msg_id",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 0,
+        "auxiliary_mapping": "exact_index_msg_id+exact_index_msg_id",
         "target_indices": {
-          "second_light_original": 0
+          "second_light_original": 0,
+          "second_light_quartet": 0
         },
         "target_mapping": {
-          "second_light_original": "exact_index_msg_id"
-        }
+          "second_light_original": "exact_index_msg_id",
+          "second_light_quartet": "exact_index_msg_id"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_index_msg_id[exact_structural]+exact_index_msg_id[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     }
   ]

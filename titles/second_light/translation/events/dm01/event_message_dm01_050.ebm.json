@@ -1,7 +1,7 @@
 {
   "type": "br_event_translation_unit",
   "format_version": 1,
-  "tool_version": "translation-0.0.11",
+  "tool_version": "translation-0.0.15",
   "project": "second_light",
   "category": "event",
   "logical_path": "dm01/event_message_dm01_050.ebm",
@@ -15,13 +15,23 @@
     },
     "official_en_path": "titles/second_light/workspace/original/archives/PACK01/event/event_en/dm01/event_message_dm01_050.ebm",
     "official_en_sha256": "7503dc2de16913ecc498d2156ad467b6f0e7c8e163315dc89798da8786964096",
-    "auxiliary_jp_path": null,
-    "auxiliary_en_path": null
+    "auxiliary_jp_path": "titles/second_light/workspace/quartet/archives/PACK01_03/event/b4/event_jp/dm01/event_message_dm01_050.ebm",
+    "auxiliary_en_path": "titles/second_light/workspace/quartet/archives/PACK01_03/event/b4/event_en/dm01/event_message_dm01_050.ebm"
   },
   "targets": {
     "second_light_original": {
       "template_language": "en",
       "template_path": "titles/second_light/workspace/original/archives/PACK01/event/event_en/dm01/event_message_dm01_050.ebm",
+      "template_sha256": "7503dc2de16913ecc498d2156ad467b6f0e7c8e163315dc89798da8786964096",
+      "message_count": 38,
+      "mapping_status_counts": {
+        "exact_index_msg_id": 38
+      },
+      "complete_mapping": true
+    },
+    "second_light_quartet": {
+      "template_language": "en",
+      "template_path": "titles/second_light/workspace/quartet/archives/PACK01_03/event/b4/event_en/dm01/event_message_dm01_050.ebm",
       "template_sha256": "7503dc2de16913ecc498d2156ad467b6f0e7c8e163315dc89798da8786964096",
       "message_count": 38,
       "mapping_status_counts": {
@@ -54,21 +64,27 @@
       },
       "jp": "私、本読むのは好きだけど、<CR>こう何日も続くとさすがに飽きてきちゃうな～",
       "en_original": "I do like to read, but I'm getting a bit tired of reading for days on end like this...",
-      "en_auxiliary": null,
+      "en_auxiliary": "I do like to read, but I'm getting a bit tired of reading for days on end like this...",
       "en": "I like reading, but even I get tired of it<CR>after doing it for days on end~",
       "alignment": {
         "status": "exact_index_msg_id",
         "initial_en_source": "official_en",
         "official_en_index": 0,
         "official_en_mapping": "exact_index_msg_id",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 0,
+        "auxiliary_mapping": "exact_index_msg_id+exact_index_msg_id",
         "target_indices": {
-          "second_light_original": 0
+          "second_light_original": 0,
+          "second_light_quartet": 0
         },
         "target_mapping": {
-          "second_light_original": "exact_index_msg_id"
-        }
+          "second_light_original": "exact_index_msg_id",
+          "second_light_quartet": "exact_index_msg_id"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_index_msg_id[exact_structural]+exact_index_msg_id[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -94,21 +110,27 @@
       },
       "jp": "この世界、テレビとか見れないもんね",
       "en_original": "Yeah, too bad we can't watch TV in this world...",
-      "en_auxiliary": null,
+      "en_auxiliary": "Yeah, too bad we can't watch TV in this world...",
       "en": "Yeah, too bad we can't watch TV in this world...",
       "alignment": {
         "status": "exact_index_msg_id",
         "initial_en_source": "official_en",
         "official_en_index": 1,
         "official_en_mapping": "exact_index_msg_id",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 1,
+        "auxiliary_mapping": "exact_index_msg_id+exact_index_msg_id",
         "target_indices": {
-          "second_light_original": 1
+          "second_light_original": 1,
+          "second_light_quartet": 1
         },
         "target_mapping": {
-          "second_light_original": "exact_index_msg_id"
-        }
+          "second_light_original": "exact_index_msg_id",
+          "second_light_quartet": "exact_index_msg_id"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_index_msg_id[exact_structural]+exact_index_msg_id[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -134,21 +156,27 @@
       },
       "jp": "そうそう～",
       "en_original": "I know, right?",
-      "en_auxiliary": null,
+      "en_auxiliary": "I know, right?",
       "en": "I know, right?",
       "alignment": {
         "status": "exact_index_msg_id",
         "initial_en_source": "official_en",
         "official_en_index": 2,
         "official_en_mapping": "exact_index_msg_id",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 2,
+        "auxiliary_mapping": "exact_index_msg_id+exact_index_msg_id",
         "target_indices": {
-          "second_light_original": 2
+          "second_light_original": 2,
+          "second_light_quartet": 2
         },
         "target_mapping": {
-          "second_light_original": "exact_index_msg_id"
-        }
+          "second_light_original": "exact_index_msg_id",
+          "second_light_quartet": "exact_index_msg_id"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_index_msg_id[exact_structural]+exact_index_msg_id[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -174,21 +202,27 @@
       },
       "jp": "日菜子さんは休日とか何してるの？",
       "en_original": "What do you usually do in your free time?",
-      "en_auxiliary": null,
+      "en_auxiliary": "What do you usually do in your free time?",
       "en": "What do you do on your days off, Hinako-san?",
       "alignment": {
         "status": "exact_index_msg_id",
         "initial_en_source": "official_en",
         "official_en_index": 3,
         "official_en_mapping": "exact_index_msg_id",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 3,
+        "auxiliary_mapping": "exact_index_msg_id+exact_index_msg_id",
         "target_indices": {
-          "second_light_original": 3
+          "second_light_original": 3,
+          "second_light_quartet": 3
         },
         "target_mapping": {
-          "second_light_original": "exact_index_msg_id"
-        }
+          "second_light_original": "exact_index_msg_id",
+          "second_light_quartet": "exact_index_msg_id"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_index_msg_id[exact_structural]+exact_index_msg_id[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -214,21 +248,27 @@
       },
       "jp": "私？　私は……",
       "en_original": "Me? I...",
-      "en_auxiliary": null,
+      "en_auxiliary": "Me? I...",
       "en": "Me? I...",
       "alignment": {
         "status": "exact_index_msg_id",
         "initial_en_source": "official_en",
         "official_en_index": 4,
         "official_en_mapping": "exact_index_msg_id",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 4,
+        "auxiliary_mapping": "exact_index_msg_id+exact_index_msg_id",
         "target_indices": {
-          "second_light_original": 4
+          "second_light_original": 4,
+          "second_light_quartet": 4
         },
         "target_mapping": {
-          "second_light_original": "exact_index_msg_id"
-        }
+          "second_light_original": "exact_index_msg_id",
+          "second_light_quartet": "exact_index_msg_id"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_index_msg_id[exact_structural]+exact_index_msg_id[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -254,21 +294,27 @@
       },
       "jp": "ぼーっとしてることが多いかな",
       "en_original": "I space out a lot, I suppose.",
-      "en_auxiliary": null,
+      "en_auxiliary": "I space out a lot, I suppose.",
       "en": "I space out a lot, I suppose.",
       "alignment": {
         "status": "exact_index_msg_id",
         "initial_en_source": "official_en",
         "official_en_index": 5,
         "official_en_mapping": "exact_index_msg_id",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 5,
+        "auxiliary_mapping": "exact_index_msg_id+exact_index_msg_id",
         "target_indices": {
-          "second_light_original": 5
+          "second_light_original": 5,
+          "second_light_quartet": 5
         },
         "target_mapping": {
-          "second_light_original": "exact_index_msg_id"
-        }
+          "second_light_original": "exact_index_msg_id",
+          "second_light_quartet": "exact_index_msg_id"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_index_msg_id[exact_structural]+exact_index_msg_id[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -294,21 +340,27 @@
       },
       "jp": "……え",
       "en_original": "...What?",
-      "en_auxiliary": null,
+      "en_auxiliary": "...What?",
       "en": "...What?",
       "alignment": {
         "status": "exact_index_msg_id",
         "initial_en_source": "official_en",
         "official_en_index": 6,
         "official_en_mapping": "exact_index_msg_id",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 6,
+        "auxiliary_mapping": "exact_index_msg_id+exact_index_msg_id",
         "target_indices": {
-          "second_light_original": 6
+          "second_light_original": 6,
+          "second_light_quartet": 6
         },
         "target_mapping": {
-          "second_light_original": "exact_index_msg_id"
-        }
+          "second_light_original": "exact_index_msg_id",
+          "second_light_quartet": "exact_index_msg_id"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_index_msg_id[exact_structural]+exact_index_msg_id[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -334,21 +386,27 @@
       },
       "jp": "宿題やったり、家事の手伝いをすることはあるけど……<CR>それ以外は、特に……",
       "en_original": "I do homework and chores and things like that, but otherwise...",
-      "en_auxiliary": null,
+      "en_auxiliary": "I do homework and chores and things like that, but otherwise...",
       "en": "I do homework and chores and things like that,<CR>but otherwise...",
       "alignment": {
         "status": "exact_index_msg_id",
         "initial_en_source": "official_en",
         "official_en_index": 7,
         "official_en_mapping": "exact_index_msg_id",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 7,
+        "auxiliary_mapping": "exact_index_msg_id+exact_index_msg_id",
         "target_indices": {
-          "second_light_original": 7
+          "second_light_original": 7,
+          "second_light_quartet": 7
         },
         "target_mapping": {
-          "second_light_original": "exact_index_msg_id"
-        }
+          "second_light_original": "exact_index_msg_id",
+          "second_light_quartet": "exact_index_msg_id"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_index_msg_id[exact_structural]+exact_index_msg_id[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -374,21 +432,27 @@
       },
       "jp": "そ、そうなの！？",
       "en_original": "S-seriously?!",
-      "en_auxiliary": null,
+      "en_auxiliary": "S-seriously?!",
       "en": "S-seriously?!",
       "alignment": {
         "status": "exact_index_msg_id",
         "initial_en_source": "official_en",
         "official_en_index": 8,
         "official_en_mapping": "exact_index_msg_id",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 8,
+        "auxiliary_mapping": "exact_index_msg_id+exact_index_msg_id",
         "target_indices": {
-          "second_light_original": 8
+          "second_light_original": 8,
+          "second_light_quartet": 8
         },
         "target_mapping": {
-          "second_light_original": "exact_index_msg_id"
-        }
+          "second_light_original": "exact_index_msg_id",
+          "second_light_quartet": "exact_index_msg_id"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_index_msg_id[exact_structural]+exact_index_msg_id[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -414,21 +478,27 @@
       },
       "jp": "ど、どうしたの愛央？",
       "en_original": "Wh-what, Ao?",
-      "en_auxiliary": null,
+      "en_auxiliary": "Wh-what, Ao?",
       "en": "Wh-what, Ao?",
       "alignment": {
         "status": "exact_index_msg_id",
         "initial_en_source": "official_en",
         "official_en_index": 9,
         "official_en_mapping": "exact_index_msg_id",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 9,
+        "auxiliary_mapping": "exact_index_msg_id+exact_index_msg_id",
         "target_indices": {
-          "second_light_original": 9
+          "second_light_original": 9,
+          "second_light_quartet": 9
         },
         "target_mapping": {
-          "second_light_original": "exact_index_msg_id"
-        }
+          "second_light_original": "exact_index_msg_id",
+          "second_light_quartet": "exact_index_msg_id"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_index_msg_id[exact_structural]+exact_index_msg_id[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -454,21 +524,27 @@
       },
       "jp": "ゆっくり休むのも大事だけど、<CR>趣味に時間を使ってみるのもいいと思うな！",
       "en_original": "I love to chill as much as anyone, but you've gotta have some proper hobbies!",
-      "en_auxiliary": null,
+      "en_auxiliary": "I love to chill as much as anyone, but you've gotta have some proper hobbies!",
       "en": "Resting properly is important,<CR>but I think spending time on a hobby would be good too!",
       "alignment": {
         "status": "exact_index_msg_id",
         "initial_en_source": "official_en",
         "official_en_index": 10,
         "official_en_mapping": "exact_index_msg_id",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 10,
+        "auxiliary_mapping": "exact_index_msg_id+exact_index_msg_id",
         "target_indices": {
-          "second_light_original": 10
+          "second_light_original": 10,
+          "second_light_quartet": 10
         },
         "target_mapping": {
-          "second_light_original": "exact_index_msg_id"
-        }
+          "second_light_original": "exact_index_msg_id",
+          "second_light_quartet": "exact_index_msg_id"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_index_msg_id[exact_structural]+exact_index_msg_id[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -494,21 +570,27 @@
       },
       "jp": "趣味かぁ……。<CR>私、あんまり趣味って言えるものがないんだよね",
       "en_original": "Hobbies... I guess I don't really have anything you could call a hobby.",
-      "en_auxiliary": null,
+      "en_auxiliary": "Hobbies... I guess I don't really have anything you could call a hobby.",
       "en": "Hobbies...<CR>I guess I don't really have anything you could call a hobby.",
       "alignment": {
         "status": "exact_index_msg_id",
         "initial_en_source": "official_en",
         "official_en_index": 11,
         "official_en_mapping": "exact_index_msg_id",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 11,
+        "auxiliary_mapping": "exact_index_msg_id+exact_index_msg_id",
         "target_indices": {
-          "second_light_original": 11
+          "second_light_original": 11,
+          "second_light_quartet": 11
         },
         "target_mapping": {
-          "second_light_original": "exact_index_msg_id"
-        }
+          "second_light_original": "exact_index_msg_id",
+          "second_light_quartet": "exact_index_msg_id"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_index_msg_id[exact_structural]+exact_index_msg_id[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -534,21 +616,27 @@
       },
       "jp": "……もったいない！",
       "en_original": "That's such a waste of time!",
-      "en_auxiliary": null,
+      "en_auxiliary": "That's such a waste of time!",
       "en": "...What a waste!",
       "alignment": {
         "status": "exact_index_msg_id",
         "initial_en_source": "official_en",
         "official_en_index": 12,
         "official_en_mapping": "exact_index_msg_id",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 12,
+        "auxiliary_mapping": "exact_index_msg_id+exact_index_msg_id",
         "target_indices": {
-          "second_light_original": 12
+          "second_light_original": 12,
+          "second_light_quartet": 12
         },
         "target_mapping": {
-          "second_light_original": "exact_index_msg_id"
-        }
+          "second_light_original": "exact_index_msg_id",
+          "second_light_quartet": "exact_index_msg_id"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_index_msg_id[exact_structural]+exact_index_msg_id[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -574,21 +662,27 @@
       },
       "jp": "せっかくなら何か趣味を……<CR>って、押し付けるのも違うか",
       "en_original": "You should try to find a hobby or something... Not that I'm trying to force you.",
-      "en_auxiliary": null,
+      "en_auxiliary": "You should try to find a hobby or something... Not that I'm trying to force you.",
       "en": "You should try to find a hobby or something...<CR>Not that I'm trying to force you.",
       "alignment": {
         "status": "exact_index_msg_id",
         "initial_en_source": "official_en",
         "official_en_index": 13,
         "official_en_mapping": "exact_index_msg_id",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 13,
+        "auxiliary_mapping": "exact_index_msg_id+exact_index_msg_id",
         "target_indices": {
-          "second_light_original": 13
+          "second_light_original": 13,
+          "second_light_quartet": 13
         },
         "target_mapping": {
-          "second_light_original": "exact_index_msg_id"
-        }
+          "second_light_original": "exact_index_msg_id",
+          "second_light_quartet": "exact_index_msg_id"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_index_msg_id[exact_structural]+exact_index_msg_id[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -614,21 +708,27 @@
       },
       "jp": "ううん、私もそういうの欲しいって思ってた。<CR>でも、なかなか見つからなくて……",
       "en_original": "No, you're right. I've thought about taking up some kind of hobby before, but I didn't know what...",
-      "en_auxiliary": null,
+      "en_auxiliary": "No, you're right. I've thought about taking up some kind of hobby before, but I didn't know what...",
       "en": "No, you're right. I've thought about taking up some kind<CR>of hobby before, but I didn't know what...",
       "alignment": {
         "status": "exact_index_msg_id",
         "initial_en_source": "official_en",
         "official_en_index": 14,
         "official_en_mapping": "exact_index_msg_id",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 14,
+        "auxiliary_mapping": "exact_index_msg_id+exact_index_msg_id",
         "target_indices": {
-          "second_light_original": 14
+          "second_light_original": 14,
+          "second_light_quartet": 14
         },
         "target_mapping": {
-          "second_light_original": "exact_index_msg_id"
-        }
+          "second_light_original": "exact_index_msg_id",
+          "second_light_quartet": "exact_index_msg_id"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_index_msg_id[exact_structural]+exact_index_msg_id[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -654,21 +754,27 @@
       },
       "jp": "逆に、愛央は何をして過ごしてるの？",
       "en_original": "How about you, Ao? How do you spend your time?",
-      "en_auxiliary": null,
+      "en_auxiliary": "How about you, Ao? How do you spend your time?",
       "en": "How about you, Ao? How do you spend your time?",
       "alignment": {
         "status": "exact_index_msg_id",
         "initial_en_source": "official_en",
         "official_en_index": 15,
         "official_en_mapping": "exact_index_msg_id",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 15,
+        "auxiliary_mapping": "exact_index_msg_id+exact_index_msg_id",
         "target_indices": {
-          "second_light_original": 15
+          "second_light_original": 15,
+          "second_light_quartet": 15
         },
         "target_mapping": {
-          "second_light_original": "exact_index_msg_id"
-        }
+          "second_light_original": "exact_index_msg_id",
+          "second_light_quartet": "exact_index_msg_id"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_index_msg_id[exact_structural]+exact_index_msg_id[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -694,21 +800,27 @@
       },
       "jp": "私？　私は――",
       "en_original": "I, well...",
-      "en_auxiliary": null,
+      "en_auxiliary": "I, well...",
       "en": "I, well...",
       "alignment": {
         "status": "exact_index_msg_id",
         "initial_en_source": "official_en",
         "official_en_index": 16,
         "official_en_mapping": "exact_index_msg_id",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 16,
+        "auxiliary_mapping": "exact_index_msg_id+exact_index_msg_id",
         "target_indices": {
-          "second_light_original": 16
+          "second_light_original": 16,
+          "second_light_quartet": 16
         },
         "target_mapping": {
-          "second_light_original": "exact_index_msg_id"
-        }
+          "second_light_original": "exact_index_msg_id",
+          "second_light_quartet": "exact_index_msg_id"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_index_msg_id[exact_structural]+exact_index_msg_id[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -734,21 +846,27 @@
       },
       "jp": "漫画、小説、アニメも見るし、<CR>そのグッズ集めたり円盤買ったり……",
       "en_original": "I'm really into manga, novels, and anime. I collect them, buy merch, that kind of thing!",
-      "en_auxiliary": null,
+      "en_auxiliary": "I'm really into manga, novels, and anime. I collect them, buy merch, that kind of thing!",
       "en": "I read manga and novels, watch anime,<CR>collect merchandise, buy discs...",
       "alignment": {
         "status": "exact_index_msg_id",
         "initial_en_source": "official_en",
         "official_en_index": 17,
         "official_en_mapping": "exact_index_msg_id",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 17,
+        "auxiliary_mapping": "exact_index_msg_id+exact_index_msg_id",
         "target_indices": {
-          "second_light_original": 17
+          "second_light_original": 17,
+          "second_light_quartet": 17
         },
         "target_mapping": {
-          "second_light_original": "exact_index_msg_id"
-        }
+          "second_light_original": "exact_index_msg_id",
+          "second_light_quartet": "exact_index_msg_id"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_index_msg_id[exact_structural]+exact_index_msg_id[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -774,21 +892,27 @@
       },
       "jp": "う、うん……？",
       "en_original": "A-ah, I see...",
-      "en_auxiliary": null,
+      "en_auxiliary": "A-ah, I see...",
       "en": "A-ah, I see...",
       "alignment": {
         "status": "exact_index_msg_id",
         "initial_en_source": "official_en",
         "official_en_index": 18,
         "official_en_mapping": "exact_index_msg_id",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 18,
+        "auxiliary_mapping": "exact_index_msg_id+exact_index_msg_id",
         "target_indices": {
-          "second_light_original": 18
+          "second_light_original": 18,
+          "second_light_quartet": 18
         },
         "target_mapping": {
-          "second_light_original": "exact_index_msg_id"
-        }
+          "second_light_original": "exact_index_msg_id",
+          "second_light_quartet": "exact_index_msg_id"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_index_msg_id[exact_structural]+exact_index_msg_id[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -814,21 +938,27 @@
       },
       "jp": "（……しまった、いきなり圧が強すぎた！）",
       "en_original": "(...Dang, I got kinda worked up there!)",
-      "en_auxiliary": null,
+      "en_auxiliary": "(...Dang, I got kinda worked up there!)",
       "en": "(...Dang, I got kinda worked up there!)",
       "alignment": {
         "status": "exact_index_msg_id",
         "initial_en_source": "official_en",
         "official_en_index": 19,
         "official_en_mapping": "exact_index_msg_id",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 19,
+        "auxiliary_mapping": "exact_index_msg_id+exact_index_msg_id",
         "target_indices": {
-          "second_light_original": 19
+          "second_light_original": 19,
+          "second_light_quartet": 19
         },
         "target_mapping": {
-          "second_light_original": "exact_index_msg_id"
-        }
+          "second_light_original": "exact_index_msg_id",
+          "second_light_quartet": "exact_index_msg_id"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_index_msg_id[exact_structural]+exact_index_msg_id[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -854,21 +984,27 @@
       },
       "jp": "流行りの映画とかドラマとかを見たり、<CR>動画垂れ流したり音楽聞いたり……とか？",
       "en_original": "I watch the popular movies and TV shows, browse videos, listen to music... Stuff like that?",
-      "en_auxiliary": null,
+      "en_auxiliary": "I watch the popular movies and TV shows, browse videos, listen to music... Stuff like that?",
       "en": "I watch popular movies and dramas,<CR>leave videos playing, listen to music... things like that?",
       "alignment": {
         "status": "exact_index_msg_id",
         "initial_en_source": "official_en",
         "official_en_index": 20,
         "official_en_mapping": "exact_index_msg_id",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 20,
+        "auxiliary_mapping": "exact_index_msg_id+exact_index_msg_id",
         "target_indices": {
-          "second_light_original": 20
+          "second_light_original": 20,
+          "second_light_quartet": 20
         },
         "target_mapping": {
-          "second_light_original": "exact_index_msg_id"
-        }
+          "second_light_original": "exact_index_msg_id",
+          "second_light_quartet": "exact_index_msg_id"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_index_msg_id[exact_structural]+exact_index_msg_id[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -894,21 +1030,27 @@
       },
       "jp": "わ、本当に多いんだね",
       "en_original": "Wow, that's a lot.",
-      "en_auxiliary": null,
+      "en_auxiliary": "Wow, that's a lot.",
       "en": "Wow, that's a lot.",
       "alignment": {
         "status": "exact_index_msg_id",
         "initial_en_source": "official_en",
         "official_en_index": 21,
         "official_en_mapping": "exact_index_msg_id",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 21,
+        "auxiliary_mapping": "exact_index_msg_id+exact_index_msg_id",
         "target_indices": {
-          "second_light_original": 21
+          "second_light_original": 21,
+          "second_light_quartet": 21
         },
         "target_mapping": {
-          "second_light_original": "exact_index_msg_id"
-        }
+          "second_light_original": "exact_index_msg_id",
+          "second_light_quartet": "exact_index_msg_id"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_index_msg_id[exact_structural]+exact_index_msg_id[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -934,21 +1076,27 @@
       },
       "jp": "多ければいいってものでもないけどね。<CR>時間がどれだけあっても足りないし",
       "en_original": "Well, that's not necessarily a good thing. There's never enough time for everything...",
-      "en_auxiliary": null,
+      "en_auxiliary": "Well, that's not necessarily a good thing. There's never enough time for everything...",
       "en": "Well, that's not necessarily a good thing.<CR>There's never enough time for everything...",
       "alignment": {
         "status": "exact_index_msg_id",
         "initial_en_source": "official_en",
         "official_en_index": 22,
         "official_en_mapping": "exact_index_msg_id",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 22,
+        "auxiliary_mapping": "exact_index_msg_id+exact_index_msg_id",
         "target_indices": {
-          "second_light_original": 22
+          "second_light_original": 22,
+          "second_light_quartet": 22
         },
         "target_mapping": {
-          "second_light_original": "exact_index_msg_id"
-        }
+          "second_light_original": "exact_index_msg_id",
+          "second_light_quartet": "exact_index_msg_id"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_index_msg_id[exact_structural]+exact_index_msg_id[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -974,21 +1122,27 @@
       },
       "jp": "まあ、私もインドアな趣味に偏ってると思うけどね。<CR>本当に多趣味な人はもっとすごいよ",
       "en_original": "All my hobbies are indoor activities, though. People who have all kinds of different hobbies are really impressive...",
-      "en_auxiliary": null,
+      "en_auxiliary": "All my hobbies are indoor activities, though. People who have all kinds of different hobbies are really impressive...",
       "en": "All my hobbies are indoor activities, though. People who have all kinds<CR>of different hobbies are really impressive...",
       "alignment": {
         "status": "exact_index_msg_id",
         "initial_en_source": "official_en",
         "official_en_index": 23,
         "official_en_mapping": "exact_index_msg_id",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 23,
+        "auxiliary_mapping": "exact_index_msg_id+exact_index_msg_id",
         "target_indices": {
-          "second_light_original": 23
+          "second_light_original": 23,
+          "second_light_quartet": 23
         },
         "target_mapping": {
-          "second_light_original": "exact_index_msg_id"
-        }
+          "second_light_original": "exact_index_msg_id",
+          "second_light_quartet": "exact_index_msg_id"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_index_msg_id[exact_structural]+exact_index_msg_id[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -1014,21 +1168,27 @@
       },
       "jp": "そっかぁ……",
       "en_original": "I guess so...",
-      "en_auxiliary": null,
+      "en_auxiliary": "I guess so...",
       "en": "I guess so...",
       "alignment": {
         "status": "exact_index_msg_id",
         "initial_en_source": "official_en",
         "official_en_index": 24,
         "official_en_mapping": "exact_index_msg_id",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 24,
+        "auxiliary_mapping": "exact_index_msg_id+exact_index_msg_id",
         "target_indices": {
-          "second_light_original": 24
+          "second_light_original": 24,
+          "second_light_quartet": 24
         },
         "target_mapping": {
-          "second_light_original": "exact_index_msg_id"
-        }
+          "second_light_original": "exact_index_msg_id",
+          "second_light_quartet": "exact_index_msg_id"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_index_msg_id[exact_structural]+exact_index_msg_id[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -1054,21 +1214,27 @@
       },
       "jp": "ねえ愛央、ストレッチって趣味に入ると思う？",
       "en_original": "Ao, do you think doing stretches counts as a hobby?",
-      "en_auxiliary": null,
+      "en_auxiliary": "Ao, do you think doing stretches counts as a hobby?",
       "en": "Ao, do you think doing stretches counts as a hobby?",
       "alignment": {
         "status": "exact_index_msg_id",
         "initial_en_source": "official_en",
         "official_en_index": 25,
         "official_en_mapping": "exact_index_msg_id",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 25,
+        "auxiliary_mapping": "exact_index_msg_id+exact_index_msg_id",
         "target_indices": {
-          "second_light_original": 25
+          "second_light_original": 25,
+          "second_light_quartet": 25
         },
         "target_mapping": {
-          "second_light_original": "exact_index_msg_id"
-        }
+          "second_light_original": "exact_index_msg_id",
+          "second_light_quartet": "exact_index_msg_id"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_index_msg_id[exact_structural]+exact_index_msg_id[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -1094,21 +1260,27 @@
       },
       "jp": "ストレッチ……？",
       "en_original": "Stretches?",
-      "en_auxiliary": null,
+      "en_auxiliary": "Stretches?",
       "en": "Stretches?",
       "alignment": {
         "status": "exact_index_msg_id",
         "initial_en_source": "official_en",
         "official_en_index": 26,
         "official_en_mapping": "exact_index_msg_id",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 26,
+        "auxiliary_mapping": "exact_index_msg_id+exact_index_msg_id",
         "target_indices": {
-          "second_light_original": 26
+          "second_light_original": 26,
+          "second_light_quartet": 26
         },
         "target_mapping": {
-          "second_light_original": "exact_index_msg_id"
-        }
+          "second_light_original": "exact_index_msg_id",
+          "second_light_quartet": "exact_index_msg_id"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_index_msg_id[exact_structural]+exact_index_msg_id[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -1134,21 +1306,27 @@
       },
       "jp": "うん。バレエやってた頃からの習慣で、<CR>今も毎日欠かさずやってるんだけど……",
       "en_original": "Yeah. I did them during my ballet days. Even now I never miss a day...",
-      "en_auxiliary": null,
+      "en_auxiliary": "Yeah. I did them during my ballet days. Even now I never miss a day...",
       "en": "Yes. It has been a habit since I did ballet,<CR>and I still do it every single day...",
       "alignment": {
         "status": "exact_index_msg_id",
         "initial_en_source": "official_en",
         "official_en_index": 27,
         "official_en_mapping": "exact_index_msg_id",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 27,
+        "auxiliary_mapping": "exact_index_msg_id+exact_index_msg_id",
         "target_indices": {
-          "second_light_original": 27
+          "second_light_original": 27,
+          "second_light_quartet": 27
         },
         "target_mapping": {
-          "second_light_original": "exact_index_msg_id"
-        }
+          "second_light_original": "exact_index_msg_id",
+          "second_light_quartet": "exact_index_msg_id"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_index_msg_id[exact_structural]+exact_index_msg_id[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -1174,21 +1352,27 @@
       },
       "jp": "好きで続けてることなら、<CR>それはもう趣味ってことでいいんじゃない？",
       "en_original": "Well, if you like it and you do it a lot, I think it counts!",
-      "en_auxiliary": null,
+      "en_auxiliary": "Well, if you like it and you do it a lot, I think it counts!",
       "en": "If it is something you enjoy and keep doing,<CR>then I think you can call it a hobby.",
       "alignment": {
         "status": "exact_index_msg_id",
         "initial_en_source": "official_en",
         "official_en_index": 28,
         "official_en_mapping": "exact_index_msg_id",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 28,
+        "auxiliary_mapping": "exact_index_msg_id+exact_index_msg_id",
         "target_indices": {
-          "second_light_original": 28
+          "second_light_original": 28,
+          "second_light_quartet": 28
         },
         "target_mapping": {
-          "second_light_original": "exact_index_msg_id"
-        }
+          "second_light_original": "exact_index_msg_id",
+          "second_light_quartet": "exact_index_msg_id"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_index_msg_id[exact_structural]+exact_index_msg_id[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -1214,21 +1398,27 @@
       },
       "jp": "……そっか。私、趣味あったんだ<CR>何にもないと思ってた……",
       "en_original": "Huh. So I already had a hobby... I thought I didn't have anything.",
-      "en_auxiliary": null,
+      "en_auxiliary": "Huh. So I already had a hobby... I thought I didn't have anything.",
       "en": "...I see. I did have a hobby.<CR>I thought I had nothing...",
       "alignment": {
         "status": "exact_index_msg_id",
         "initial_en_source": "official_en",
         "official_en_index": 29,
         "official_en_mapping": "exact_index_msg_id",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 29,
+        "auxiliary_mapping": "exact_index_msg_id+exact_index_msg_id",
         "target_indices": {
-          "second_light_original": 29
+          "second_light_original": 29,
+          "second_light_quartet": 29
         },
         "target_mapping": {
-          "second_light_original": "exact_index_msg_id"
-        }
+          "second_light_original": "exact_index_msg_id",
+          "second_light_quartet": "exact_index_msg_id"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_index_msg_id[exact_structural]+exact_index_msg_id[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -1254,21 +1444,27 @@
       },
       "jp": "改めて見つめ直してみると、<CR>意外と見つかるものなのかもね",
       "en_original": "It's always good to look at things from a different point of view!",
-      "en_auxiliary": null,
+      "en_auxiliary": "It's always good to look at things from a different point of view!",
       "en": "When you look at yourself again,<CR>you may find more than you expect.",
       "alignment": {
         "status": "exact_index_msg_id",
         "initial_en_source": "official_en",
         "official_en_index": 30,
         "official_en_mapping": "exact_index_msg_id",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 30,
+        "auxiliary_mapping": "exact_index_msg_id+exact_index_msg_id",
         "target_indices": {
-          "second_light_original": 30
+          "second_light_original": 30,
+          "second_light_quartet": 30
         },
         "target_mapping": {
-          "second_light_original": "exact_index_msg_id"
-        }
+          "second_light_original": "exact_index_msg_id",
+          "second_light_quartet": "exact_index_msg_id"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_index_msg_id[exact_structural]+exact_index_msg_id[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -1294,21 +1490,27 @@
       },
       "jp": "うーん……趣味か、習慣か、<CR>判断が難しいところだけど……",
       "en_original": "Hmm... It's hard to draw the line between a hobby and a habit.",
-      "en_auxiliary": null,
+      "en_auxiliary": "Hmm... It's hard to draw the line between a hobby and a habit.",
       "en": "Hmm... It's hard to draw the<CR>line between a hobby and a habit.",
       "alignment": {
         "status": "exact_index_msg_id",
         "initial_en_source": "official_en",
         "official_en_index": 31,
         "official_en_mapping": "exact_index_msg_id",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 31,
+        "auxiliary_mapping": "exact_index_msg_id+exact_index_msg_id",
         "target_indices": {
-          "second_light_original": 31
+          "second_light_original": 31,
+          "second_light_quartet": 31
         },
         "target_mapping": {
-          "second_light_original": "exact_index_msg_id"
-        }
+          "second_light_original": "exact_index_msg_id",
+          "second_light_quartet": "exact_index_msg_id"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_index_msg_id[exact_structural]+exact_index_msg_id[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -1334,21 +1536,27 @@
       },
       "jp": "でも、筋トレが趣味ですって人も結構いるし、<CR>自分磨きってことで一括りにしてもいいのかも？",
       "en_original": "But a lot of people consider working out a hobby. Maybe doing stretches is similar—like self-improvement?",
-      "en_auxiliary": null,
+      "en_auxiliary": "But a lot of people consider working out a hobby. Maybe doing stretches is similar—like self-improvement?",
       "en": "A lot of people say strength training is their hobby,<CR>so perhaps you can group it all under self-improvement.",
       "alignment": {
         "status": "exact_index_msg_id",
         "initial_en_source": "official_en",
         "official_en_index": 32,
         "official_en_mapping": "exact_index_msg_id",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 32,
+        "auxiliary_mapping": "exact_index_msg_id+exact_index_msg_id",
         "target_indices": {
-          "second_light_original": 32
+          "second_light_original": 32,
+          "second_light_quartet": 32
         },
         "target_mapping": {
-          "second_light_original": "exact_index_msg_id"
-        }
+          "second_light_original": "exact_index_msg_id",
+          "second_light_quartet": "exact_index_msg_id"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_index_msg_id[exact_structural]+exact_index_msg_id[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -1374,21 +1582,27 @@
       },
       "jp": "じ、自分磨きかぁ……。<CR>そこまで考えたことはなかったな",
       "en_original": "Self-improvement... I've never thought about it like that.",
-      "en_auxiliary": null,
+      "en_auxiliary": "Self-improvement... I've never thought about it like that.",
       "en": "Self-improvement...<CR>I've never thought about it like that.",
       "alignment": {
         "status": "exact_index_msg_id",
         "initial_en_source": "official_en",
         "official_en_index": 33,
         "official_en_mapping": "exact_index_msg_id",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 33,
+        "auxiliary_mapping": "exact_index_msg_id+exact_index_msg_id",
         "target_indices": {
-          "second_light_original": 33
+          "second_light_original": 33,
+          "second_light_quartet": 33
         },
         "target_mapping": {
-          "second_light_original": "exact_index_msg_id"
-        }
+          "second_light_original": "exact_index_msg_id",
+          "second_light_quartet": "exact_index_msg_id"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_index_msg_id[exact_structural]+exact_index_msg_id[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -1414,21 +1628,27 @@
       },
       "jp": "せっかく時間もあるんだし……<CR>ここにある小説、少し読んでみようかな",
       "en_original": "Well, since we have some time now, why don't we read some of the novels here?",
-      "en_auxiliary": null,
+      "en_auxiliary": "Well, since we have some time now, why don't we read some of the novels here?",
       "en": "Well, since we have some time now,<CR>why don't we read some of the novels here?",
       "alignment": {
         "status": "exact_index_msg_id",
         "initial_en_source": "official_en",
         "official_en_index": 34,
         "official_en_mapping": "exact_index_msg_id",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 34,
+        "auxiliary_mapping": "exact_index_msg_id+exact_index_msg_id",
         "target_indices": {
-          "second_light_original": 34
+          "second_light_original": 34,
+          "second_light_quartet": 34
         },
         "target_mapping": {
-          "second_light_original": "exact_index_msg_id"
-        }
+          "second_light_original": "exact_index_msg_id",
+          "second_light_quartet": "exact_index_msg_id"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_index_msg_id[exact_structural]+exact_index_msg_id[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -1454,21 +1674,27 @@
       },
       "jp": "お、いいね。おすすめ教えるから、<CR>ぜひ感想教えてよ！",
       "en_original": "Yeah, sounds good! I'll pick some out for you. Let me know what you think!",
-      "en_auxiliary": null,
+      "en_auxiliary": "Yeah, sounds good! I'll pick some out for you. Let me know what you think!",
       "en": "Yeah, sounds good! I'll pick some out for you.<CR>Let me know what you think!",
       "alignment": {
         "status": "exact_index_msg_id",
         "initial_en_source": "official_en",
         "official_en_index": 35,
         "official_en_mapping": "exact_index_msg_id",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 35,
+        "auxiliary_mapping": "exact_index_msg_id+exact_index_msg_id",
         "target_indices": {
-          "second_light_original": 35
+          "second_light_original": 35,
+          "second_light_quartet": 35
         },
         "target_mapping": {
-          "second_light_original": "exact_index_msg_id"
-        }
+          "second_light_original": "exact_index_msg_id",
+          "second_light_quartet": "exact_index_msg_id"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_index_msg_id[exact_structural]+exact_index_msg_id[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -1494,21 +1720,27 @@
       },
       "jp": "うん、分かった",
       "en_original": "Okay!",
-      "en_auxiliary": null,
+      "en_auxiliary": "Okay!",
       "en": "Okay!",
       "alignment": {
         "status": "exact_index_msg_id",
         "initial_en_source": "official_en",
         "official_en_index": 36,
         "official_en_mapping": "exact_index_msg_id",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 36,
+        "auxiliary_mapping": "exact_index_msg_id+exact_index_msg_id",
         "target_indices": {
-          "second_light_original": 36
+          "second_light_original": 36,
+          "second_light_quartet": 36
         },
         "target_mapping": {
-          "second_light_original": "exact_index_msg_id"
-        }
+          "second_light_original": "exact_index_msg_id",
+          "second_light_quartet": "exact_index_msg_id"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_index_msg_id[exact_structural]+exact_index_msg_id[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -1534,21 +1766,27 @@
       },
       "jp": "フラグメント「<CLGR>%s<CLNR>」を<CR>手に入れました",
       "en_original": "Obtained <CLGR>%s<CLNR> Fragment.",
-      "en_auxiliary": null,
+      "en_auxiliary": "Obtained <CLGR>%s<CLNR> Fragment.",
       "en": "Obtained the Fragment<CR><CLGR>%s<CLNR>.",
       "alignment": {
         "status": "exact_index_msg_id",
         "initial_en_source": "official_en",
         "official_en_index": 37,
         "official_en_mapping": "exact_index_msg_id",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 37,
+        "auxiliary_mapping": "exact_index_msg_id+exact_index_msg_id",
         "target_indices": {
-          "second_light_original": 37
+          "second_light_original": 37,
+          "second_light_quartet": 37
         },
         "target_mapping": {
-          "second_light_original": "exact_index_msg_id"
-        }
+          "second_light_original": "exact_index_msg_id",
+          "second_light_quartet": "exact_index_msg_id"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_index_msg_id[exact_structural]+exact_index_msg_id[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     }
   ]

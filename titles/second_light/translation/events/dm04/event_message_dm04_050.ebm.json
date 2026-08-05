@@ -1,7 +1,7 @@
 {
   "type": "br_event_translation_unit",
   "format_version": 1,
-  "tool_version": "translation-0.0.11",
+  "tool_version": "translation-0.0.15",
   "project": "second_light",
   "category": "event",
   "logical_path": "dm04/event_message_dm04_050.ebm",
@@ -15,13 +15,23 @@
     },
     "official_en_path": "titles/second_light/workspace/original/archives/PACK01/event/event_en/dm04/event_message_dm04_050.ebm",
     "official_en_sha256": "7f3e25d6934de3e660d0d0e5dce460be8cc48aa707733dcb3217534dcd4143d6",
-    "auxiliary_jp_path": null,
-    "auxiliary_en_path": null
+    "auxiliary_jp_path": "titles/second_light/workspace/quartet/archives/PACK01_03/event/b4/event_jp/dm04/event_message_dm04_050.ebm",
+    "auxiliary_en_path": "titles/second_light/workspace/quartet/archives/PACK01_03/event/b4/event_en/dm04/event_message_dm04_050.ebm"
   },
   "targets": {
     "second_light_original": {
       "template_language": "en",
       "template_path": "titles/second_light/workspace/original/archives/PACK01/event/event_en/dm04/event_message_dm04_050.ebm",
+      "template_sha256": "7f3e25d6934de3e660d0d0e5dce460be8cc48aa707733dcb3217534dcd4143d6",
+      "message_count": 80,
+      "mapping_status_counts": {
+        "exact_index_msg_id": 80
+      },
+      "complete_mapping": true
+    },
+    "second_light_quartet": {
+      "template_language": "en",
+      "template_path": "titles/second_light/workspace/quartet/archives/PACK01_03/event/b4/event_en/dm04/event_message_dm04_050.ebm",
       "template_sha256": "7f3e25d6934de3e660d0d0e5dce460be8cc48aa707733dcb3217534dcd4143d6",
       "message_count": 80,
       "mapping_status_counts": {
@@ -54,21 +64,27 @@
       },
       "jp": "それじゃあ、愛央ちゃん！",
       "en_original": "Okay, Ao!",
-      "en_auxiliary": null,
+      "en_auxiliary": "Okay, Ao!",
       "en": "Okay, Ao-chan!",
       "alignment": {
         "status": "exact_index_msg_id",
         "initial_en_source": "official_en",
         "official_en_index": 0,
         "official_en_mapping": "exact_index_msg_id",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 0,
+        "auxiliary_mapping": "exact_index_msg_id+exact_index_msg_id",
         "target_indices": {
-          "second_light_original": 0
+          "second_light_original": 0,
+          "second_light_quartet": 0
         },
         "target_mapping": {
-          "second_light_original": "exact_index_msg_id"
-        }
+          "second_light_original": "exact_index_msg_id",
+          "second_light_quartet": "exact_index_msg_id"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_index_msg_id[exact_structural]+exact_index_msg_id[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -94,21 +110,27 @@
       },
       "jp": "はい、陽桜莉さん！",
       "en_original": "Yes, ma'am!",
-      "en_auxiliary": null,
+      "en_auxiliary": "Yes, ma'am!",
       "en": "Yes, Hiori-san!",
       "alignment": {
         "status": "exact_index_msg_id",
         "initial_en_source": "official_en",
         "official_en_index": 1,
         "official_en_mapping": "exact_index_msg_id",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 1,
+        "auxiliary_mapping": "exact_index_msg_id+exact_index_msg_id",
         "target_indices": {
-          "second_light_original": 1
+          "second_light_original": 1,
+          "second_light_quartet": 1
         },
         "target_mapping": {
-          "second_light_original": "exact_index_msg_id"
-        }
+          "second_light_original": "exact_index_msg_id",
+          "second_light_quartet": "exact_index_msg_id"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_index_msg_id[exact_structural]+exact_index_msg_id[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -134,21 +156,27 @@
       },
       "jp": "今日のお昼は、ふたりで<CR>カレーを作りたいと思います！",
       "en_original": "Today we'll be making curry for lunch!",
-      "en_auxiliary": null,
+      "en_auxiliary": "Today we'll be making curry for lunch!",
       "en": "Today we'll be<CR>making curry for lunch!",
       "alignment": {
         "status": "exact_index_msg_id",
         "initial_en_source": "official_en",
         "official_en_index": 2,
         "official_en_mapping": "exact_index_msg_id",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 2,
+        "auxiliary_mapping": "exact_index_msg_id+exact_index_msg_id",
         "target_indices": {
-          "second_light_original": 2
+          "second_light_original": 2,
+          "second_light_quartet": 2
         },
         "target_mapping": {
-          "second_light_original": "exact_index_msg_id"
-        }
+          "second_light_original": "exact_index_msg_id",
+          "second_light_quartet": "exact_index_msg_id"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_index_msg_id[exact_structural]+exact_index_msg_id[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -174,21 +202,27 @@
       },
       "jp": "はーい！",
       "en_original": "Roger that!",
-      "en_auxiliary": null,
+      "en_auxiliary": "Roger that!",
       "en": "Roger that!",
       "alignment": {
         "status": "exact_index_msg_id",
         "initial_en_source": "official_en",
         "official_en_index": 3,
         "official_en_mapping": "exact_index_msg_id",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 3,
+        "auxiliary_mapping": "exact_index_msg_id+exact_index_msg_id",
         "target_indices": {
-          "second_light_original": 3
+          "second_light_original": 3,
+          "second_light_quartet": 3
         },
         "target_mapping": {
-          "second_light_original": "exact_index_msg_id"
-        }
+          "second_light_original": "exact_index_msg_id",
+          "second_light_quartet": "exact_index_msg_id"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_index_msg_id[exact_structural]+exact_index_msg_id[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -214,21 +248,27 @@
       },
       "jp": "ここに、甘口と辛口のルーがあるんだけど<CR>愛央ちゃん、どっちがいい？",
       "en_original": "We have mild roux and spicy roux here. Which one do you want to make?",
-      "en_auxiliary": null,
+      "en_auxiliary": "We have mild roux and spicy roux here. Which one do you want to make?",
       "en": "We have mild roux and spicy roux here.<CR>Which one do you want, Ao-chan?",
       "alignment": {
         "status": "exact_index_msg_id",
         "initial_en_source": "official_en",
         "official_en_index": 4,
         "official_en_mapping": "exact_index_msg_id",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 4,
+        "auxiliary_mapping": "exact_index_msg_id+exact_index_msg_id",
         "target_indices": {
-          "second_light_original": 4
+          "second_light_original": 4,
+          "second_light_quartet": 4
         },
         "target_mapping": {
-          "second_light_original": "exact_index_msg_id"
-        }
+          "second_light_original": "exact_index_msg_id",
+          "second_light_quartet": "exact_index_msg_id"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_index_msg_id[exact_structural]+exact_index_msg_id[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -254,21 +294,27 @@
       },
       "jp": "んー、そうだなあ……",
       "en_original": "Hmm...",
-      "en_auxiliary": null,
+      "en_auxiliary": "Hmm...",
       "en": "Hmm...",
       "alignment": {
         "status": "exact_index_msg_id",
         "initial_en_source": "official_en",
         "official_en_index": 5,
         "official_en_mapping": "exact_index_msg_id",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 5,
+        "auxiliary_mapping": "exact_index_msg_id+exact_index_msg_id",
         "target_indices": {
-          "second_light_original": 5
+          "second_light_original": 5,
+          "second_light_quartet": 5
         },
         "target_mapping": {
-          "second_light_original": "exact_index_msg_id"
-        }
+          "second_light_original": "exact_index_msg_id",
+          "second_light_quartet": "exact_index_msg_id"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_index_msg_id[exact_structural]+exact_index_msg_id[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -294,21 +340,27 @@
       },
       "jp": "優しい感じの甘口がいいな",
       "en_original": "Let's go with the gentler flavor of the mild roux.",
-      "en_auxiliary": null,
+      "en_auxiliary": "Let's go with the gentler flavor of the mild roux.",
       "en": "Let's go with the gentler flavor of the mild roux.",
       "alignment": {
         "status": "exact_index_msg_id",
         "initial_en_source": "official_en",
         "official_en_index": 6,
         "official_en_mapping": "exact_index_msg_id",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 6,
+        "auxiliary_mapping": "exact_index_msg_id+exact_index_msg_id",
         "target_indices": {
-          "second_light_original": 6
+          "second_light_original": 6,
+          "second_light_quartet": 6
         },
         "target_mapping": {
-          "second_light_original": "exact_index_msg_id"
-        }
+          "second_light_original": "exact_index_msg_id",
+          "second_light_quartet": "exact_index_msg_id"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_index_msg_id[exact_structural]+exact_index_msg_id[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -334,21 +386,27 @@
       },
       "jp": "うん、いいね！<CR>じゃあ、今日はお子様カレーに決定！",
       "en_original": "Sounds good! Let's make a curry like the kind you'd see on the kids menu!",
-      "en_auxiliary": null,
+      "en_auxiliary": "Sounds good! Let's make a curry like the kind you'd see on the kids menu!",
       "en": "Sounds good! Let's make<CR>a curry like the kind you'd see on the kids menu!",
       "alignment": {
         "status": "exact_index_msg_id",
         "initial_en_source": "official_en",
         "official_en_index": 7,
         "official_en_mapping": "exact_index_msg_id",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 7,
+        "auxiliary_mapping": "exact_index_msg_id+exact_index_msg_id",
         "target_indices": {
-          "second_light_original": 7
+          "second_light_original": 7,
+          "second_light_quartet": 7
         },
         "target_mapping": {
-          "second_light_original": "exact_index_msg_id"
-        }
+          "second_light_original": "exact_index_msg_id",
+          "second_light_quartet": "exact_index_msg_id"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_index_msg_id[exact_structural]+exact_index_msg_id[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -374,21 +432,27 @@
       },
       "jp": "旗とか、たてちゃう？",
       "en_original": "Should we put a little flag in it, then?",
-      "en_auxiliary": null,
+      "en_auxiliary": "Should we put a little flag in it, then?",
       "en": "Should we put a little flag in it, then?",
       "alignment": {
         "status": "exact_index_msg_id",
         "initial_en_source": "official_en",
         "official_en_index": 8,
         "official_en_mapping": "exact_index_msg_id",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 8,
+        "auxiliary_mapping": "exact_index_msg_id+exact_index_msg_id",
         "target_indices": {
-          "second_light_original": 8
+          "second_light_original": 8,
+          "second_light_quartet": 8
         },
         "target_mapping": {
-          "second_light_original": "exact_index_msg_id"
-        }
+          "second_light_original": "exact_index_msg_id",
+          "second_light_quartet": "exact_index_msg_id"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_index_msg_id[exact_structural]+exact_index_msg_id[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -414,21 +478,27 @@
       },
       "jp": "あ、かわいいかも！　やろう、やろう！",
       "en_original": "Oh, that'd be cute! Let's do it!",
-      "en_auxiliary": null,
+      "en_auxiliary": "Oh, that'd be cute! Let's do it!",
       "en": "Oh, that'd be cute! Let's do it!",
       "alignment": {
         "status": "exact_index_msg_id",
         "initial_en_source": "official_en",
         "official_en_index": 9,
         "official_en_mapping": "exact_index_msg_id",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 9,
+        "auxiliary_mapping": "exact_index_msg_id+exact_index_msg_id",
         "target_indices": {
-          "second_light_original": 9
+          "second_light_original": 9,
+          "second_light_quartet": 9
         },
         "target_mapping": {
-          "second_light_original": "exact_index_msg_id"
-        }
+          "second_light_original": "exact_index_msg_id",
+          "second_light_quartet": "exact_index_msg_id"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_index_msg_id[exact_structural]+exact_index_msg_id[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -454,21 +524,27 @@
       },
       "jp": "ここは、ピリッと辛口でいこう！",
       "en_original": "Let's spice things up a little!",
-      "en_auxiliary": null,
+      "en_auxiliary": "Let's spice things up a little!",
       "en": "Let's spice things up a little!",
       "alignment": {
         "status": "exact_index_msg_id",
         "initial_en_source": "official_en",
         "official_en_index": 10,
         "official_en_mapping": "exact_index_msg_id",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 10,
+        "auxiliary_mapping": "exact_index_msg_id+exact_index_msg_id",
         "target_indices": {
-          "second_light_original": 10
+          "second_light_original": 10,
+          "second_light_quartet": 10
         },
         "target_mapping": {
-          "second_light_original": "exact_index_msg_id"
-        }
+          "second_light_original": "exact_index_msg_id",
+          "second_light_quartet": "exact_index_msg_id"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_index_msg_id[exact_structural]+exact_index_msg_id[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -494,21 +570,27 @@
       },
       "jp": "夏に、ハフハフいいながら<CR>食べるカレーも美味しいもんね！",
       "en_original": "Yeah. I like curry that makes you huff and puff, especially in the summer!",
-      "en_auxiliary": null,
+      "en_auxiliary": "Yeah. I like curry that makes you huff and puff, especially in the summer!",
       "en": "Yeah. I like curry that makes you<CR>huff and puff, especially in the summer!",
       "alignment": {
         "status": "exact_index_msg_id",
         "initial_en_source": "official_en",
         "official_en_index": 11,
         "official_en_mapping": "exact_index_msg_id",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 11,
+        "auxiliary_mapping": "exact_index_msg_id+exact_index_msg_id",
         "target_indices": {
-          "second_light_original": 11
+          "second_light_original": 11,
+          "second_light_quartet": 11
         },
         "target_mapping": {
-          "second_light_original": "exact_index_msg_id"
-        }
+          "second_light_original": "exact_index_msg_id",
+          "second_light_quartet": "exact_index_msg_id"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_index_msg_id[exact_structural]+exact_index_msg_id[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -534,21 +616,27 @@
       },
       "jp": "そうそう！<CR>食べてる～って感じするよね、あれ！",
       "en_original": "Exactly! It makes it so much more satisfying!",
-      "en_auxiliary": null,
+      "en_auxiliary": "Exactly! It makes it so much more satisfying!",
       "en": "Exactly! It<CR>makes it so much more satisfying!",
       "alignment": {
         "status": "exact_index_msg_id",
         "initial_en_source": "official_en",
         "official_en_index": 12,
         "official_en_mapping": "exact_index_msg_id",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 12,
+        "auxiliary_mapping": "exact_index_msg_id+exact_index_msg_id",
         "target_indices": {
-          "second_light_original": 12
+          "second_light_original": 12,
+          "second_light_quartet": 12
         },
         "target_mapping": {
-          "second_light_original": "exact_index_msg_id"
-        }
+          "second_light_original": "exact_index_msg_id",
+          "second_light_quartet": "exact_index_msg_id"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_index_msg_id[exact_structural]+exact_index_msg_id[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -574,21 +662,27 @@
       },
       "jp": "あー、想像したらお腹空いてきちゃった！<CR>早く、作ろ！",
       "en_original": "Ugh, I'm getting hungry just thinking about it. Let's hurry up and get cooking!",
-      "en_auxiliary": null,
+      "en_auxiliary": "Ugh, I'm getting hungry just thinking about it. Let's hurry up and get cooking!",
       "en": "Ugh, I'm getting hungry just thinking about it. Let's hurry<CR>up and get cooking!",
       "alignment": {
         "status": "exact_index_msg_id",
         "initial_en_source": "official_en",
         "official_en_index": 13,
         "official_en_mapping": "exact_index_msg_id",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 13,
+        "auxiliary_mapping": "exact_index_msg_id+exact_index_msg_id",
         "target_indices": {
-          "second_light_original": 13
+          "second_light_original": 13,
+          "second_light_quartet": 13
         },
         "target_mapping": {
-          "second_light_original": "exact_index_msg_id"
-        }
+          "second_light_original": "exact_index_msg_id",
+          "second_light_quartet": "exact_index_msg_id"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_index_msg_id[exact_structural]+exact_index_msg_id[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -614,21 +708,27 @@
       },
       "jp": "うーん……悪くないけど<CR>何か足りないような気がするなぁ",
       "en_original": "Hmm... It's not bad, but it's missing a little something.",
-      "en_auxiliary": null,
+      "en_auxiliary": "Hmm... It's not bad, but it's missing a little something.",
       "en": "Hmm... It's not bad, but<CR>it's missing a little something.",
       "alignment": {
         "status": "exact_index_msg_id",
         "initial_en_source": "official_en",
         "official_en_index": 14,
         "official_en_mapping": "exact_index_msg_id",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 14,
+        "auxiliary_mapping": "exact_index_msg_id+exact_index_msg_id",
         "target_indices": {
-          "second_light_original": 14
+          "second_light_original": 14,
+          "second_light_quartet": 14
         },
         "target_mapping": {
-          "second_light_original": "exact_index_msg_id"
-        }
+          "second_light_original": "exact_index_msg_id",
+          "second_light_quartet": "exact_index_msg_id"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_index_msg_id[exact_structural]+exact_index_msg_id[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -654,21 +754,27 @@
       },
       "jp": "隠し味でも、入れてみる？",
       "en_original": "Wanna add my secret ingredient?",
-      "en_auxiliary": null,
+      "en_auxiliary": "Wanna add my secret ingredient?",
       "en": "Wanna add my secret ingredient?",
       "alignment": {
         "status": "exact_index_msg_id",
         "initial_en_source": "official_en",
         "official_en_index": 15,
         "official_en_mapping": "exact_index_msg_id",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 15,
+        "auxiliary_mapping": "exact_index_msg_id+exact_index_msg_id",
         "target_indices": {
-          "second_light_original": 15
+          "second_light_original": 15,
+          "second_light_quartet": 15
         },
         "target_mapping": {
-          "second_light_original": "exact_index_msg_id"
-        }
+          "second_light_original": "exact_index_msg_id",
+          "second_light_quartet": "exact_index_msg_id"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_index_msg_id[exact_structural]+exact_index_msg_id[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -694,21 +800,27 @@
       },
       "jp": "そうだね、何が良いかな",
       "en_original": "Sure! What do you have in mind?",
-      "en_auxiliary": null,
+      "en_auxiliary": "Sure! What do you have in mind?",
       "en": "Sure! What do you have in mind?",
       "alignment": {
         "status": "exact_index_msg_id",
         "initial_en_source": "official_en",
         "official_en_index": 16,
         "official_en_mapping": "exact_index_msg_id",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 16,
+        "auxiliary_mapping": "exact_index_msg_id+exact_index_msg_id",
         "target_indices": {
-          "second_light_original": 16
+          "second_light_original": 16,
+          "second_light_quartet": 16
         },
         "target_mapping": {
-          "second_light_original": "exact_index_msg_id"
-        }
+          "second_light_original": "exact_index_msg_id",
+          "second_light_quartet": "exact_index_msg_id"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_index_msg_id[exact_structural]+exact_index_msg_id[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -734,21 +846,27 @@
       },
       "jp": "うーん、これは？<CR>定番のチョコレート",
       "en_original": "How about a little chocolate? It's a classic.",
-      "en_auxiliary": null,
+      "en_auxiliary": "How about a little chocolate? It's a classic.",
       "en": "How about a little<CR>chocolate? It's a classic.",
       "alignment": {
         "status": "exact_index_msg_id",
         "initial_en_source": "official_en",
         "official_en_index": 17,
         "official_en_mapping": "exact_index_msg_id",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 17,
+        "auxiliary_mapping": "exact_index_msg_id+exact_index_msg_id",
         "target_indices": {
-          "second_light_original": 17
+          "second_light_original": 17,
+          "second_light_quartet": 17
         },
         "target_mapping": {
-          "second_light_original": "exact_index_msg_id"
-        }
+          "second_light_original": "exact_index_msg_id",
+          "second_light_quartet": "exact_index_msg_id"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_index_msg_id[exact_structural]+exact_index_msg_id[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -774,21 +892,27 @@
       },
       "jp": "おお、それは定番だね！<CR>とりあえず、ふた欠片ぐらい入れてみよっか",
       "en_original": "Ooh! Can't go wrong with that! Let's put two squares in for now.",
-      "en_auxiliary": null,
+      "en_auxiliary": "Ooh! Can't go wrong with that! Let's put two squares in for now.",
       "en": "Ooh! Can't go wrong with<CR>that! Let's put two squares in for now.",
       "alignment": {
         "status": "exact_index_msg_id",
         "initial_en_source": "official_en",
         "official_en_index": 18,
         "official_en_mapping": "exact_index_msg_id",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 18,
+        "auxiliary_mapping": "exact_index_msg_id+exact_index_msg_id",
         "target_indices": {
-          "second_light_original": 18
+          "second_light_original": 18,
+          "second_light_quartet": 18
         },
         "target_mapping": {
-          "second_light_original": "exact_index_msg_id"
-        }
+          "second_light_original": "exact_index_msg_id",
+          "second_light_quartet": "exact_index_msg_id"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_index_msg_id[exact_structural]+exact_index_msg_id[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -814,21 +938,27 @@
       },
       "jp": "残ったチョコはどうする？",
       "en_original": "What should we do with the leftover chocolate?",
-      "en_auxiliary": null,
+      "en_auxiliary": "What should we do with the leftover chocolate?",
       "en": "What should we do with the leftover chocolate?",
       "alignment": {
         "status": "exact_index_msg_id",
         "initial_en_source": "official_en",
         "official_en_index": 19,
         "official_en_mapping": "exact_index_msg_id",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 19,
+        "auxiliary_mapping": "exact_index_msg_id+exact_index_msg_id",
         "target_indices": {
-          "second_light_original": 19
+          "second_light_original": 19,
+          "second_light_quartet": 19
         },
         "target_mapping": {
-          "second_light_original": "exact_index_msg_id"
-        }
+          "second_light_original": "exact_index_msg_id",
+          "second_light_quartet": "exact_index_msg_id"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_index_msg_id[exact_structural]+exact_index_msg_id[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -854,21 +984,27 @@
       },
       "jp": "……こっそり食べちゃう？",
       "en_original": "...Eat it while no one's watching?",
-      "en_auxiliary": null,
+      "en_auxiliary": "...Eat it while no one's watching?",
       "en": "...Eat it while no one's watching?",
       "alignment": {
         "status": "exact_index_msg_id",
         "initial_en_source": "official_en",
         "official_en_index": 20,
         "official_en_mapping": "exact_index_msg_id",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 20,
+        "auxiliary_mapping": "exact_index_msg_id+exact_index_msg_id",
         "target_indices": {
-          "second_light_original": 20
+          "second_light_original": 20,
+          "second_light_quartet": 20
         },
         "target_mapping": {
-          "second_light_original": "exact_index_msg_id"
-        }
+          "second_light_original": "exact_index_msg_id",
+          "second_light_quartet": "exact_index_msg_id"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_index_msg_id[exact_structural]+exact_index_msg_id[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -894,21 +1030,27 @@
       },
       "jp": "あは！　それいいね、賛成！",
       "en_original": "Haha! Good idea, I'm in!",
-      "en_auxiliary": null,
+      "en_auxiliary": "Haha! Good idea, I'm in!",
       "en": "Haha! Good idea, I'm in!",
       "alignment": {
         "status": "exact_index_msg_id",
         "initial_en_source": "official_en",
         "official_en_index": 21,
         "official_en_mapping": "exact_index_msg_id",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 21,
+        "auxiliary_mapping": "exact_index_msg_id+exact_index_msg_id",
         "target_indices": {
-          "second_light_original": 21
+          "second_light_original": 21,
+          "second_light_quartet": 21
         },
         "target_mapping": {
-          "second_light_original": "exact_index_msg_id"
-        }
+          "second_light_original": "exact_index_msg_id",
+          "second_light_quartet": "exact_index_msg_id"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_index_msg_id[exact_structural]+exact_index_msg_id[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -934,21 +1076,27 @@
       },
       "jp": "愛情とか？",
       "en_original": "How about love?",
-      "en_auxiliary": null,
+      "en_auxiliary": "How about love?",
       "en": "How about love?",
       "alignment": {
         "status": "exact_index_msg_id",
         "initial_en_source": "official_en",
         "official_en_index": 22,
         "official_en_mapping": "exact_index_msg_id",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 22,
+        "auxiliary_mapping": "exact_index_msg_id+exact_index_msg_id",
         "target_indices": {
-          "second_light_original": 22
+          "second_light_original": 22,
+          "second_light_quartet": 22
         },
         "target_mapping": {
-          "second_light_original": "exact_index_msg_id"
-        }
+          "second_light_original": "exact_index_msg_id",
+          "second_light_quartet": "exact_index_msg_id"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_index_msg_id[exact_structural]+exact_index_msg_id[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -974,21 +1122,27 @@
       },
       "jp": "愛情？",
       "en_original": "Love?",
-      "en_auxiliary": null,
+      "en_auxiliary": "Love?",
       "en": "Love?",
       "alignment": {
         "status": "exact_index_msg_id",
         "initial_en_source": "official_en",
         "official_en_index": 23,
         "official_en_mapping": "exact_index_msg_id",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 23,
+        "auxiliary_mapping": "exact_index_msg_id+exact_index_msg_id",
         "target_indices": {
-          "second_light_original": 23
+          "second_light_original": 23,
+          "second_light_quartet": 23
         },
         "target_mapping": {
-          "second_light_original": "exact_index_msg_id"
-        }
+          "second_light_original": "exact_index_msg_id",
+          "second_light_quartet": "exact_index_msg_id"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_index_msg_id[exact_structural]+exact_index_msg_id[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -1014,21 +1168,27 @@
       },
       "jp": "ほら、メイド喫茶でオムライスに<CR>愛情入れたりするじゃん！",
       "en_original": "Like the omelet rice they serve at maid cafes! The secret ingredient is always love!",
-      "en_auxiliary": null,
+      "en_auxiliary": "Like the omelet rice they serve at maid cafes! The secret ingredient is always love!",
       "en": "Like the omelet rice they serve at maid cafes!<CR>The secret ingredient is always love!",
       "alignment": {
         "status": "exact_index_msg_id",
         "initial_en_source": "official_en",
         "official_en_index": 24,
         "official_en_mapping": "exact_index_msg_id",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 24,
+        "auxiliary_mapping": "exact_index_msg_id+exact_index_msg_id",
         "target_indices": {
-          "second_light_original": 24
+          "second_light_original": 24,
+          "second_light_quartet": 24
         },
         "target_mapping": {
-          "second_light_original": "exact_index_msg_id"
-        }
+          "second_light_original": "exact_index_msg_id",
+          "second_light_quartet": "exact_index_msg_id"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_index_msg_id[exact_structural]+exact_index_msg_id[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -1054,21 +1214,27 @@
       },
       "jp": "あー！　入れる入れる！<CR>でも、あれで味が変わったりするのかな？",
       "en_original": "Ooh! Let's do it! But will people actually taste the difference?",
-      "en_auxiliary": null,
+      "en_auxiliary": "Ooh! Let's do it! But will people actually taste the difference?",
       "en": "Ooh! Let's do it! But<CR>will people actually taste the difference?",
       "alignment": {
         "status": "exact_index_msg_id",
         "initial_en_source": "official_en",
         "official_en_index": 25,
         "official_en_mapping": "exact_index_msg_id",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 25,
+        "auxiliary_mapping": "exact_index_msg_id+exact_index_msg_id",
         "target_indices": {
-          "second_light_original": 25
+          "second_light_original": 25,
+          "second_light_quartet": 25
         },
         "target_mapping": {
-          "second_light_original": "exact_index_msg_id"
-        }
+          "second_light_original": "exact_index_msg_id",
+          "second_light_quartet": "exact_index_msg_id"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_index_msg_id[exact_structural]+exact_index_msg_id[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -1094,21 +1260,27 @@
       },
       "jp": "料理は愛情っていうし、きっと変わるよ！",
       "en_original": "Of course they will! Like they say, cooking is an act of love!",
-      "en_auxiliary": null,
+      "en_auxiliary": "Of course they will! Like they say, cooking is an act of love!",
       "en": "Of course they will! Like they say, cooking is an act of love!",
       "alignment": {
         "status": "exact_index_msg_id",
         "initial_en_source": "official_en",
         "official_en_index": 26,
         "official_en_mapping": "exact_index_msg_id",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 26,
+        "auxiliary_mapping": "exact_index_msg_id+exact_index_msg_id",
         "target_indices": {
-          "second_light_original": 26
+          "second_light_original": 26,
+          "second_light_quartet": 26
         },
         "target_mapping": {
-          "second_light_original": "exact_index_msg_id"
-        }
+          "second_light_original": "exact_index_msg_id",
+          "second_light_quartet": "exact_index_msg_id"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_index_msg_id[exact_structural]+exact_index_msg_id[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -1134,21 +1306,27 @@
       },
       "jp": "そっか……よし、やってみる！",
       "en_original": "That's right... Okay, let's give it a try!",
-      "en_auxiliary": null,
+      "en_auxiliary": "That's right... Okay, let's give it a try!",
       "en": "That's right... Okay, let's give it a try!",
       "alignment": {
         "status": "exact_index_msg_id",
         "initial_en_source": "official_en",
         "official_en_index": 27,
         "official_en_mapping": "exact_index_msg_id",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 27,
+        "auxiliary_mapping": "exact_index_msg_id+exact_index_msg_id",
         "target_indices": {
-          "second_light_original": 27
+          "second_light_original": 27,
+          "second_light_quartet": 27
         },
         "target_mapping": {
-          "second_light_original": "exact_index_msg_id"
-        }
+          "second_light_original": "exact_index_msg_id",
+          "second_light_quartet": "exact_index_msg_id"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_index_msg_id[exact_structural]+exact_index_msg_id[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -1174,21 +1352,27 @@
       },
       "jp": "（陽桜莉さんって、ほんとにすぐ信じるなー）",
       "en_original": "(Hiori will believe anything...)",
-      "en_auxiliary": null,
+      "en_auxiliary": "(Hiori will believe anything...)",
       "en": "(Hiori-san will believe anything...)",
       "alignment": {
         "status": "exact_index_msg_id",
         "initial_en_source": "official_en",
         "official_en_index": 28,
         "official_en_mapping": "exact_index_msg_id",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 28,
+        "auxiliary_mapping": "exact_index_msg_id+exact_index_msg_id",
         "target_indices": {
-          "second_light_original": 28
+          "second_light_original": 28,
+          "second_light_quartet": 28
         },
         "target_mapping": {
-          "second_light_original": "exact_index_msg_id"
-        }
+          "second_light_original": "exact_index_msg_id",
+          "second_light_quartet": "exact_index_msg_id"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_index_msg_id[exact_structural]+exact_index_msg_id[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -1214,21 +1398,27 @@
       },
       "jp": "ん～！　愛情、ちゅ～にゅ～！<CR>美味しくなーれ、美味しくなーれ！",
       "en_original": "Ngh! Love goes in! Yum comes out!",
-      "en_auxiliary": null,
+      "en_auxiliary": "Ngh! Love goes in! Yum comes out!",
       "en": "Mmm! Pouring in the love~!<CR>Become delicious, become delicious!",
       "alignment": {
         "status": "exact_index_msg_id",
         "initial_en_source": "official_en",
         "official_en_index": 29,
         "official_en_mapping": "exact_index_msg_id",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 29,
+        "auxiliary_mapping": "exact_index_msg_id+exact_index_msg_id",
         "target_indices": {
-          "second_light_original": 29
+          "second_light_original": 29,
+          "second_light_quartet": 29
         },
         "target_mapping": {
-          "second_light_original": "exact_index_msg_id"
-        }
+          "second_light_original": "exact_index_msg_id",
+          "second_light_quartet": "exact_index_msg_id"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_index_msg_id[exact_structural]+exact_index_msg_id[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -1254,21 +1444,27 @@
       },
       "jp": "もっとだよ、もっと入れて！",
       "en_original": "More! More love!",
-      "en_auxiliary": null,
+      "en_auxiliary": "More! More love!",
       "en": "More! More love!",
       "alignment": {
         "status": "exact_index_msg_id",
         "initial_en_source": "official_en",
         "official_en_index": 30,
         "official_en_mapping": "exact_index_msg_id",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 30,
+        "auxiliary_mapping": "exact_index_msg_id+exact_index_msg_id",
         "target_indices": {
-          "second_light_original": 30
+          "second_light_original": 30,
+          "second_light_quartet": 30
         },
         "target_mapping": {
-          "second_light_original": "exact_index_msg_id"
-        }
+          "second_light_original": "exact_index_msg_id",
+          "second_light_quartet": "exact_index_msg_id"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_index_msg_id[exact_structural]+exact_index_msg_id[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -1294,21 +1490,27 @@
       },
       "jp": "好き好き、大好きー！！",
       "en_original": "I love you, I love you, I love you!!",
-      "en_auxiliary": null,
+      "en_auxiliary": "I love you, I love you, I love you!!",
       "en": "I love you, I love you, I love you!!",
       "alignment": {
         "status": "exact_index_msg_id",
         "initial_en_source": "official_en",
         "official_en_index": 31,
         "official_en_mapping": "exact_index_msg_id",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 31,
+        "auxiliary_mapping": "exact_index_msg_id+exact_index_msg_id",
         "target_indices": {
-          "second_light_original": 31
+          "second_light_original": 31,
+          "second_light_quartet": 31
         },
         "target_mapping": {
-          "second_light_original": "exact_index_msg_id"
-        }
+          "second_light_original": "exact_index_msg_id",
+          "second_light_quartet": "exact_index_msg_id"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_index_msg_id[exact_structural]+exact_index_msg_id[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -1334,21 +1536,27 @@
       },
       "jp": "これで、どうかな？",
       "en_original": "What do you think?",
-      "en_auxiliary": null,
+      "en_auxiliary": "What do you think?",
       "en": "What do you think?",
       "alignment": {
         "status": "exact_index_msg_id",
         "initial_en_source": "official_en",
         "official_en_index": 32,
         "official_en_mapping": "exact_index_msg_id",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 32,
+        "auxiliary_mapping": "exact_index_msg_id+exact_index_msg_id",
         "target_indices": {
-          "second_light_original": 32
+          "second_light_original": 32,
+          "second_light_quartet": 32
         },
         "target_mapping": {
-          "second_light_original": "exact_index_msg_id"
-        }
+          "second_light_original": "exact_index_msg_id",
+          "second_light_quartet": "exact_index_msg_id"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_index_msg_id[exact_structural]+exact_index_msg_id[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -1374,21 +1582,27 @@
       },
       "jp": "（素直すぎて、かわいい……）",
       "en_original": "(She's so innocent, it's adorable...)",
-      "en_auxiliary": null,
+      "en_auxiliary": "(She's so innocent, it's adorable...)",
       "en": "(She's so innocent, it's adorable...)",
       "alignment": {
         "status": "exact_index_msg_id",
         "initial_en_source": "official_en",
         "official_en_index": 33,
         "official_en_mapping": "exact_index_msg_id",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 33,
+        "auxiliary_mapping": "exact_index_msg_id+exact_index_msg_id",
         "target_indices": {
-          "second_light_original": 33
+          "second_light_original": 33,
+          "second_light_quartet": 33
         },
         "target_mapping": {
-          "second_light_original": "exact_index_msg_id"
-        }
+          "second_light_original": "exact_index_msg_id",
+          "second_light_quartet": "exact_index_msg_id"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_index_msg_id[exact_structural]+exact_index_msg_id[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -1414,21 +1628,27 @@
       },
       "jp": "……うん！　いい感じ！",
       "en_original": "Mmm! That's it!",
-      "en_auxiliary": null,
+      "en_auxiliary": "Mmm! That's it!",
       "en": "Mmm! That's it!",
       "alignment": {
         "status": "exact_index_msg_id",
         "initial_en_source": "official_en",
         "official_en_index": 34,
         "official_en_mapping": "exact_index_msg_id",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 34,
+        "auxiliary_mapping": "exact_index_msg_id+exact_index_msg_id",
         "target_indices": {
-          "second_light_original": 34
+          "second_light_original": 34,
+          "second_light_quartet": 34
         },
         "target_mapping": {
-          "second_light_original": "exact_index_msg_id"
-        }
+          "second_light_original": "exact_index_msg_id",
+          "second_light_quartet": "exact_index_msg_id"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_index_msg_id[exact_structural]+exact_index_msg_id[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -1454,21 +1674,27 @@
       },
       "jp": "はい、愛央ちゃんも、あーん！",
       "en_original": "Here, Ao, say aah!",
-      "en_auxiliary": null,
+      "en_auxiliary": "Here, Ao, say aah!",
       "en": "Here, Ao-chan, say aah!",
       "alignment": {
         "status": "exact_index_msg_id",
         "initial_en_source": "official_en",
         "official_en_index": 35,
         "official_en_mapping": "exact_index_msg_id",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 35,
+        "auxiliary_mapping": "exact_index_msg_id+exact_index_msg_id",
         "target_indices": {
-          "second_light_original": 35
+          "second_light_original": 35,
+          "second_light_quartet": 35
         },
         "target_mapping": {
-          "second_light_original": "exact_index_msg_id"
-        }
+          "second_light_original": "exact_index_msg_id",
+          "second_light_quartet": "exact_index_msg_id"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_index_msg_id[exact_structural]+exact_index_msg_id[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -1494,21 +1720,27 @@
       },
       "jp": "",
       "en_original": ".",
-      "en_auxiliary": null,
+      "en_auxiliary": ".",
       "en": ".",
       "alignment": {
         "status": "exact_index_msg_id",
         "initial_en_source": "official_en",
         "official_en_index": 36,
         "official_en_mapping": "exact_index_msg_id",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 36,
+        "auxiliary_mapping": "exact_index_msg_id+exact_index_msg_id",
         "target_indices": {
-          "second_light_original": 36
+          "second_light_original": 36,
+          "second_light_quartet": 36
         },
         "target_mapping": {
-          "second_light_original": "exact_index_msg_id"
-        }
+          "second_light_original": "exact_index_msg_id",
+          "second_light_quartet": "exact_index_msg_id"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_index_msg_id[exact_structural]+exact_index_msg_id[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -1534,21 +1766,27 @@
       },
       "jp": "",
       "en_original": ".",
-      "en_auxiliary": null,
+      "en_auxiliary": ".",
       "en": ".",
       "alignment": {
         "status": "exact_index_msg_id",
         "initial_en_source": "official_en",
         "official_en_index": 37,
         "official_en_mapping": "exact_index_msg_id",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 37,
+        "auxiliary_mapping": "exact_index_msg_id+exact_index_msg_id",
         "target_indices": {
-          "second_light_original": 37
+          "second_light_original": 37,
+          "second_light_quartet": 37
         },
         "target_mapping": {
-          "second_light_original": "exact_index_msg_id"
-        }
+          "second_light_original": "exact_index_msg_id",
+          "second_light_quartet": "exact_index_msg_id"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_index_msg_id[exact_structural]+exact_index_msg_id[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -1574,21 +1812,27 @@
       },
       "jp": "",
       "en_original": ".",
-      "en_auxiliary": null,
+      "en_auxiliary": ".",
       "en": ".",
       "alignment": {
         "status": "exact_index_msg_id",
         "initial_en_source": "official_en",
         "official_en_index": 38,
         "official_en_mapping": "exact_index_msg_id",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 38,
+        "auxiliary_mapping": "exact_index_msg_id+exact_index_msg_id",
         "target_indices": {
-          "second_light_original": 38
+          "second_light_original": 38,
+          "second_light_quartet": 38
         },
         "target_mapping": {
-          "second_light_original": "exact_index_msg_id"
-        }
+          "second_light_original": "exact_index_msg_id",
+          "second_light_quartet": "exact_index_msg_id"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_index_msg_id[exact_structural]+exact_index_msg_id[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -1614,21 +1858,27 @@
       },
       "jp": "あ、美味しい！",
       "en_original": "Oh, yum!",
-      "en_auxiliary": null,
+      "en_auxiliary": "Oh, yum!",
       "en": "Oh, yum!",
       "alignment": {
         "status": "exact_index_msg_id",
         "initial_en_source": "official_en",
         "official_en_index": 39,
         "official_en_mapping": "exact_index_msg_id",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 39,
+        "auxiliary_mapping": "exact_index_msg_id+exact_index_msg_id",
         "target_indices": {
-          "second_light_original": 39
+          "second_light_original": 39,
+          "second_light_quartet": 39
         },
         "target_mapping": {
-          "second_light_original": "exact_index_msg_id"
-        }
+          "second_light_original": "exact_index_msg_id",
+          "second_light_quartet": "exact_index_msg_id"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_index_msg_id[exact_structural]+exact_index_msg_id[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -1654,21 +1904,27 @@
       },
       "jp": "だよね！　ほんとは、お母さんみたいなカレーが<CR>作りたかったんだけど……",
       "en_original": "Isn't it good? I tried to make it taste like mom's curry, but...",
-      "en_auxiliary": null,
+      "en_auxiliary": "Isn't it good? I tried to make it taste like mom's curry, but...",
       "en": "Right? I really wanted to make curry<CR>like Mom’s, though...",
       "alignment": {
         "status": "exact_index_msg_id",
         "initial_en_source": "official_en",
         "official_en_index": 40,
         "official_en_mapping": "exact_index_msg_id",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 40,
+        "auxiliary_mapping": "exact_index_msg_id+exact_index_msg_id",
         "target_indices": {
-          "second_light_original": 40
+          "second_light_original": 40,
+          "second_light_quartet": 40
         },
         "target_mapping": {
-          "second_light_original": "exact_index_msg_id"
-        }
+          "second_light_original": "exact_index_msg_id",
+          "second_light_quartet": "exact_index_msg_id"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_index_msg_id[exact_structural]+exact_index_msg_id[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -1694,21 +1950,27 @@
       },
       "jp": "私、陽桜莉さんのカレー好きだよ",
       "en_original": "I like your curry the best, Hiori!",
-      "en_auxiliary": null,
+      "en_auxiliary": "I like your curry the best, Hiori!",
       "en": "I like your curry, Hiori-san.",
       "alignment": {
         "status": "exact_index_msg_id",
         "initial_en_source": "official_en",
         "official_en_index": 41,
         "official_en_mapping": "exact_index_msg_id",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 41,
+        "auxiliary_mapping": "exact_index_msg_id+exact_index_msg_id",
         "target_indices": {
-          "second_light_original": 41
+          "second_light_original": 41,
+          "second_light_quartet": 41
         },
         "target_mapping": {
-          "second_light_original": "exact_index_msg_id"
-        }
+          "second_light_original": "exact_index_msg_id",
+          "second_light_quartet": "exact_index_msg_id"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_index_msg_id[exact_structural]+exact_index_msg_id[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -1734,21 +1996,27 @@
       },
       "jp": "え？",
       "en_original": "Huh?",
-      "en_auxiliary": null,
+      "en_auxiliary": "Huh?",
       "en": "Huh?",
       "alignment": {
         "status": "exact_index_msg_id",
         "initial_en_source": "official_en",
         "official_en_index": 42,
         "official_en_mapping": "exact_index_msg_id",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 42,
+        "auxiliary_mapping": "exact_index_msg_id+exact_index_msg_id",
         "target_indices": {
-          "second_light_original": 42
+          "second_light_original": 42,
+          "second_light_quartet": 42
         },
         "target_mapping": {
-          "second_light_original": "exact_index_msg_id"
-        }
+          "second_light_original": "exact_index_msg_id",
+          "second_light_quartet": "exact_index_msg_id"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_index_msg_id[exact_structural]+exact_index_msg_id[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -1774,21 +2042,27 @@
       },
       "jp": "カレーって、その家の味があるって言うし<CR>これが陽桜莉さんの味なんだよ",
       "en_original": "They say every family's curry tastes different. This curry is Hiori's flavor.",
-      "en_auxiliary": null,
+      "en_auxiliary": "They say every family's curry tastes different. This curry is Hiori's flavor.",
       "en": "They say every household has its own curry flavor,<CR>so this is your flavor, Hiori-san.",
       "alignment": {
         "status": "exact_index_msg_id",
         "initial_en_source": "official_en",
         "official_en_index": 43,
         "official_en_mapping": "exact_index_msg_id",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 43,
+        "auxiliary_mapping": "exact_index_msg_id+exact_index_msg_id",
         "target_indices": {
-          "second_light_original": 43
+          "second_light_original": 43,
+          "second_light_quartet": 43
         },
         "target_mapping": {
-          "second_light_original": "exact_index_msg_id"
-        }
+          "second_light_original": "exact_index_msg_id",
+          "second_light_quartet": "exact_index_msg_id"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_index_msg_id[exact_structural]+exact_index_msg_id[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -1814,21 +2088,27 @@
       },
       "jp": "私の味……",
       "en_original": "My flavor...",
-      "en_auxiliary": null,
+      "en_auxiliary": "My flavor...",
       "en": "My flavor...",
       "alignment": {
         "status": "exact_index_msg_id",
         "initial_en_source": "official_en",
         "official_en_index": 44,
         "official_en_mapping": "exact_index_msg_id",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 44,
+        "auxiliary_mapping": "exact_index_msg_id+exact_index_msg_id",
         "target_indices": {
-          "second_light_original": 44
+          "second_light_original": 44,
+          "second_light_quartet": 44
         },
         "target_mapping": {
-          "second_light_original": "exact_index_msg_id"
-        }
+          "second_light_original": "exact_index_msg_id",
+          "second_light_quartet": "exact_index_msg_id"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_index_msg_id[exact_structural]+exact_index_msg_id[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -1854,21 +2134,27 @@
       },
       "jp": "……ううん、違うよ",
       "en_original": "No it's not.",
-      "en_auxiliary": null,
+      "en_auxiliary": "No it's not.",
       "en": "No it's not.",
       "alignment": {
         "status": "exact_index_msg_id",
         "initial_en_source": "official_en",
         "official_en_index": 45,
         "official_en_mapping": "exact_index_msg_id",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 45,
+        "auxiliary_mapping": "exact_index_msg_id+exact_index_msg_id",
         "target_indices": {
-          "second_light_original": 45
+          "second_light_original": 45,
+          "second_light_quartet": 45
         },
         "target_mapping": {
-          "second_light_original": "exact_index_msg_id"
-        }
+          "second_light_original": "exact_index_msg_id",
+          "second_light_quartet": "exact_index_msg_id"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_index_msg_id[exact_structural]+exact_index_msg_id[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -1894,21 +2180,27 @@
       },
       "jp": "これは、私と愛央ちゃんの味！<CR>だって、ふたりで作ったんだもん",
       "en_original": "This is our flavor, Ao! We cooked it together, didn't we?",
-      "en_auxiliary": null,
+      "en_auxiliary": "This is our flavor, Ao! We cooked it together, didn't we?",
       "en": "This is the flavor of you and me, Ao-chan!<CR>We made it together, after all.",
       "alignment": {
         "status": "exact_index_msg_id",
         "initial_en_source": "official_en",
         "official_en_index": 46,
         "official_en_mapping": "exact_index_msg_id",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 46,
+        "auxiliary_mapping": "exact_index_msg_id+exact_index_msg_id",
         "target_indices": {
-          "second_light_original": 46
+          "second_light_original": 46,
+          "second_light_quartet": 46
         },
         "target_mapping": {
-          "second_light_original": "exact_index_msg_id"
-        }
+          "second_light_original": "exact_index_msg_id",
+          "second_light_quartet": "exact_index_msg_id"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_index_msg_id[exact_structural]+exact_index_msg_id[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -1934,21 +2226,27 @@
       },
       "jp": "あはは、たしかに！",
       "en_original": "Ahaha, that's true!",
-      "en_auxiliary": null,
+      "en_auxiliary": "Ahaha, that's true!",
       "en": "Ahaha, that's true!",
       "alignment": {
         "status": "exact_index_msg_id",
         "initial_en_source": "official_en",
         "official_en_index": 47,
         "official_en_mapping": "exact_index_msg_id",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 47,
+        "auxiliary_mapping": "exact_index_msg_id+exact_index_msg_id",
         "target_indices": {
-          "second_light_original": 47
+          "second_light_original": 47,
+          "second_light_quartet": 47
         },
         "target_mapping": {
-          "second_light_original": "exact_index_msg_id"
-        }
+          "second_light_original": "exact_index_msg_id",
+          "second_light_quartet": "exact_index_msg_id"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_index_msg_id[exact_structural]+exact_index_msg_id[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -1974,21 +2272,27 @@
       },
       "jp": "じゃあ、このカレーが食べたくなったら<CR>ふたりで一緒に作らないとだめだね",
       "en_original": "So next time I want curry, we'll have to make it together!",
-      "en_auxiliary": null,
+      "en_auxiliary": "So next time I want curry, we'll have to make it together!",
       "en": "So next time I want curry, we'll<CR>have to make it together!",
       "alignment": {
         "status": "exact_index_msg_id",
         "initial_en_source": "official_en",
         "official_en_index": 48,
         "official_en_mapping": "exact_index_msg_id",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 48,
+        "auxiliary_mapping": "exact_index_msg_id+exact_index_msg_id",
         "target_indices": {
-          "second_light_original": 48
+          "second_light_original": 48,
+          "second_light_quartet": 48
         },
         "target_mapping": {
-          "second_light_original": "exact_index_msg_id"
-        }
+          "second_light_original": "exact_index_msg_id",
+          "second_light_quartet": "exact_index_msg_id"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_index_msg_id[exact_structural]+exact_index_msg_id[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -2014,21 +2318,27 @@
       },
       "jp": "うん！　また一緒に作ろ！",
       "en_original": "Yeah! We should definitely make it again sometime!",
-      "en_auxiliary": null,
+      "en_auxiliary": "Yeah! We should definitely make it again sometime!",
       "en": "Yeah! We should definitely make it again sometime!",
       "alignment": {
         "status": "exact_index_msg_id",
         "initial_en_source": "official_en",
         "official_en_index": 49,
         "official_en_mapping": "exact_index_msg_id",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 49,
+        "auxiliary_mapping": "exact_index_msg_id+exact_index_msg_id",
         "target_indices": {
-          "second_light_original": 49
+          "second_light_original": 49,
+          "second_light_quartet": 49
         },
         "target_mapping": {
-          "second_light_original": "exact_index_msg_id"
-        }
+          "second_light_original": "exact_index_msg_id",
+          "second_light_quartet": "exact_index_msg_id"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_index_msg_id[exact_structural]+exact_index_msg_id[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -2054,21 +2364,27 @@
       },
       "jp": "さーてと、じゃあご飯を……あっ！",
       "en_original": "Okay, now let's get the rice, and... Aaah!",
-      "en_auxiliary": null,
+      "en_auxiliary": "Okay, now let's get the rice, and... Aaah!",
       "en": "Okay, now let's get the rice, and... Aaah!",
       "alignment": {
         "status": "exact_index_msg_id",
         "initial_en_source": "official_en",
         "official_en_index": 50,
         "official_en_mapping": "exact_index_msg_id",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 50,
+        "auxiliary_mapping": "exact_index_msg_id+exact_index_msg_id",
         "target_indices": {
-          "second_light_original": 50
+          "second_light_original": 50,
+          "second_light_quartet": 50
         },
         "target_mapping": {
-          "second_light_original": "exact_index_msg_id"
-        }
+          "second_light_original": "exact_index_msg_id",
+          "second_light_quartet": "exact_index_msg_id"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_index_msg_id[exact_structural]+exact_index_msg_id[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -2094,21 +2410,27 @@
       },
       "jp": "ご飯、炊くの忘れてた！",
       "en_original": "We forgot to make rice!",
-      "en_auxiliary": null,
+      "en_auxiliary": "We forgot to make rice!",
       "en": "We forgot to make rice!",
       "alignment": {
         "status": "exact_index_msg_id",
         "initial_en_source": "official_en",
         "official_en_index": 51,
         "official_en_mapping": "exact_index_msg_id",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 51,
+        "auxiliary_mapping": "exact_index_msg_id+exact_index_msg_id",
         "target_indices": {
-          "second_light_original": 51
+          "second_light_original": 51,
+          "second_light_quartet": 51
         },
         "target_mapping": {
-          "second_light_original": "exact_index_msg_id"
-        }
+          "second_light_original": "exact_index_msg_id",
+          "second_light_quartet": "exact_index_msg_id"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_index_msg_id[exact_structural]+exact_index_msg_id[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -2134,21 +2456,27 @@
       },
       "jp": "ああっ！？",
       "en_original": "Noooo!",
-      "en_auxiliary": null,
+      "en_auxiliary": "Noooo!",
       "en": "Noooo!",
       "alignment": {
         "status": "exact_index_msg_id",
         "initial_en_source": "official_en",
         "official_en_index": 52,
         "official_en_mapping": "exact_index_msg_id",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 52,
+        "auxiliary_mapping": "exact_index_msg_id+exact_index_msg_id",
         "target_indices": {
-          "second_light_original": 52
+          "second_light_original": 52,
+          "second_light_quartet": 52
         },
         "target_mapping": {
-          "second_light_original": "exact_index_msg_id"
-        }
+          "second_light_original": "exact_index_msg_id",
+          "second_light_quartet": "exact_index_msg_id"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_index_msg_id[exact_structural]+exact_index_msg_id[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -2174,21 +2502,27 @@
       },
       "jp": "ど、どうしよう……<CR>カレーなのに",
       "en_original": "Wh-what should we do...? We can't eat curry by itself...",
-      "en_auxiliary": null,
+      "en_auxiliary": "Wh-what should we do...? We can't eat curry by itself...",
       "en": "Wh-what should we do...? We can't<CR>eat curry by itself...",
       "alignment": {
         "status": "exact_index_msg_id",
         "initial_en_source": "official_en",
         "official_en_index": 53,
         "official_en_mapping": "exact_index_msg_id",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 53,
+        "auxiliary_mapping": "exact_index_msg_id+exact_index_msg_id",
         "target_indices": {
-          "second_light_original": 53
+          "second_light_original": 53,
+          "second_light_quartet": 53
         },
         "target_mapping": {
-          "second_light_original": "exact_index_msg_id"
-        }
+          "second_light_original": "exact_index_msg_id",
+          "second_light_quartet": "exact_index_msg_id"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_index_msg_id[exact_structural]+exact_index_msg_id[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -2214,21 +2548,27 @@
       },
       "jp": "ナンを作ろう！",
       "en_original": "Let's make naan!",
-      "en_auxiliary": null,
+      "en_auxiliary": "Let's make naan!",
       "en": "Let's make naan!",
       "alignment": {
         "status": "exact_index_msg_id",
         "initial_en_source": "official_en",
         "official_en_index": 54,
         "official_en_mapping": "exact_index_msg_id",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 54,
+        "auxiliary_mapping": "exact_index_msg_id+exact_index_msg_id",
         "target_indices": {
-          "second_light_original": 54
+          "second_light_original": 54,
+          "second_light_quartet": 54
         },
         "target_mapping": {
-          "second_light_original": "exact_index_msg_id"
-        }
+          "second_light_original": "exact_index_msg_id",
+          "second_light_quartet": "exact_index_msg_id"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_index_msg_id[exact_structural]+exact_index_msg_id[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -2254,21 +2594,27 @@
       },
       "jp": "はっ、その手が！<CR>でも、どうやって作れば……？",
       "en_original": "Ah, yes! But, how do we make it...?",
-      "en_auxiliary": null,
+      "en_auxiliary": "Ah, yes! But, how do we make it...?",
       "en": "Ah, yes! But,<CR>how do we make it...?",
       "alignment": {
         "status": "exact_index_msg_id",
         "initial_en_source": "official_en",
         "official_en_index": 55,
         "official_en_mapping": "exact_index_msg_id",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 55,
+        "auxiliary_mapping": "exact_index_msg_id+exact_index_msg_id",
         "target_indices": {
-          "second_light_original": 55
+          "second_light_original": 55,
+          "second_light_quartet": 55
         },
         "target_mapping": {
-          "second_light_original": "exact_index_msg_id"
-        }
+          "second_light_original": "exact_index_msg_id",
+          "second_light_quartet": "exact_index_msg_id"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_index_msg_id[exact_structural]+exact_index_msg_id[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -2294,21 +2640,27 @@
       },
       "jp": "とりあえず、小麦粉をこねて焼いてみよう",
       "en_original": "Let's just try kneading some flour and cooking it!",
-      "en_auxiliary": null,
+      "en_auxiliary": "Let's just try kneading some flour and cooking it!",
       "en": "Let's just try kneading some flour and cooking it!",
       "alignment": {
         "status": "exact_index_msg_id",
         "initial_en_source": "official_en",
         "official_en_index": 56,
         "official_en_mapping": "exact_index_msg_id",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 56,
+        "auxiliary_mapping": "exact_index_msg_id+exact_index_msg_id",
         "target_indices": {
-          "second_light_original": 56
+          "second_light_original": 56,
+          "second_light_quartet": 56
         },
         "target_mapping": {
-          "second_light_original": "exact_index_msg_id"
-        }
+          "second_light_original": "exact_index_msg_id",
+          "second_light_quartet": "exact_index_msg_id"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_index_msg_id[exact_structural]+exact_index_msg_id[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -2334,21 +2686,27 @@
       },
       "jp": "……これ、ナンっていうか板？",
       "en_original": "Mmm... This is like trying to eat a plank of wood.",
-      "en_auxiliary": null,
+      "en_auxiliary": "Mmm... This is like trying to eat a plank of wood.",
       "en": "...Is this naan, or more like a board?",
       "alignment": {
         "status": "exact_index_msg_id",
         "initial_en_source": "official_en",
         "official_en_index": 57,
         "official_en_mapping": "exact_index_msg_id",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 57,
+        "auxiliary_mapping": "exact_index_msg_id+exact_index_msg_id",
         "target_indices": {
-          "second_light_original": 57
+          "second_light_original": 57,
+          "second_light_quartet": 57
         },
         "target_mapping": {
-          "second_light_original": "exact_index_msg_id"
-        }
+          "second_light_original": "exact_index_msg_id",
+          "second_light_quartet": "exact_index_msg_id"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_index_msg_id[exact_structural]+exact_index_msg_id[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -2374,21 +2732,27 @@
       },
       "jp": "料理って、こんなに固いものも作れるんだ。<CR>なんか、すごいねぇ",
       "en_original": "I didn't know it was possible to cook something this hard. I'm kind of amazed.",
-      "en_auxiliary": null,
+      "en_auxiliary": "I didn't know it was possible to cook something this hard. I'm kind of amazed.",
       "en": "I didn't know it was possible to cook something this<CR>hard. I'm kind of amazed.",
       "alignment": {
         "status": "exact_index_msg_id",
         "initial_en_source": "official_en",
         "official_en_index": 58,
         "official_en_mapping": "exact_index_msg_id",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 58,
+        "auxiliary_mapping": "exact_index_msg_id+exact_index_msg_id",
         "target_indices": {
-          "second_light_original": 58
+          "second_light_original": 58,
+          "second_light_quartet": 58
         },
         "target_mapping": {
-          "second_light_original": "exact_index_msg_id"
-        }
+          "second_light_original": "exact_index_msg_id",
+          "second_light_quartet": "exact_index_msg_id"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_index_msg_id[exact_structural]+exact_index_msg_id[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -2414,21 +2778,27 @@
       },
       "jp": "うう、ごめん……折角、陽桜莉さんが<CR>カレー作ってくれたのに",
       "en_original": "Aww, I'm sorry... You worked so hard on the curry too...",
-      "en_auxiliary": null,
+      "en_auxiliary": "Aww, I'm sorry... You worked so hard on the curry too...",
       "en": "Ugh, sorry... You went to all the trouble<CR>of making curry, Hiori-san.",
       "alignment": {
         "status": "exact_index_msg_id",
         "initial_en_source": "official_en",
         "official_en_index": 59,
         "official_en_mapping": "exact_index_msg_id",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 59,
+        "auxiliary_mapping": "exact_index_msg_id+exact_index_msg_id",
         "target_indices": {
-          "second_light_original": 59
+          "second_light_original": 59,
+          "second_light_quartet": 59
         },
         "target_mapping": {
-          "second_light_original": "exact_index_msg_id"
-        }
+          "second_light_original": "exact_index_msg_id",
+          "second_light_quartet": "exact_index_msg_id"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_index_msg_id[exact_structural]+exact_index_msg_id[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -2454,21 +2824,27 @@
       },
       "jp": "あはは、あやまらなくていいよ",
       "en_original": "Ahaha, you don't need to apologize.",
-      "en_auxiliary": null,
+      "en_auxiliary": "Ahaha, you don't need to apologize.",
       "en": "Ahaha, you don't need to apologize.",
       "alignment": {
         "status": "exact_index_msg_id",
         "initial_en_source": "official_en",
         "official_en_index": 60,
         "official_en_mapping": "exact_index_msg_id",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 60,
+        "auxiliary_mapping": "exact_index_msg_id+exact_index_msg_id",
         "target_indices": {
-          "second_light_original": 60
+          "second_light_original": 60,
+          "second_light_quartet": 60
         },
         "target_mapping": {
-          "second_light_original": "exact_index_msg_id"
-        }
+          "second_light_original": "exact_index_msg_id",
+          "second_light_quartet": "exact_index_msg_id"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_index_msg_id[exact_structural]+exact_index_msg_id[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -2494,21 +2870,27 @@
       },
       "jp": "こうやって、愛央ちゃんと一緒に何かするの<CR>すっごく楽しいし！",
       "en_original": "I just like doing things with you, Ao!",
-      "en_auxiliary": null,
+      "en_auxiliary": "I just like doing things with you, Ao!",
       "en": "I just like doing things with<CR>you, Ao-chan!",
       "alignment": {
         "status": "exact_index_msg_id",
         "initial_en_source": "official_en",
         "official_en_index": 61,
         "official_en_mapping": "exact_index_msg_id",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 61,
+        "auxiliary_mapping": "exact_index_msg_id+exact_index_msg_id",
         "target_indices": {
-          "second_light_original": 61
+          "second_light_original": 61,
+          "second_light_quartet": 61
         },
         "target_mapping": {
-          "second_light_original": "exact_index_msg_id"
-        }
+          "second_light_original": "exact_index_msg_id",
+          "second_light_quartet": "exact_index_msg_id"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_index_msg_id[exact_structural]+exact_index_msg_id[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -2534,21 +2916,27 @@
       },
       "jp": "もういっかい、挑戦しよう。<CR>次は、きっとうまくいくから！",
       "en_original": "Let's give it one more try. I'm sure it'll turn out good this time!",
-      "en_auxiliary": null,
+      "en_auxiliary": "Let's give it one more try. I'm sure it'll turn out good this time!",
       "en": "Let's give it one more try. I'm<CR>sure it'll turn out good this time!",
       "alignment": {
         "status": "exact_index_msg_id",
         "initial_en_source": "official_en",
         "official_en_index": 62,
         "official_en_mapping": "exact_index_msg_id",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 62,
+        "auxiliary_mapping": "exact_index_msg_id+exact_index_msg_id",
         "target_indices": {
-          "second_light_original": 62
+          "second_light_original": 62,
+          "second_light_quartet": 62
         },
         "target_mapping": {
-          "second_light_original": "exact_index_msg_id"
-        }
+          "second_light_original": "exact_index_msg_id",
+          "second_light_quartet": "exact_index_msg_id"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_index_msg_id[exact_structural]+exact_index_msg_id[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -2574,21 +2962,27 @@
       },
       "jp": "よーし、やるぞー！",
       "en_original": "Okay, let's do it!",
-      "en_auxiliary": null,
+      "en_auxiliary": "Okay, let's do it!",
       "en": "Okay, let's do it!",
       "alignment": {
         "status": "exact_index_msg_id",
         "initial_en_source": "official_en",
         "official_en_index": 63,
         "official_en_mapping": "exact_index_msg_id",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 63,
+        "auxiliary_mapping": "exact_index_msg_id+exact_index_msg_id",
         "target_indices": {
-          "second_light_original": 63
+          "second_light_original": 63,
+          "second_light_quartet": 63
         },
         "target_mapping": {
-          "second_light_original": "exact_index_msg_id"
-        }
+          "second_light_original": "exact_index_msg_id",
+          "second_light_quartet": "exact_index_msg_id"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_index_msg_id[exact_structural]+exact_index_msg_id[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -2614,21 +3008,27 @@
       },
       "jp": "炊きあがるまで、待つしかないね",
       "en_original": "I guess we'll just have to wait for the rice to cook.",
-      "en_auxiliary": null,
+      "en_auxiliary": "I guess we'll just have to wait for the rice to cook.",
       "en": "I guess we'll just have to wait for the rice to cook.",
       "alignment": {
         "status": "exact_index_msg_id",
         "initial_en_source": "official_en",
         "official_en_index": 64,
         "official_en_mapping": "exact_index_msg_id",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 64,
+        "auxiliary_mapping": "exact_index_msg_id+exact_index_msg_id",
         "target_indices": {
-          "second_light_original": 64
+          "second_light_original": 64,
+          "second_light_quartet": 64
         },
         "target_mapping": {
-          "second_light_original": "exact_index_msg_id"
-        }
+          "second_light_original": "exact_index_msg_id",
+          "second_light_quartet": "exact_index_msg_id"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_index_msg_id[exact_structural]+exact_index_msg_id[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -2654,21 +3054,27 @@
       },
       "jp": "どれぐらいかかるんだろ？",
       "en_original": "How long will it take?",
-      "en_auxiliary": null,
+      "en_auxiliary": "How long will it take?",
       "en": "How long will it take?",
       "alignment": {
         "status": "exact_index_msg_id",
         "initial_en_source": "official_en",
         "official_en_index": 65,
         "official_en_mapping": "exact_index_msg_id",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 65,
+        "auxiliary_mapping": "exact_index_msg_id+exact_index_msg_id",
         "target_indices": {
-          "second_light_original": 65
+          "second_light_original": 65,
+          "second_light_quartet": 65
         },
         "target_mapping": {
-          "second_light_original": "exact_index_msg_id"
-        }
+          "second_light_original": "exact_index_msg_id",
+          "second_light_quartet": "exact_index_msg_id"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_index_msg_id[exact_structural]+exact_index_msg_id[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -2694,21 +3100,27 @@
       },
       "jp": "えっと……５０分ぐらいかな？",
       "en_original": "Um... About 50 minutes?",
-      "en_auxiliary": null,
+      "en_auxiliary": "Um... About 50 minutes?",
       "en": "Um... About 50 minutes?",
       "alignment": {
         "status": "exact_index_msg_id",
         "initial_en_source": "official_en",
         "official_en_index": 66,
         "official_en_mapping": "exact_index_msg_id",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 66,
+        "auxiliary_mapping": "exact_index_msg_id+exact_index_msg_id",
         "target_indices": {
-          "second_light_original": 66
+          "second_light_original": 66,
+          "second_light_quartet": 66
         },
         "target_mapping": {
-          "second_light_original": "exact_index_msg_id"
-        }
+          "second_light_original": "exact_index_msg_id",
+          "second_light_quartet": "exact_index_msg_id"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_index_msg_id[exact_structural]+exact_index_msg_id[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -2734,21 +3146,27 @@
       },
       "jp": "うわ、結構あるね。<CR>どうしよ、カレーだけで食べちゃう？",
       "en_original": "Wow, that's longer than I thought. What should we do? Just eat the curry like this?",
-      "en_auxiliary": null,
+      "en_auxiliary": "Wow, that's longer than I thought. What should we do? Just eat the curry like this?",
       "en": "Wow, that's longer than I thought.<CR>What should we do? Just eat the curry like this?",
       "alignment": {
         "status": "exact_index_msg_id",
         "initial_en_source": "official_en",
         "official_en_index": 67,
         "official_en_mapping": "exact_index_msg_id",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 67,
+        "auxiliary_mapping": "exact_index_msg_id+exact_index_msg_id",
         "target_indices": {
-          "second_light_original": 67
+          "second_light_original": 67,
+          "second_light_quartet": 67
         },
         "target_mapping": {
-          "second_light_original": "exact_index_msg_id"
-        }
+          "second_light_original": "exact_index_msg_id",
+          "second_light_quartet": "exact_index_msg_id"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_index_msg_id[exact_structural]+exact_index_msg_id[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -2774,21 +3192,27 @@
       },
       "jp": "大丈夫。ふたりで、おしゃべりしてたら<CR>５０分なんてあっという間だよ",
       "en_original": "It's okay. We can just sit here and chat. The 50 minutes will go by before we know it.",
-      "en_auxiliary": null,
+      "en_auxiliary": "It's okay. We can just sit here and chat. The 50 minutes will go by before we know it.",
       "en": "It's okay. We can just sit here and chat. The 50<CR>minutes will go by before we know it.",
       "alignment": {
         "status": "exact_index_msg_id",
         "initial_en_source": "official_en",
         "official_en_index": 68,
         "official_en_mapping": "exact_index_msg_id",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 68,
+        "auxiliary_mapping": "exact_index_msg_id+exact_index_msg_id",
         "target_indices": {
-          "second_light_original": 68
+          "second_light_original": 68,
+          "second_light_quartet": 68
         },
         "target_mapping": {
-          "second_light_original": "exact_index_msg_id"
-        }
+          "second_light_original": "exact_index_msg_id",
+          "second_light_quartet": "exact_index_msg_id"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_index_msg_id[exact_structural]+exact_index_msg_id[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -2814,21 +3238,27 @@
       },
       "jp": "え……",
       "en_original": "Uh...",
-      "en_auxiliary": null,
+      "en_auxiliary": "Uh...",
       "en": "Uh...",
       "alignment": {
         "status": "exact_index_msg_id",
         "initial_en_source": "official_en",
         "official_en_index": 69,
         "official_en_mapping": "exact_index_msg_id",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 69,
+        "auxiliary_mapping": "exact_index_msg_id+exact_index_msg_id",
         "target_indices": {
-          "second_light_original": 69
+          "second_light_original": 69,
+          "second_light_quartet": 69
         },
         "target_mapping": {
-          "second_light_original": "exact_index_msg_id"
-        }
+          "second_light_original": "exact_index_msg_id",
+          "second_light_quartet": "exact_index_msg_id"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_index_msg_id[exact_structural]+exact_index_msg_id[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -2854,21 +3284,27 @@
       },
       "jp": "愛央ちゃんと、一緒にいるといつもそうなんだ。<CR>気が付くと一日が終わってる感じ",
       "en_original": "That's what always happens when I'm with you, Ao. I feel like the whole day just flies by.",
-      "en_auxiliary": null,
+      "en_auxiliary": "That's what always happens when I'm with you, Ao. I feel like the whole day just flies by.",
       "en": "That's what always happens when I'm with you, Ao-chan.<CR>I feel like the whole day just flies by.",
       "alignment": {
         "status": "exact_index_msg_id",
         "initial_en_source": "official_en",
         "official_en_index": 70,
         "official_en_mapping": "exact_index_msg_id",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 70,
+        "auxiliary_mapping": "exact_index_msg_id+exact_index_msg_id",
         "target_indices": {
-          "second_light_original": 70
+          "second_light_original": 70,
+          "second_light_quartet": 70
         },
         "target_mapping": {
-          "second_light_original": "exact_index_msg_id"
-        }
+          "second_light_original": "exact_index_msg_id",
+          "second_light_quartet": "exact_index_msg_id"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_index_msg_id[exact_structural]+exact_index_msg_id[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -2894,21 +3330,27 @@
       },
       "jp": "あまりにも時間が早く過ぎるから、<CR>止まって～って、思っちゃう",
       "en_original": "Time goes so fast that I feel like yelling at it and telling it to stop.",
-      "en_auxiliary": null,
+      "en_auxiliary": "Time goes so fast that I feel like yelling at it and telling it to stop.",
       "en": "Time goes so fast that I feel like yelling<CR>at it and telling it to stop.",
       "alignment": {
         "status": "exact_index_msg_id",
         "initial_en_source": "official_en",
         "official_en_index": 71,
         "official_en_mapping": "exact_index_msg_id",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 71,
+        "auxiliary_mapping": "exact_index_msg_id+exact_index_msg_id",
         "target_indices": {
-          "second_light_original": 71
+          "second_light_original": 71,
+          "second_light_quartet": 71
         },
         "target_mapping": {
-          "second_light_original": "exact_index_msg_id"
-        }
+          "second_light_original": "exact_index_msg_id",
+          "second_light_quartet": "exact_index_msg_id"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_index_msg_id[exact_structural]+exact_index_msg_id[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -2934,21 +3376,27 @@
       },
       "jp": "私も！　同じ！<CR>もっと陽桜莉さんと、一緒にいたい！",
       "en_original": "Me too! I feel the same way! I just want to be with you, Hiori!",
-      "en_auxiliary": null,
+      "en_auxiliary": "Me too! I feel the same way! I just want to be with you, Hiori!",
       "en": "Me too! I feel the<CR>same way! I just want to be with you, Hiori-san!",
       "alignment": {
         "status": "exact_index_msg_id",
         "initial_en_source": "official_en",
         "official_en_index": 72,
         "official_en_mapping": "exact_index_msg_id",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 72,
+        "auxiliary_mapping": "exact_index_msg_id+exact_index_msg_id",
         "target_indices": {
-          "second_light_original": 72
+          "second_light_original": 72,
+          "second_light_quartet": 72
         },
         "target_mapping": {
-          "second_light_original": "exact_index_msg_id"
-        }
+          "second_light_original": "exact_index_msg_id",
+          "second_light_quartet": "exact_index_msg_id"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_index_msg_id[exact_structural]+exact_index_msg_id[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -2974,21 +3422,27 @@
       },
       "jp": "……！",
       "en_original": "...!",
-      "en_auxiliary": null,
+      "en_auxiliary": "...!",
       "en": "...!",
       "alignment": {
         "status": "exact_index_msg_id",
         "initial_en_source": "official_en",
         "official_en_index": 73,
         "official_en_mapping": "exact_index_msg_id",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 73,
+        "auxiliary_mapping": "exact_index_msg_id+exact_index_msg_id",
         "target_indices": {
-          "second_light_original": 73
+          "second_light_original": 73,
+          "second_light_quartet": 73
         },
         "target_mapping": {
-          "second_light_original": "exact_index_msg_id"
-        }
+          "second_light_original": "exact_index_msg_id",
+          "second_light_quartet": "exact_index_msg_id"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_index_msg_id[exact_structural]+exact_index_msg_id[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -3014,21 +3468,27 @@
       },
       "jp": "あ、今のはえっと……<CR>もっと色んなこと話したいなーって意味で……",
       "en_original": "Uh—I mean... I want to...spend more time talking with you...",
-      "en_auxiliary": null,
+      "en_auxiliary": "Uh—I mean... I want to...spend more time talking with you...",
       "en": "Uh—I mean... I want<CR>to...spend more time talking with you...",
       "alignment": {
         "status": "exact_index_msg_id",
         "initial_en_source": "official_en",
         "official_en_index": 74,
         "official_en_mapping": "exact_index_msg_id",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 74,
+        "auxiliary_mapping": "exact_index_msg_id+exact_index_msg_id",
         "target_indices": {
-          "second_light_original": 74
+          "second_light_original": 74,
+          "second_light_quartet": 74
         },
         "target_mapping": {
-          "second_light_original": "exact_index_msg_id"
-        }
+          "second_light_original": "exact_index_msg_id",
+          "second_light_quartet": "exact_index_msg_id"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_index_msg_id[exact_structural]+exact_index_msg_id[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -3054,21 +3514,27 @@
       },
       "jp": "う、うん！　分かってる、分かってる！",
       "en_original": "Y-yeah! I know, I know!",
-      "en_auxiliary": null,
+      "en_auxiliary": "Y-yeah! I know, I know!",
       "en": "Y-yeah! I know, I know!",
       "alignment": {
         "status": "exact_index_msg_id",
         "initial_en_source": "official_en",
         "official_en_index": 75,
         "official_en_mapping": "exact_index_msg_id",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 75,
+        "auxiliary_mapping": "exact_index_msg_id+exact_index_msg_id",
         "target_indices": {
-          "second_light_original": 75
+          "second_light_original": 75,
+          "second_light_quartet": 75
         },
         "target_mapping": {
-          "second_light_original": "exact_index_msg_id"
-        }
+          "second_light_original": "exact_index_msg_id",
+          "second_light_quartet": "exact_index_msg_id"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_index_msg_id[exact_structural]+exact_index_msg_id[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -3094,21 +3560,27 @@
       },
       "jp": "今のは……<CR>そう言う意味じゃないよね……",
       "en_original": "I know you didn't mean it...THAT way...",
-      "en_auxiliary": null,
+      "en_auxiliary": "I know you didn't mean it...THAT way...",
       "en": "I know you<CR>didn't mean it...THAT way...",
       "alignment": {
         "status": "exact_index_msg_id",
         "initial_en_source": "official_en",
         "official_en_index": 76,
         "official_en_mapping": "exact_index_msg_id",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 76,
+        "auxiliary_mapping": "exact_index_msg_id+exact_index_msg_id",
         "target_indices": {
-          "second_light_original": 76
+          "second_light_original": 76,
+          "second_light_quartet": 76
         },
         "target_mapping": {
-          "second_light_original": "exact_index_msg_id"
-        }
+          "second_light_original": "exact_index_msg_id",
+          "second_light_quartet": "exact_index_msg_id"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_index_msg_id[exact_structural]+exact_index_msg_id[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -3134,21 +3606,27 @@
       },
       "jp": "ん？　何？",
       "en_original": "Huh? What way?",
-      "en_auxiliary": null,
+      "en_auxiliary": "Huh? What way?",
       "en": "Huh? What way?",
       "alignment": {
         "status": "exact_index_msg_id",
         "initial_en_source": "official_en",
         "official_en_index": 77,
         "official_en_mapping": "exact_index_msg_id",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 77,
+        "auxiliary_mapping": "exact_index_msg_id+exact_index_msg_id",
         "target_indices": {
-          "second_light_original": 77
+          "second_light_original": 77,
+          "second_light_quartet": 77
         },
         "target_mapping": {
-          "second_light_original": "exact_index_msg_id"
-        }
+          "second_light_original": "exact_index_msg_id",
+          "second_light_quartet": "exact_index_msg_id"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_index_msg_id[exact_structural]+exact_index_msg_id[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -3174,21 +3652,27 @@
       },
       "jp": "ううん！　なんでもなーい！",
       "en_original": "Nothing! Don't worry about it!",
-      "en_auxiliary": null,
+      "en_auxiliary": "Nothing! Don't worry about it!",
       "en": "Nothing! Don't worry about it!",
       "alignment": {
         "status": "exact_index_msg_id",
         "initial_en_source": "official_en",
         "official_en_index": 78,
         "official_en_mapping": "exact_index_msg_id",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 78,
+        "auxiliary_mapping": "exact_index_msg_id+exact_index_msg_id",
         "target_indices": {
-          "second_light_original": 78
+          "second_light_original": 78,
+          "second_light_quartet": 78
         },
         "target_mapping": {
-          "second_light_original": "exact_index_msg_id"
-        }
+          "second_light_original": "exact_index_msg_id",
+          "second_light_quartet": "exact_index_msg_id"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_index_msg_id[exact_structural]+exact_index_msg_id[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -3214,21 +3698,27 @@
       },
       "jp": "フラグメント「<CLGR>%s<CLNR>」を<CR>手に入れました",
       "en_original": "Obtained <CLGR>%s<CLNR> Fragment.",
-      "en_auxiliary": null,
+      "en_auxiliary": "Obtained <CLGR>%s<CLNR> Fragment.",
       "en": "Obtained <CLGR>%s<CLNR><CR>Fragment.",
       "alignment": {
         "status": "exact_index_msg_id",
         "initial_en_source": "official_en",
         "official_en_index": 79,
         "official_en_mapping": "exact_index_msg_id",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 79,
+        "auxiliary_mapping": "exact_index_msg_id+exact_index_msg_id",
         "target_indices": {
-          "second_light_original": 79
+          "second_light_original": 79,
+          "second_light_quartet": 79
         },
         "target_mapping": {
-          "second_light_original": "exact_index_msg_id"
-        }
+          "second_light_original": "exact_index_msg_id",
+          "second_light_quartet": "exact_index_msg_id"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_index_msg_id[exact_structural]+exact_index_msg_id[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     }
   ]

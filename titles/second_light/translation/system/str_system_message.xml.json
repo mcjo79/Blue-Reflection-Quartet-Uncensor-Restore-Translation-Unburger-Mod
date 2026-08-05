@@ -1,7 +1,7 @@
 {
   "type": "br_system_translation_unit",
   "format_version": 1,
-  "tool_version": "translation-0.0.11",
+  "tool_version": "translation-0.0.15",
   "project": "second_light",
   "category": "system",
   "source_role": "canonical",
@@ -12,8 +12,8 @@
     "jp_encoding": "utf-8",
     "official_en_path": "titles/second_light/workspace/original/archives/PACK02/saves/text_en/str_system_message.xml",
     "official_en_sha256": "32930044e29d216d4347d79d9533675247ae497a39b21fc89583f08ee23ea4fb",
-    "auxiliary_jp_path": null,
-    "auxiliary_en_path": null
+    "auxiliary_jp_path": "titles/second_light/workspace/quartet/archives/PACK02_03/saves/b4/text_jp/str_system_message.xml",
+    "auxiliary_en_path": "titles/second_light/workspace/quartet/archives/PACK02_03/saves/b4/text_en/str_system_message.xml"
   },
   "targets": {
     "second_light_original": {
@@ -21,6 +21,17 @@
       "template_path": "titles/second_light/workspace/original/archives/PACK02/saves/text_en/str_system_message.xml",
       "template_sha256": "32930044e29d216d4347d79d9533675247ae497a39b21fc89583f08ee23ea4fb",
       "row_count": 64,
+      "encoding": "utf-8",
+      "mapping_status_counts": {
+        "exact_string_no": 64
+      },
+      "complete_mapping": true
+    },
+    "second_light_quartet": {
+      "template_language": "en",
+      "template_path": "titles/second_light/workspace/quartet/archives/PACK02_03/saves/b4/text_en/str_system_message.xml",
+      "template_sha256": "b197b7dd8bdb396cc8d27fa24be61f13ee1195e6a606bfa1ebada2a9be47f7ed",
+      "row_count": 76,
       "encoding": "utf-8",
       "mapping_status_counts": {
         "exact_string_no": 64
@@ -40,21 +51,27 @@
       },
       "jp": "ロードしたセーブデータに必要なＤＬＣがインストールされていないため、ロードはキャンセルされました",
       "en_original": "The DLC content required to load save data has not been installed. Loading canceled.",
-      "en_auxiliary": null,
+      "en_auxiliary": "The add-on content required to load save data has not been installed. Loading canceled.",
       "en": "The DLC content required to load save data has not been installed. Loading canceled.",
       "alignment": {
         "status": "exact_string_no",
         "initial_en_source": "official_en",
         "official_en_index": 0,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 0,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 0
+          "second_light_original": 0,
+          "second_light_quartet": 0
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -68,21 +85,27 @@
       },
       "jp": "ロードしたセーブデータが改ざんされていた^00ため、ロードはキャンセルされました",
       "en_original": "The loaded save data has been tampered with. The load has been canceled.",
-      "en_auxiliary": null,
+      "en_auxiliary": "The loaded save data has been tampered with. The load has been canceled.",
       "en": "The loaded save data has been tampered with. The load has been canceled.",
       "alignment": {
         "status": "exact_string_no",
         "initial_en_source": "official_en",
         "official_en_index": 1,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 1,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 1
+          "second_light_original": 1,
+          "second_light_quartet": 1
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -96,21 +119,27 @@
       },
       "jp": "データのダウンロードが完了していません。^00ロードを中止します",
       "en_original": "Data has not finished downloading. Canceling load.",
-      "en_auxiliary": null,
+      "en_auxiliary": "Data has not finished downloading. Canceling load.",
       "en": "Data has not finished downloading. Canceling load.",
       "alignment": {
         "status": "exact_string_no",
         "initial_en_source": "official_en",
         "official_en_index": 2,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 2,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 2
+          "second_light_original": 2,
+          "second_light_quartet": 2
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -124,21 +153,27 @@
       },
       "jp": "ネットワークへのセーブを開始します。^00よろしいですか？",
       "en_original": "Commencing save to the network. Proceed?",
-      "en_auxiliary": null,
+      "en_auxiliary": "Commencing save to the network. Proceed?",
       "en": "Commencing save to the network. Proceed?",
       "alignment": {
         "status": "exact_string_no",
         "initial_en_source": "official_en",
         "official_en_index": 3,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 3,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 3
+          "second_light_original": 3,
+          "second_light_quartet": 3
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -152,21 +187,27 @@
       },
       "jp": "ネットワークからのロードを開始します。^00よろしいですか？",
       "en_original": "Commencing load from the network. Proceed?",
-      "en_auxiliary": null,
+      "en_auxiliary": "Commencing load from the network. Proceed?",
       "en": "Commencing load from the network. Proceed?",
       "alignment": {
         "status": "exact_string_no",
         "initial_en_source": "official_en",
         "official_en_index": 4,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 4,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 4
+          "second_light_original": 4,
+          "second_light_quartet": 4
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -180,21 +221,27 @@
       },
       "jp": "渡せるアイテムを所持していません。",
       "en_original": "You do not have any items which can be given.",
-      "en_auxiliary": null,
+      "en_auxiliary": "You do not have any items which can be given.",
       "en": "You do not have any items which can be given.",
       "alignment": {
         "status": "exact_string_no",
         "initial_en_source": "official_en",
         "official_en_index": 5,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 5,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 5
+          "second_light_original": 5,
+          "second_light_quartet": 5
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -208,21 +255,27 @@
       },
       "jp": "使用可能なアイテムを所持していません。",
       "en_original": "You do not have any items which can be used.",
-      "en_auxiliary": null,
+      "en_auxiliary": "You do not have any items which can be used.",
       "en": "You do not have any items which can be used.",
       "alignment": {
         "status": "exact_string_no",
         "initial_en_source": "official_en",
         "official_en_index": 6,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 6,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 6
+          "second_light_original": 6,
+          "second_light_quartet": 6
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -236,21 +289,27 @@
       },
       "jp": "タイトルに戻ります。よろしいですか？",
       "en_original": "Returning to the title screen. Proceed?",
-      "en_auxiliary": null,
+      "en_auxiliary": "Returning to the title screen. ^00<CLRE>All unsaved data will be lost.<CLNR> Do you want to proceed?",
       "en": "Returning to the title screen. Proceed?",
       "alignment": {
         "status": "exact_string_no",
         "initial_en_source": "official_en",
         "official_en_index": 7,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 7,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 7
+          "second_light_original": 7,
+          "second_light_quartet": 7
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "changed"
       }
     },
     {
@@ -264,21 +323,27 @@
       },
       "jp": "ここでは使えません。",
       "en_original": "Cannot be used here.",
-      "en_auxiliary": null,
+      "en_auxiliary": "Cannot be used here.",
       "en": "Cannot be used here.",
       "alignment": {
         "status": "exact_string_no",
         "initial_en_source": "official_en",
         "official_en_index": 8,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 8,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 8
+          "second_light_original": 8,
+          "second_light_quartet": 8
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -292,21 +357,27 @@
       },
       "jp": "スキップしてもよろしいですか？",
       "en_original": "Are you sure you want to skip?",
-      "en_auxiliary": null,
+      "en_auxiliary": "Are you sure you want to skip?",
       "en": "Are you sure you want to skip?",
       "alignment": {
         "status": "exact_string_no",
         "initial_en_source": "official_en",
         "official_en_index": 9,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 9,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 9
+          "second_light_original": 9,
+          "second_light_quartet": 9
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -320,21 +391,27 @@
       },
       "jp": "このセーブデータを削除しますか？^00（削除したデータを元に戻すことはできません）",
       "en_original": "Delete save data? (Deleted data cannot be recovered.)",
-      "en_auxiliary": null,
+      "en_auxiliary": "Delete saved data? (Deleted data cannot be recovered.)",
       "en": "Delete save data? (Deleted data cannot be recovered.)",
       "alignment": {
         "status": "exact_string_no",
         "initial_en_source": "official_en",
         "official_en_index": 10,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 10,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 10
+          "second_light_original": 10,
+          "second_light_quartet": 10
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -348,21 +425,27 @@
       },
       "jp": "このセーブデータを上書きしますか？",
       "en_original": "Do you wish to overwrite this save data?",
-      "en_auxiliary": null,
+      "en_auxiliary": "Do you wish to overwrite this saved data?",
       "en": "Do you wish to overwrite this save data?",
       "alignment": {
         "status": "exact_string_no",
         "initial_en_source": "official_en",
         "official_en_index": 11,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 11,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 11
+          "second_light_original": 11,
+          "second_light_quartet": 11
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -376,21 +459,27 @@
       },
       "jp": "しばらくお待ちください…",
       "en_original": "Please wait...",
-      "en_auxiliary": null,
+      "en_auxiliary": "Please wait...",
       "en": "Please wait...",
       "alignment": {
         "status": "exact_string_no",
         "initial_en_source": "official_en",
         "official_en_index": 12,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 12,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 12
+          "second_light_original": 12,
+          "second_light_quartet": 12
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -404,21 +493,27 @@
       },
       "jp": "セーブ中…",
       "en_original": "Saving...",
-      "en_auxiliary": null,
+      "en_auxiliary": "Saving...",
       "en": "Saving...",
       "alignment": {
         "status": "exact_string_no",
         "initial_en_source": "official_en",
         "official_en_index": 13,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 13,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 13
+          "second_light_original": 13,
+          "second_light_quartet": 13
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -432,21 +527,27 @@
       },
       "jp": "ロード中…",
       "en_original": "Loading...",
-      "en_auxiliary": null,
+      "en_auxiliary": "Loading...",
       "en": "Loading...",
       "alignment": {
         "status": "exact_string_no",
         "initial_en_source": "official_en",
         "official_en_index": 14,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 14,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 14
+          "second_light_original": 14,
+          "second_light_quartet": 14
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -460,21 +561,27 @@
       },
       "jp": "システムデータを作成中…",
       "en_original": "Creating system data...",
-      "en_auxiliary": null,
+      "en_auxiliary": "Creating system data...",
       "en": "Creating system data...",
       "alignment": {
         "status": "exact_string_no",
         "initial_en_source": "official_en",
         "official_en_index": 15,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 15,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 15
+          "second_light_original": 15,
+          "second_light_quartet": 15
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -488,21 +595,27 @@
       },
       "jp": "削除中…",
       "en_original": "Deleting...",
-      "en_auxiliary": null,
+      "en_auxiliary": "Deleting...",
       "en": "Deleting...",
       "alignment": {
         "status": "exact_string_no",
         "initial_en_source": "official_en",
         "official_en_index": 16,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 16,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 16
+          "second_light_original": 16,
+          "second_light_quartet": 16
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -516,21 +629,27 @@
       },
       "jp": "セーブデータ作成時のバージョンよりも^00アプリケーションのバージョンが古い状態です。アプリケーションを最新にしてください",
       "en_original": "The application version is older than that used for the creation of the save data. Please update the application.",
-      "en_auxiliary": null,
+      "en_auxiliary": "The application version is older than that used for the creation of the save data. Please update the application.",
       "en": "The application version is older than that used for the creation of the save data. Please update the application.",
       "alignment": {
         "status": "exact_string_no",
         "initial_en_source": "official_en",
         "official_en_index": 17,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 17,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 17
+          "second_light_original": 17,
+          "second_light_quartet": 17
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "changed"
       }
     },
     {
@@ -544,21 +663,27 @@
       },
       "jp": "これじゃ何も採れそうにないなあ",
       "en_original": "I don't think I can gather anything here...",
-      "en_auxiliary": null,
+      "en_auxiliary": "I don't think I can gather anything here...",
       "en": "I don't think I can gather anything here...",
       "alignment": {
         "status": "exact_string_no",
         "initial_en_source": "official_en",
         "official_en_index": 18,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 18,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 18
+          "second_light_original": 18,
+          "second_light_quartet": 18
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -572,21 +697,27 @@
       },
       "jp": "もう持てないな……",
       "en_original": "I can't carry anymore...",
-      "en_auxiliary": null,
+      "en_auxiliary": "I can't carry anymore...",
       "en": "I can't carry anymore...",
       "alignment": {
         "status": "exact_string_no",
         "initial_en_source": "official_en",
         "official_en_index": 19,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 19,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 19
+          "second_light_original": 19,
+          "second_light_quartet": 19
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -600,21 +731,27 @@
       },
       "jp": "どれくらい休もうかな……",
       "en_original": "How long should I rest?",
-      "en_auxiliary": null,
+      "en_auxiliary": "How long should I rest?",
       "en": "How long should I rest?",
       "alignment": {
         "status": "exact_string_no",
         "initial_en_source": "official_en",
         "official_en_index": 20,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 20,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 20
+          "second_light_original": 20,
+          "second_light_quartet": 20
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -628,21 +765,27 @@
       },
       "jp": "やっぱやめとこっと",
       "en_original": "I changed my mind.",
-      "en_auxiliary": null,
+      "en_auxiliary": "I changed my mind.",
       "en": "I changed my mind.",
       "alignment": {
         "status": "exact_string_no",
         "initial_en_source": "official_en",
         "official_en_index": 21,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 21,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 21
+          "second_light_original": 21,
+          "second_light_quartet": 21
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -656,21 +799,27 @@
       },
       "jp": "いや、頑張らなくっちゃ！",
       "en_original": "No, I have to keep going!",
-      "en_auxiliary": null,
+      "en_auxiliary": "No, I have to keep going!",
       "en": "No, I have to keep going!",
       "alignment": {
         "status": "exact_string_no",
         "initial_en_source": "official_en",
         "official_en_index": 22,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 22,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 22
+          "second_light_original": 22,
+          "second_light_quartet": 22
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -684,21 +833,27 @@
       },
       "jp": "材料が足りません",
       "en_original": "Not enough materials.",
-      "en_auxiliary": null,
+      "en_auxiliary": "Not enough materials.",
       "en": "Not enough materials.",
       "alignment": {
         "status": "exact_string_no",
         "initial_en_source": "official_en",
         "official_en_index": 23,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 23,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 23
+          "second_light_original": 23,
+          "second_light_quartet": 23
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -712,21 +867,27 @@
       },
       "jp": "アイテムを選択",
       "en_original": "Select Items",
-      "en_auxiliary": null,
+      "en_auxiliary": "Select Items",
       "en": "Select Items",
       "alignment": {
         "status": "exact_string_no",
         "initial_en_source": "official_en",
         "official_en_index": 24,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 24,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 24
+          "second_light_original": 24,
+          "second_light_quartet": 24
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -740,21 +901,27 @@
       },
       "jp": "以下のアイテムを消費して封鎖を解除できます",
       "en_original": "You can remove the obstacle by using the following items:",
-      "en_auxiliary": null,
+      "en_auxiliary": "You can remove the obstacle by using the following items:",
       "en": "You can remove the obstacle by using the following items:",
       "alignment": {
         "status": "exact_string_no",
         "initial_en_source": "official_en",
         "official_en_index": 25,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 25,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 25
+          "second_light_original": 25,
+          "second_light_quartet": 25
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -768,21 +935,27 @@
       },
       "jp": "選択したアイテムを消費して封鎖を解除しますか？",
       "en_original": "Use these items to remove the obstacle?",
-      "en_auxiliary": null,
+      "en_auxiliary": "Use these items to remove the obstacle?",
       "en": "Use these items to remove the obstacle?",
       "alignment": {
         "status": "exact_string_no",
         "initial_en_source": "official_en",
         "official_en_index": 26,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 26,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 26
+          "second_light_original": 26,
+          "second_light_quartet": 26
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -796,21 +969,27 @@
       },
       "jp": "新たなエリアが解放されました",
       "en_original": "A new area has been unlocked.",
-      "en_auxiliary": null,
+      "en_auxiliary": "A new area has been unlocked.",
       "en": "A new area has been unlocked.",
       "alignment": {
         "status": "exact_string_no",
         "initial_en_source": "official_en",
         "official_en_index": 27,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 27,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 27
+          "second_light_original": 27,
+          "second_light_quartet": 27
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -824,21 +1003,27 @@
       },
       "jp": "%s ： %d/%d",
       "en_original": "%s: %d/%d",
-      "en_auxiliary": null,
+      "en_auxiliary": "%s: %d/%d",
       "en": "%s: %d/%d",
       "alignment": {
         "status": "exact_string_no",
         "initial_en_source": "official_en",
         "official_en_index": 28,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 28,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 28
+          "second_light_original": 28,
+          "second_light_quartet": 28
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -852,21 +1037,27 @@
       },
       "jp": "以下のアイテムを消費してステージを変化させます",
       "en_original": "You can change the stage by using the following items:",
-      "en_auxiliary": null,
+      "en_auxiliary": "You can change the stage by using the following items:",
       "en": "You can change the stage by using the following items:",
       "alignment": {
         "status": "exact_string_no",
         "initial_en_source": "official_en",
         "official_en_index": 29,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 29,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 29
+          "second_light_original": 29,
+          "second_light_quartet": 29
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -880,21 +1071,27 @@
       },
       "jp": "採取ポイント増加",
       "en_original": "Increase Collection Points ",
-      "en_auxiliary": null,
+      "en_auxiliary": "Increase Collection Points ",
       "en": "Increase Collection Points ",
       "alignment": {
         "status": "exact_string_no",
         "initial_en_source": "official_en",
         "official_en_index": 30,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 30,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 30
+          "second_light_original": 30,
+          "second_light_quartet": 30
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -908,21 +1105,27 @@
       },
       "jp": "敵索敵範囲縮小",
       "en_original": "Reduce Enemy Aggro Range ",
-      "en_auxiliary": null,
+      "en_auxiliary": "Reduce Enemy Aggro Range ",
       "en": "Reduce Enemy Aggro Range ",
       "alignment": {
         "status": "exact_string_no",
         "initial_en_source": "official_en",
         "official_en_index": 31,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 31,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 31
+          "second_light_original": 31,
+          "second_light_quartet": 31
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -936,21 +1139,27 @@
       },
       "jp": "封鎖解除",
       "en_original": "Remove Obstacle ",
-      "en_auxiliary": null,
+      "en_auxiliary": "Remove Obstacle ",
       "en": "Remove Obstacle ",
       "alignment": {
         "status": "exact_string_no",
         "initial_en_source": "official_en",
         "official_en_index": 32,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 32,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 32
+          "second_light_original": 32,
+          "second_light_quartet": 32
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -964,21 +1173,27 @@
       },
       "jp": "移動ギミック追加",
       "en_original": "Increase Travel Gimmicks ",
-      "en_auxiliary": null,
+      "en_auxiliary": "Increase Travel Gimmicks ",
       "en": "Increase Travel Gimmicks ",
       "alignment": {
         "status": "exact_string_no",
         "initial_en_source": "official_en",
         "official_en_index": 33,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 33,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 33
+          "second_light_original": 33,
+          "second_light_quartet": 33
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -992,21 +1207,27 @@
       },
       "jp": "Lv.1 ⇒ Lv.2",
       "en_original": "Lv. 1 → Lv. 2",
-      "en_auxiliary": null,
+      "en_auxiliary": "Lv. 1 → Lv. 2",
       "en": "Lv. 1 → Lv. 2",
       "alignment": {
         "status": "exact_string_no",
         "initial_en_source": "official_en",
         "official_en_index": 34,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 34,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 34
+          "second_light_original": 34,
+          "second_light_quartet": 34
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -1020,21 +1241,27 @@
       },
       "jp": "Lv.2 ⇒ Lv.3",
       "en_original": "Lv. 2 → Lv. 3",
-      "en_auxiliary": null,
+      "en_auxiliary": "Lv. 2 → Lv. 3",
       "en": "Lv. 2 → Lv. 3",
       "alignment": {
         "status": "exact_string_no",
         "initial_en_source": "official_en",
         "official_en_index": 35,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 35,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 35
+          "second_light_original": 35,
+          "second_light_quartet": 35
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -1048,21 +1275,27 @@
       },
       "jp": "Lv.3 ⇒ Lv.MAX",
       "en_original": "Lv. 3 → Max Lv.",
-      "en_auxiliary": null,
+      "en_auxiliary": "Lv. 3 → Max Lv.",
       "en": "Lv. 3 → Max Lv.",
       "alignment": {
         "status": "exact_string_no",
         "initial_en_source": "official_en",
         "official_en_index": 36,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 36,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 36
+          "second_light_original": 36,
+          "second_light_quartet": 36
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -1076,21 +1309,27 @@
       },
       "jp": "Lv.4 ⇒ Lv.MAX",
       "en_original": "Lv. 4 → Max Lv.",
-      "en_auxiliary": null,
+      "en_auxiliary": "Lv. 4 → Max Lv.",
       "en": "Lv. 4 → Max Lv.",
       "alignment": {
         "status": "exact_string_no",
         "initial_en_source": "official_en",
         "official_en_index": 37,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 37,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 37
+          "second_light_original": 37,
+          "second_light_quartet": 37
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -1104,21 +1343,27 @@
       },
       "jp": "ステージ上の採取ポイントが増加しました",
       "en_original": "The number of collection points in this area have been increased.",
-      "en_auxiliary": null,
+      "en_auxiliary": "The number of collection points in this area have been increased.",
       "en": "The number of collection points in this area have been increased.",
       "alignment": {
         "status": "exact_string_no",
         "initial_en_source": "official_en",
         "official_en_index": 38,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 38,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 38
+          "second_light_original": 38,
+          "second_light_quartet": 38
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -1132,21 +1377,27 @@
       },
       "jp": "ステージ上の敵の索敵範囲が狭まりました",
       "en_original": "Enemy aggro range in this area has been reduced.",
-      "en_auxiliary": null,
+      "en_auxiliary": "Enemy aggro range in this area has been reduced.",
       "en": "Enemy aggro range in this area has been reduced.",
       "alignment": {
         "status": "exact_string_no",
         "initial_en_source": "official_en",
         "official_en_index": 39,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 39,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 39
+          "second_light_original": 39,
+          "second_light_quartet": 39
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -1160,21 +1411,27 @@
       },
       "jp": "ステージ上の封鎖が解除されました",
       "en_original": "Obstacles in this area have been removed.",
-      "en_auxiliary": null,
+      "en_auxiliary": "Obstacles in this area have been removed.",
       "en": "Obstacles in this area have been removed.",
       "alignment": {
         "status": "exact_string_no",
         "initial_en_source": "official_en",
         "official_en_index": 40,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 40,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 40
+          "second_light_original": 40,
+          "second_light_quartet": 40
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -1188,21 +1445,27 @@
       },
       "jp": "ステージ上に移動ギミックが追加されました",
       "en_original": "The number of travel gimmicks in this area have been increased.",
-      "en_auxiliary": null,
+      "en_auxiliary": "The number of travel gimmicks in this area have been increased.",
       "en": "The number of travel gimmicks in this area have been increased.",
       "alignment": {
         "status": "exact_string_no",
         "initial_en_source": "official_en",
         "official_en_index": 41,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 41,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 41
+          "second_light_original": 41,
+          "second_light_quartet": 41
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -1223,14 +1486,21 @@
         "initial_en_source": "official_en",
         "official_en_index": 42,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 42,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 42
+          "second_light_original": 42,
+          "second_light_quartet": 42
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "quartet_en_redacted",
+        "auxiliary_verification": "normalize_raw_unusable_auxiliary_to_null",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "changed",
+        "auxiliary_source_value": "-"
       }
     },
     {
@@ -1251,14 +1521,21 @@
         "initial_en_source": "official_en",
         "official_en_index": 43,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 43,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 43
+          "second_light_original": 43,
+          "second_light_quartet": 43
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "quartet_en_redacted",
+        "auxiliary_verification": "normalize_raw_unusable_auxiliary_to_null",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "changed",
+        "auxiliary_source_value": "-"
       }
     },
     {
@@ -1279,14 +1556,21 @@
         "initial_en_source": "official_en",
         "official_en_index": 44,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 44,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 44
+          "second_light_original": 44,
+          "second_light_quartet": 44
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "quartet_en_redacted",
+        "auxiliary_verification": "normalize_raw_unusable_auxiliary_to_null",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "changed",
+        "auxiliary_source_value": "-"
       }
     },
     {
@@ -1307,14 +1591,21 @@
         "initial_en_source": "official_en",
         "official_en_index": 45,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 45,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 45
+          "second_light_original": 45,
+          "second_light_quartet": 45
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "quartet_en_redacted",
+        "auxiliary_verification": "normalize_raw_unusable_auxiliary_to_null",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "changed",
+        "auxiliary_source_value": "-"
       }
     },
     {
@@ -1335,14 +1626,21 @@
         "initial_en_source": "official_en",
         "official_en_index": 46,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 46,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 46
+          "second_light_original": 46,
+          "second_light_quartet": 46
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "quartet_en_redacted",
+        "auxiliary_verification": "normalize_raw_unusable_auxiliary_to_null",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "changed",
+        "auxiliary_source_value": "-"
       }
     },
     {
@@ -1356,21 +1654,27 @@
       },
       "jp": "「<CLGR>%s<CLNR>」を<CR>手に入れました",
       "en_original": "Obtained <CLGR>%s<CLNR> Fragment.",
-      "en_auxiliary": null,
+      "en_auxiliary": "Obtained <CLGR>%s<CLNR> Fragment.",
       "en": "Obtained <CLGR>%s<CLNR> Fragment.",
       "alignment": {
         "status": "exact_string_no",
         "initial_en_source": "official_en",
         "official_en_index": 47,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 47,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 47
+          "second_light_original": 47,
+          "second_light_quartet": 47
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -1384,21 +1688,27 @@
       },
       "jp": "夏休みの宿題、もうやった？",
       "en_original": "Have you done your summer homework yet?",
-      "en_auxiliary": null,
+      "en_auxiliary": "Have you done your summer homework yet?",
       "en": "Have you done your summer homework yet?",
       "alignment": {
         "status": "exact_string_no",
         "initial_en_source": "official_en",
         "official_en_index": 48,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 48,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 48
+          "second_light_original": 48,
+          "second_light_quartet": 48
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -1412,21 +1722,27 @@
       },
       "jp": "やりたいこと、たくさんあるんだ。^00一緒にいろんなことをしよう？",
       "en_original": "There are so many things I want to do. Why don't you do all of them with me?",
-      "en_auxiliary": null,
+      "en_auxiliary": "There are so many things I want to do. Why don't you do all of them with me?",
       "en": "There are so many things I want to do. Why don't you do all of them with me?",
       "alignment": {
         "status": "exact_string_no",
         "initial_en_source": "official_en",
         "official_en_index": 49,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 49,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 49
+          "second_light_original": 49,
+          "second_light_quartet": 49
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -1440,21 +1756,27 @@
       },
       "jp": "ありのままの姿でいられたら幸せだよね？",
       "en_original": "Wouldn't it be nice if you could be yourself, just the way you are?",
-      "en_auxiliary": null,
+      "en_auxiliary": "Wouldn't it be nice if you could be yourself, just the way you are?",
       "en": "Wouldn't it be nice if you could be yourself, just the way you are?",
       "alignment": {
         "status": "exact_string_no",
         "initial_en_source": "official_en",
         "official_en_index": 50,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 50,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 50
+          "second_light_original": 50,
+          "second_light_quartet": 50
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -1468,21 +1790,27 @@
       },
       "jp": "ダルい……。この気だるさ、^00何とかしてくれない？",
       "en_original": "I don't wanna do anything... Will you help me get out of this slump?",
-      "en_auxiliary": null,
+      "en_auxiliary": "I don't wanna do anything... Will you help me get out of this slump?",
       "en": "I don't wanna do anything... Will you help me get out of this slump?",
       "alignment": {
         "status": "exact_string_no",
         "initial_en_source": "official_en",
         "official_en_index": 51,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 51,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 51
+          "second_light_original": 51,
+          "second_light_quartet": 51
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -1496,21 +1824,27 @@
       },
       "jp": "こんにちは！　私と一緒に遊ぼうよ！",
       "en_original": "Hey! C'mon, let's do something fun!",
-      "en_auxiliary": null,
+      "en_auxiliary": "Hey! C'mon, let's do something fun!",
       "en": "Hey! C'mon, let's do something fun!",
       "alignment": {
         "status": "exact_string_no",
         "initial_en_source": "official_en",
         "official_en_index": 52,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 52,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 52
+          "second_light_original": 52,
+          "second_light_quartet": 52
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -1524,21 +1858,27 @@
       },
       "jp": "誰かのためじゃなくて、自分のための時間。^00あなたはちゃんと持ってる？",
       "en_original": "Are you setting aside time for yourself? Not for anyone else—just for you.",
-      "en_auxiliary": null,
+      "en_auxiliary": "Are you setting aside time for yourself? Not for anyone else—just for you.",
       "en": "Are you setting aside time for yourself? Not for anyone else—just for you.",
       "alignment": {
         "status": "exact_string_no",
         "initial_en_source": "official_en",
         "official_en_index": 53,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 53,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 53
+          "second_light_original": 53,
+          "second_light_quartet": 53
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -1552,21 +1892,27 @@
       },
       "jp": "世界が楽しいことであふれてるといいよね！",
       "en_original": "I wish the world was full of nothing but fun stuff!",
-      "en_auxiliary": null,
+      "en_auxiliary": "I wish the world was full of nothing but fun stuff!",
       "en": "I wish the world was full of nothing but fun stuff!",
       "alignment": {
         "status": "exact_string_no",
         "initial_en_source": "official_en",
         "official_en_index": 54,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 54,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 54
+          "second_light_original": 54,
+          "second_light_quartet": 54
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -1580,21 +1926,27 @@
       },
       "jp": "ふふっ、痛みがほしいんですね？",
       "en_original": "Heh, you want to feel pain, huh?",
-      "en_auxiliary": null,
+      "en_auxiliary": "Heh, you want to feel pain, huh?",
       "en": "Heh, you want to feel pain, huh?",
       "alignment": {
         "status": "exact_string_no",
         "initial_en_source": "official_en",
         "official_en_index": 55,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 55,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 55
+          "second_light_original": 55,
+          "second_light_quartet": 55
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -1608,21 +1960,27 @@
       },
       "jp": "できれば危ないことはやめて欲しいけれど……",
       "en_original": "I'd rather not do anything too dangerous...",
-      "en_auxiliary": null,
+      "en_auxiliary": "I'd rather not do anything too dangerous...",
       "en": "I'd rather not do anything too dangerous...",
       "alignment": {
         "status": "exact_string_no",
         "initial_en_source": "official_en",
         "official_en_index": 56,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 56,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 56
+          "second_light_original": 56,
+          "second_light_quartet": 56
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -1636,21 +1994,27 @@
       },
       "jp": "ゆっくりしていけ。あとでまた頑張ればいい",
       "en_original": "Go ahead and take your time. Besides, you can always try again later.",
-      "en_auxiliary": null,
+      "en_auxiliary": "Go ahead and take your time. Besides, you can always try again later.",
       "en": "Go ahead and take your time. Besides, you can always try again later.",
       "alignment": {
         "status": "exact_string_no",
         "initial_en_source": "official_en",
         "official_en_index": 57,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 57,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 57
+          "second_light_original": 57,
+          "second_light_quartet": 57
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -1664,21 +2028,27 @@
       },
       "jp": "ボスチャレンジに挑戦する",
       "en_original": "Start Boss Challenge",
-      "en_auxiliary": null,
+      "en_auxiliary": "Start Boss Challenge",
       "en": "Start Boss Challenge",
       "alignment": {
         "status": "exact_string_no",
         "initial_en_source": "official_en",
         "official_en_index": 58,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 58,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 58
+          "second_light_original": 58,
+          "second_light_quartet": 58
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -1692,21 +2062,27 @@
       },
       "jp": "やめておく",
       "en_original": "Cancel",
-      "en_auxiliary": null,
+      "en_auxiliary": "Cancel",
       "en": "Cancel",
       "alignment": {
         "status": "exact_string_no",
         "initial_en_source": "official_en",
         "official_en_index": 59,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 59,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 59
+          "second_light_original": 59,
+          "second_light_quartet": 59
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -1720,21 +2096,27 @@
       },
       "jp": "EXTRA",
       "en_original": "Extra",
-      "en_auxiliary": null,
+      "en_auxiliary": "Extra",
       "en": "Extra",
       "alignment": {
         "status": "exact_string_no",
         "initial_en_source": "official_en",
         "official_en_index": 60,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 60,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 60
+          "second_light_original": 60,
+          "second_light_quartet": 60
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -1755,14 +2137,21 @@
         "initial_en_source": "official_en",
         "official_en_index": 61,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 61,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 61
+          "second_light_original": 61,
+          "second_light_quartet": 61
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "quartet_en_redacted",
+        "auxiliary_verification": "normalize_raw_unusable_auxiliary_to_null",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "changed",
+        "auxiliary_source_value": "-"
       }
     },
     {
@@ -1783,14 +2172,21 @@
         "initial_en_source": "official_en",
         "official_en_index": 62,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 62,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 62
+          "second_light_original": 62,
+          "second_light_quartet": 62
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "quartet_en_redacted",
+        "auxiliary_verification": "normalize_raw_unusable_auxiliary_to_null",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "changed",
+        "auxiliary_source_value": "-"
       }
     },
     {
@@ -1804,21 +2200,27 @@
       },
       "jp": "既に最大まで変化しています",
       "en_original": "Already changed to the maximum.",
-      "en_auxiliary": null,
+      "en_auxiliary": "Already changed to the maximum.",
       "en": "Already changed to the maximum.",
       "alignment": {
         "status": "exact_string_no",
         "initial_en_source": "official_en",
         "official_en_index": 63,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 63,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 63
+          "second_light_original": 63,
+          "second_light_quartet": 63
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     }
   ]

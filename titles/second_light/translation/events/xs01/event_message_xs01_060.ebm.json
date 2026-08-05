@@ -1,7 +1,7 @@
 {
   "type": "br_event_translation_unit",
   "format_version": 1,
-  "tool_version": "translation-0.0.11",
+  "tool_version": "translation-0.0.15",
   "project": "second_light",
   "category": "event",
   "logical_path": "xs01/event_message_xs01_060.ebm",
@@ -15,13 +15,23 @@
     },
     "official_en_path": "titles/second_light/workspace/original/archives/PACK01/event/event_en/xs01/event_message_xs01_060.ebm",
     "official_en_sha256": "2fb51d5ed5f6340b8b9aef64d4536a772a1bdcd3c0791749ef9ed8694cba1a1d",
-    "auxiliary_jp_path": null,
-    "auxiliary_en_path": null
+    "auxiliary_jp_path": "titles/second_light/workspace/quartet/archives/PACK01_03/event/b4/event_jp/xs01/event_message_xs01_060.ebm",
+    "auxiliary_en_path": "titles/second_light/workspace/quartet/archives/PACK01_03/event/b4/event_en/xs01/event_message_xs01_060.ebm"
   },
   "targets": {
     "second_light_original": {
       "template_language": "en",
       "template_path": "titles/second_light/workspace/original/archives/PACK01/event/event_en/xs01/event_message_xs01_060.ebm",
+      "template_sha256": "2fb51d5ed5f6340b8b9aef64d4536a772a1bdcd3c0791749ef9ed8694cba1a1d",
+      "message_count": 3,
+      "mapping_status_counts": {
+        "index_fallback_review": 3
+      },
+      "complete_mapping": true
+    },
+    "second_light_quartet": {
+      "template_language": "en",
+      "template_path": "titles/second_light/workspace/quartet/archives/PACK01_03/event/b4/event_en/xs01/event_message_xs01_060.ebm",
       "template_sha256": "2fb51d5ed5f6340b8b9aef64d4536a772a1bdcd3c0791749ef9ed8694cba1a1d",
       "message_count": 3,
       "mapping_status_counts": {
@@ -54,21 +64,27 @@
       },
       "jp": "味方の能力を強化するアイテムを工作しました",
       "en_original": "You have created an item that can be used to buff your allies.",
-      "en_auxiliary": null,
+      "en_auxiliary": "You have created an item that can be used to buff your allies.",
       "en": "You have created an item that can be used to buff your allies.",
       "alignment": {
         "status": "index_fallback_review",
         "initial_en_source": "official_en",
         "official_en_index": 0,
         "official_en_mapping": "index_fallback_review",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 0,
+        "auxiliary_mapping": "exact_index_msg_id+index_fallback_review",
         "target_indices": {
-          "second_light_original": 0
+          "second_light_original": 0,
+          "second_light_quartet": 0
         },
         "target_mapping": {
-          "second_light_original": "index_fallback_review"
-        }
+          "second_light_original": "index_fallback_review",
+          "second_light_quartet": "index_fallback_review"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_index_msg_id[exact_structural]+index_fallback_review[same_index_exact_jp]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -94,21 +110,27 @@
       },
       "jp": "これらのアイテムは戦闘中はもちろんのこと、<CR>フィールド上でもあらかじめ使用することができます",
       "en_original": "These items can be used both in and outside of battle.",
-      "en_auxiliary": null,
+      "en_auxiliary": "These items can be used both in and outside of battle.",
       "en": "These items can be used both in and outside of battle.",
       "alignment": {
         "status": "index_fallback_review",
         "initial_en_source": "official_en",
         "official_en_index": 1,
         "official_en_mapping": "index_fallback_review",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 1,
+        "auxiliary_mapping": "exact_index_msg_id+index_fallback_review",
         "target_indices": {
-          "second_light_original": 1
+          "second_light_original": 1,
+          "second_light_quartet": 1
         },
         "target_mapping": {
-          "second_light_original": "index_fallback_review"
-        }
+          "second_light_original": "index_fallback_review",
+          "second_light_quartet": "index_fallback_review"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_index_msg_id[exact_structural]+index_fallback_review[same_index_exact_jp]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -134,21 +156,27 @@
       },
       "jp": "能力を強化した状態で次の戦闘に挑めるので、<CR>うまく活用して戦闘を有利に進めていきましょう",
       "en_original": "After use, your stats will be boosted for the next battle. Use these items to gain an advantage!",
-      "en_auxiliary": null,
+      "en_auxiliary": "After use, your stats will be boosted for the next battle. Use these items to gain an advantage!",
       "en": "After use, your stats will be boosted for the next battle. Use these items to gain an advantage!",
       "alignment": {
         "status": "index_fallback_review",
         "initial_en_source": "official_en",
         "official_en_index": 2,
         "official_en_mapping": "index_fallback_review",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 2,
+        "auxiliary_mapping": "exact_index_msg_id+index_fallback_review",
         "target_indices": {
-          "second_light_original": 2
+          "second_light_original": 2,
+          "second_light_quartet": 2
         },
         "target_mapping": {
-          "second_light_original": "index_fallback_review"
-        }
+          "second_light_original": "index_fallback_review",
+          "second_light_quartet": "index_fallback_review"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_index_msg_id[exact_structural]+index_fallback_review[same_index_exact_jp]",
+        "auxiliary_source_jp_relation": "same"
       }
     }
   ]

@@ -532,6 +532,27 @@ def classify_auxiliary_japanese_copy(
     return None
 
 
+def normalize_auxiliary_reference(
+    auxiliary_jp_text: Optional[str], auxiliary_en_text: Optional[str]
+) -> tuple[Optional[str], str, Optional[str]]:
+    """Return only usable English in en_auxiliary and classify raw source gaps.
+
+    Empty strings, official redaction placeholders, and known malformed Japanese
+    copies are preserved as alignment evidence but never exposed as a populated
+    English reference field.
+    """
+    invalid = classify_auxiliary_japanese_copy(auxiliary_jp_text, auxiliary_en_text)
+    if auxiliary_en_text is None:
+        return None, "unavailable", invalid
+    if auxiliary_en_text == "":
+        return None, "empty", invalid
+    if is_redaction_placeholder(auxiliary_en_text, auxiliary_jp_text or ""):
+        return None, "redacted", invalid
+    if invalid is not None:
+        return None, f"invalid:{invalid}", invalid
+    return auxiliary_en_text, "available", None
+
+
 def load_quartet_target_policy(project_root: Path) -> dict[str, Any]:
     path = project_root / QUARTET_POLICY_RELATIVE
     try:
@@ -698,6 +719,9 @@ def _initial_editable(record: dict[str, Any]) -> str:
     if initial_source == "quartet_en":
         value = record.get("en_auxiliary")
         return value if isinstance(value, str) else ""
+    if initial_source == "quartet_official_en":
+        value = record.get("en_original")
+        return value if isinstance(value, str) else ""
     return ""
 
 
@@ -833,6 +857,8 @@ def export_event_set(spec: EventSet, project_root: Path, report: dict[str, Any])
 
             aux_source_index = source_to_aux[msg.index] if aux_jp else None
             auxiliary_text: Optional[str] = None
+            auxiliary_source_text: Optional[str] = None
+            auxiliary_value_status = "unavailable"
             auxiliary_classification: Optional[str] = None
             auxiliary_index: Optional[int] = None
             aux_status = "unavailable"
@@ -840,16 +866,18 @@ def export_event_set(spec: EventSet, project_root: Path, report: dict[str, Any])
                 auxiliary_index = aux_to_en[aux_source_index]
                 if auxiliary_index is not None:
                     auxiliary_jp_text = aux_jp.messages[aux_source_index].text if aux_jp else None
-                    auxiliary_text = aux_en.messages[auxiliary_index].text
-                    auxiliary_classification = classify_auxiliary_japanese_copy(
-                        auxiliary_jp_text, auxiliary_text
+                    auxiliary_source_text = aux_en.messages[auxiliary_index].text
+                    auxiliary_text, auxiliary_value_status, auxiliary_classification = normalize_auxiliary_reference(
+                        auxiliary_jp_text, auxiliary_source_text
                     )
                     if auxiliary_classification is not None:
                         AUXILIARY_FALLBACK_STATS[auxiliary_classification] += 1
+                    if auxiliary_value_status != "available":
+                        AUXILIARY_FALLBACK_STATS[f"auxiliary_{auxiliary_value_status}"] += 1
                     aux_status = f"{source_to_aux_status[msg.index]}+{aux_to_en_status[aux_source_index]}"
 
             primary_redacted = is_redaction_placeholder(primary_text, msg.text)
-            auxiliary_redacted = is_redaction_placeholder(auxiliary_text, msg.text)
+            auxiliary_redacted = auxiliary_value_status == "redacted"
             if primary_text is not None and not primary_redacted:
                 editable = primary_text
                 alignment_status = official_status[msg.index]
@@ -899,6 +927,10 @@ def export_event_set(spec: EventSet, project_root: Path, report: dict[str, Any])
                     "official_en_mapping": official_status[msg.index],
                     "auxiliary_en_index": auxiliary_index,
                     "auxiliary_mapping": aux_status,
+                    "auxiliary_value_status": auxiliary_value_status,
+                    "auxiliary_source_value": (
+                        auxiliary_source_text if auxiliary_value_status not in {"available", "unavailable"} else None
+                    ),
                     "target_indices": target_indices,
                     "target_mapping": target_statuses,
                 },
@@ -1120,6 +1152,8 @@ def export_xml_unit(
         primary_text = official.rows[primary_index].text if official is not None and primary_index is not None else None
         auxiliary_index: Optional[int] = None
         auxiliary_text: Optional[str] = None
+        auxiliary_source_text: Optional[str] = None
+        auxiliary_value_status = "unavailable"
         auxiliary_classification: Optional[str] = None
         aux_status = "unavailable"
         aux_source_index = source_to_aux[row.index] if aux_jp else None
@@ -1127,12 +1161,14 @@ def export_xml_unit(
             auxiliary_index = aux_to_en[aux_source_index]
             if auxiliary_index is not None:
                 auxiliary_jp_text = aux_jp.rows[aux_source_index].text if aux_jp else None
-                auxiliary_text = aux_en.rows[auxiliary_index].text
-                auxiliary_classification = classify_auxiliary_japanese_copy(
-                    auxiliary_jp_text, auxiliary_text
+                auxiliary_source_text = aux_en.rows[auxiliary_index].text
+                auxiliary_text, auxiliary_value_status, auxiliary_classification = normalize_auxiliary_reference(
+                    auxiliary_jp_text, auxiliary_source_text
                 )
                 if auxiliary_classification is not None:
                     AUXILIARY_FALLBACK_STATS[auxiliary_classification] += 1
+                if auxiliary_value_status != "available":
+                    AUXILIARY_FALLBACK_STATS[f"auxiliary_{auxiliary_value_status}"] += 1
                 aux_status = f"{source_to_aux_status[row.index]}+{aux_to_en_status[aux_source_index]}"
 
         if primary_text is not None:
@@ -1171,6 +1207,10 @@ def export_xml_unit(
                 "official_en_mapping": official_status[row.index],
                 "auxiliary_en_index": auxiliary_index,
                 "auxiliary_mapping": aux_status,
+                "auxiliary_value_status": auxiliary_value_status,
+                "auxiliary_source_value": (
+                    auxiliary_source_text if auxiliary_value_status not in {"available", "unavailable"} else None
+                ),
                 "target_indices": target_indices,
                 "target_mapping": target_statuses,
             },
@@ -1388,13 +1428,13 @@ def project_specs(project_root: Path) -> tuple[list[EventSet], list[SystemSet]]:
             translation_root=sl / "translation",
             source_jp_root=sl_orig / "PACK01/event/event_jp",
             official_en_root=sl_orig / "PACK01/event/event_en",
-            auxiliary_jp_root=sl_quart / "PACK01_01/event/b2/event_jp",
-            auxiliary_en_root=sl_quart / "PACK01_01/event/b2/event_en",
+            auxiliary_jp_root=sl_quart / "PACK01_03/event/b4/event_jp",
+            auxiliary_en_root=sl_quart / "PACK01_03/event/b4/event_en",
             allow_auxiliary_fallback=False,
             export_auxiliary_extensions=True,
             target_templates={
                 "second_light_original": sl_orig / "PACK01/event/event_en",
-                "second_light_quartet": sl_quart / "PACK01_01/event/b2/event_en",
+                "second_light_quartet": sl_quart / "PACK01_03/event/b4/event_en",
             },
         ),
         EventSet(
@@ -1409,10 +1449,10 @@ def project_specs(project_root: Path) -> tuple[list[EventSet], list[SystemSet]]:
         EventSet(
             project="blue_reflection_ray",
             translation_root=ray / "translation",
-            source_jp_root=ray_quart / "PACK01_03/event/b4/event_jp",
-            official_en_root=ray_quart / "PACK01_03/event/b4/event_en",
+            source_jp_root=ray_quart / "PACK01_01/event/b2/event_jp",
+            official_en_root=ray_quart / "PACK01_01/event/b2/event_en",
             target_templates={
-                "blue_reflection_ray_quartet": ray_quart / "PACK01_03/event/b4/event_en",
+                "blue_reflection_ray_quartet": ray_quart / "PACK01_01/event/b2/event_en",
             },
         ),
     ]
@@ -1434,12 +1474,12 @@ def project_specs(project_root: Path) -> tuple[list[EventSet], list[SystemSet]]:
             translation_root=sl / "translation",
             source_jp_root=sl_orig / "PACK02/saves/text_jp",
             official_en_root=sl_orig / "PACK02/saves/text_en",
-            auxiliary_jp_root=sl_quart / "PACK02_01/saves/b2/text_jp",
-            auxiliary_en_root=sl_quart / "PACK02_01/saves/b2/text_en",
+            auxiliary_jp_root=sl_quart / "PACK02_03/saves/b4/text_jp",
+            auxiliary_en_root=sl_quart / "PACK02_03/saves/b4/text_en",
             allow_auxiliary_fallback=False,
             target_templates={
                 "second_light_original": sl_orig / "PACK02/saves/text_en",
-                "second_light_quartet": sl_quart / "PACK02_01/saves/b2/text_en",
+                "second_light_quartet": sl_quart / "PACK02_03/saves/b4/text_en",
             },
         ),
         SystemSet(
@@ -1454,10 +1494,10 @@ def project_specs(project_root: Path) -> tuple[list[EventSet], list[SystemSet]]:
         SystemSet(
             project="blue_reflection_ray",
             translation_root=ray / "translation",
-            source_jp_root=ray_quart / "PACK02_03/saves/b4/text_jp",
-            official_en_root=ray_quart / "PACK02_03/saves/b4/text_en",
+            source_jp_root=ray_quart / "PACK02_01/saves/b2/text_jp",
+            official_en_root=ray_quart / "PACK02_01/saves/b2/text_en",
             target_templates={
-                "blue_reflection_ray_quartet": ray_quart / "PACK02_03/saves/b4/text_en",
+                "blue_reflection_ray_quartet": ray_quart / "PACK02_01/saves/b2/text_en",
             },
         ),
     ]
@@ -1508,12 +1548,20 @@ def cmd_export(args: argparse.Namespace) -> int:
             f"EBM validation failed for {len(report['ebm_validation']['failures'])} files"
         )
 
+    selected_projects = set(args.project or (
+        "blue_reflection", "second_light", "blue_reflection_sun", "blue_reflection_ray"
+    ))
+    report["selected_projects"] = sorted(selected_projects)
     event_sets, system_sets = project_specs(project_root)
     units_by_project: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for spec in event_sets:
+        if spec.project not in selected_projects:
+            continue
         print(f"Exporting {spec.project} event dialogue...")
         units_by_project[spec.project].extend(export_event_set(spec, project_root, report))
     for spec in system_sets:
+        if spec.project not in selected_projects:
+            continue
         print(f"Exporting {spec.project} system text...")
         units_by_project[spec.project].extend(export_system_set(spec, project_root, report))
 
@@ -1527,16 +1575,19 @@ def cmd_export(args: argparse.Namespace) -> int:
         "format_version": FORMAT_VERSION,
         "tool_version": TOOL_VERSION,
     }
+    # A targeted export may select only a subset of projects. Keep a stable
+    # all-project exception report, but do not require event/system sections for
+    # projects that were intentionally not exported in this invocation.
     for project in project_ids:
-        exceptions[project] = {
-            "events": report[project]["events"]["exceptions"],
-            "system": report[project]["system"]["exceptions"],
-        }
-    # Keep the main report concise; detailed exception rows live separately.
-    for project in project_ids:
+        exceptions[project] = {}
         for category in ("events", "system"):
-            rows = report[project][category].pop("exceptions")
-            report[project][category]["exception_records"] = len(rows)
+            category_report = report[project].get(category)
+            if category_report is None:
+                exceptions[project][category] = []
+                continue
+            rows = category_report.pop("exceptions", [])
+            exceptions[project][category] = rows
+            category_report["exception_records"] = len(rows)
 
     report["edit_migration"] = dict(sorted(EDIT_MIGRATION_STATS.items()))
     report["auxiliary_fallback_safety"] = dict(
@@ -3222,6 +3273,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="validate sources and export translation JSON files",
     )
     export.add_argument("--project-root", required=True)
+    export.add_argument(
+        "--project",
+        action="append",
+        choices=("blue_reflection", "second_light", "blue_reflection_sun", "blue_reflection_ray"),
+        help="limit export to one or more canonical projects",
+    )
     export.set_defaults(func=cmd_export, repair_layouts=False)
 
     repair = sub.add_parser(
@@ -3229,6 +3286,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="re-detect ambiguous EBM layouts and safely refresh translation JSON",
     )
     repair.add_argument("--project-root", required=True)
+    repair.add_argument(
+        "--project",
+        action="append",
+        choices=("blue_reflection", "second_light", "blue_reflection_sun", "blue_reflection_ray"),
+        help="limit export to one or more canonical projects",
+    )
     repair.set_defaults(func=cmd_export, repair_layouts=True)
 
     build = sub.add_parser(

@@ -1,7 +1,7 @@
 {
   "type": "br_system_translation_unit",
   "format_version": 1,
-  "tool_version": "translation-0.0.11",
+  "tool_version": "translation-0.0.15",
   "project": "second_light",
   "category": "system",
   "source_role": "canonical",
@@ -12,13 +12,24 @@
     "jp_encoding": "utf-8",
     "official_en_path": "titles/second_light/workspace/original/archives/PACK02/saves/text_en/str_install_string.xml",
     "official_en_sha256": "b0c1b3c7c15d5b9c676e799d3c48aae1c0b4dcf87abe7be727503ed5816164f8",
-    "auxiliary_jp_path": null,
-    "auxiliary_en_path": null
+    "auxiliary_jp_path": "titles/second_light/workspace/quartet/archives/PACK02_03/saves/b4/text_jp/str_install_string.xml",
+    "auxiliary_en_path": "titles/second_light/workspace/quartet/archives/PACK02_03/saves/b4/text_en/str_install_string.xml"
   },
   "targets": {
     "second_light_original": {
       "template_language": "en",
       "template_path": "titles/second_light/workspace/original/archives/PACK02/saves/text_en/str_install_string.xml",
+      "template_sha256": "b0c1b3c7c15d5b9c676e799d3c48aae1c0b4dcf87abe7be727503ed5816164f8",
+      "row_count": 1,
+      "encoding": "utf-8",
+      "mapping_status_counts": {
+        "exact_string_no": 1
+      },
+      "complete_mapping": true
+    },
+    "second_light_quartet": {
+      "template_language": "en",
+      "template_path": "titles/second_light/workspace/quartet/archives/PACK02_03/saves/b4/text_en/str_install_string.xml",
       "template_sha256": "b0c1b3c7c15d5b9c676e799d3c48aae1c0b4dcf87abe7be727503ed5816164f8",
       "row_count": 1,
       "encoding": "utf-8",
@@ -40,21 +51,27 @@
       },
       "jp": "必要なデータの読込が完了していないため、\\nこのモードに入ることは出来ません。",
       "en_original": "You cannot enter this mode.\\n^00The loading of the necessary data is not complete.",
-      "en_auxiliary": null,
+      "en_auxiliary": "You cannot enter this mode.\\n^00The loading of the necessary data is not complete.",
       "en": "You cannot enter this mode.\\n^00The loading of the necessary data is not complete.",
       "alignment": {
         "status": "exact_string_no",
         "initial_en_source": "official_en",
         "official_en_index": 0,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 0,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 0
+          "second_light_original": 0,
+          "second_light_quartet": 0
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     }
   ]

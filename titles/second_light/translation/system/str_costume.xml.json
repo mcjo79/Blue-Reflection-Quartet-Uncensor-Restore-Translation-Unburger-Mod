@@ -1,7 +1,7 @@
 {
   "type": "br_system_translation_unit",
   "format_version": 1,
-  "tool_version": "translation-0.0.11",
+  "tool_version": "translation-0.0.15",
   "project": "second_light",
   "category": "system",
   "source_role": "canonical",
@@ -12,8 +12,8 @@
     "jp_encoding": "utf-8",
     "official_en_path": "titles/second_light/workspace/original/archives/PACK02/saves/text_en/str_costume.xml",
     "official_en_sha256": "4163d88913c909413ac6f4286174ce199b4f30831d5994a1a66e848db1009675",
-    "auxiliary_jp_path": null,
-    "auxiliary_en_path": null
+    "auxiliary_jp_path": "titles/second_light/workspace/quartet/archives/PACK02_03/saves/b4/text_jp/str_costume.xml",
+    "auxiliary_en_path": "titles/second_light/workspace/quartet/archives/PACK02_03/saves/b4/text_en/str_costume.xml"
   },
   "targets": {
     "second_light_original": {
@@ -21,6 +21,17 @@
       "template_path": "titles/second_light/workspace/original/archives/PACK02/saves/text_en/str_costume.xml",
       "template_sha256": "4163d88913c909413ac6f4286174ce199b4f30831d5994a1a66e848db1009675",
       "row_count": 26,
+      "encoding": "utf-8",
+      "mapping_status_counts": {
+        "exact_string_no": 26
+      },
+      "complete_mapping": true
+    },
+    "second_light_quartet": {
+      "template_language": "en",
+      "template_path": "titles/second_light/workspace/quartet/archives/PACK02_03/saves/b4/text_en/str_costume.xml",
+      "template_sha256": "8e7650d2fe321727c3f77a6f5dc92d62bed55bdfbe3224bcfd364657a8fe8453",
+      "row_count": 28,
       "encoding": "utf-8",
       "mapping_status_counts": {
         "exact_string_no": 26
@@ -40,21 +51,27 @@
       },
       "jp": "いつもの制服",
       "en_original": "Everyday Uniform",
-      "en_auxiliary": null,
+      "en_auxiliary": "Everyday Uniform",
       "en": "Everyday Uniform",
       "alignment": {
         "status": "exact_string_no",
         "initial_en_source": "official_en",
         "official_en_index": 0,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 0,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 0
+          "second_light_original": 0,
+          "second_light_quartet": 0
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -68,21 +85,27 @@
       },
       "jp": "指定競泳水着",
       "en_original": "Regulation Competitive Swimwear",
-      "en_auxiliary": null,
+      "en_auxiliary": "Regulation Competitive Swimwear",
       "en": "Regulation Competitive Swimwear",
       "alignment": {
         "status": "exact_string_no",
         "initial_en_source": "official_en",
         "official_en_index": 1,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 1,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 1
+          "second_light_original": 1,
+          "second_light_quartet": 1
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -103,14 +126,21 @@
         "initial_en_source": "official_en",
         "official_en_index": 2,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 2,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 2
+          "second_light_original": 2,
+          "second_light_quartet": 2
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "quartet_en_redacted",
+        "auxiliary_verification": "normalize_raw_unusable_auxiliary_to_null",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "changed",
+        "auxiliary_source_value": "-"
       }
     },
     {
@@ -131,14 +161,21 @@
         "initial_en_source": "official_en",
         "official_en_index": 3,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 3,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 3
+          "second_light_original": 3,
+          "second_light_quartet": 3
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "quartet_en_redacted",
+        "auxiliary_verification": "normalize_raw_unusable_auxiliary_to_null",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "changed",
+        "auxiliary_source_value": "-"
       }
     },
     {
@@ -159,14 +196,21 @@
         "initial_en_source": "official_en",
         "official_en_index": 4,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 4,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 4
+          "second_light_original": 4,
+          "second_light_quartet": 4
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "quartet_en_redacted",
+        "auxiliary_verification": "normalize_raw_unusable_auxiliary_to_null",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "changed",
+        "auxiliary_source_value": "-"
       }
     },
     {
@@ -180,21 +224,27 @@
       },
       "jp": "夏服",
       "en_original": "Summer Uniform",
-      "en_auxiliary": null,
+      "en_auxiliary": "Summer Uniform",
       "en": "Summer Uniform",
       "alignment": {
         "status": "exact_string_no",
         "initial_en_source": "official_en",
         "official_en_index": 5,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 5,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 5
+          "second_light_original": 5,
+          "second_light_quartet": 5
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -215,14 +265,21 @@
         "initial_en_source": "official_en",
         "official_en_index": 6,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 6,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 6
+          "second_light_original": 6,
+          "second_light_quartet": 6
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "quartet_en_redacted",
+        "auxiliary_verification": "normalize_raw_unusable_auxiliary_to_null",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "changed",
+        "auxiliary_source_value": "-"
       }
     },
     {
@@ -243,14 +300,21 @@
         "initial_en_source": "official_en",
         "official_en_index": 7,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 7,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 7
+          "second_light_original": 7,
+          "second_light_quartet": 7
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "quartet_en_redacted",
+        "auxiliary_verification": "normalize_raw_unusable_auxiliary_to_null",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "changed",
+        "auxiliary_source_value": "-"
       }
     },
     {
@@ -271,14 +335,21 @@
         "initial_en_source": "official_en",
         "official_en_index": 8,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 8,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 8
+          "second_light_original": 8,
+          "second_light_quartet": 8
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "quartet_en_redacted",
+        "auxiliary_verification": "normalize_raw_unusable_auxiliary_to_null",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "changed",
+        "auxiliary_source_value": "-"
       }
     },
     {
@@ -299,14 +370,21 @@
         "initial_en_source": "official_en",
         "official_en_index": 9,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 9,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 9
+          "second_light_original": 9,
+          "second_light_quartet": 9
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "quartet_en_redacted",
+        "auxiliary_verification": "normalize_raw_unusable_auxiliary_to_null",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "changed",
+        "auxiliary_source_value": "-"
       }
     },
     {
@@ -320,21 +398,27 @@
       },
       "jp": "真夏のビキニ",
       "en_original": "Summer Bikini",
-      "en_auxiliary": null,
+      "en_auxiliary": "Summer Bikini",
       "en": "Summer Bikini",
       "alignment": {
         "status": "exact_string_no",
         "initial_en_source": "official_en",
         "official_en_index": 10,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 10,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 10
+          "second_light_original": 10,
+          "second_light_quartet": 10
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -355,14 +439,21 @@
         "initial_en_source": "official_en",
         "official_en_index": 11,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 11,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 11
+          "second_light_original": 11,
+          "second_light_quartet": 11
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "quartet_en_redacted",
+        "auxiliary_verification": "normalize_raw_unusable_auxiliary_to_null",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "changed",
+        "auxiliary_source_value": "-"
       }
     },
     {
@@ -383,14 +474,21 @@
         "initial_en_source": "official_en",
         "official_en_index": 12,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 12,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 12
+          "second_light_original": 12,
+          "second_light_quartet": 12
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "quartet_en_redacted",
+        "auxiliary_verification": "normalize_raw_unusable_auxiliary_to_null",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "changed",
+        "auxiliary_source_value": "-"
       }
     },
     {
@@ -411,14 +509,21 @@
         "initial_en_source": "official_en",
         "official_en_index": 13,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 13,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 13
+          "second_light_original": 13,
+          "second_light_quartet": 13
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "quartet_en_redacted",
+        "auxiliary_verification": "normalize_raw_unusable_auxiliary_to_null",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "changed",
+        "auxiliary_source_value": "-"
       }
     },
     {
@@ -439,14 +544,21 @@
         "initial_en_source": "official_en",
         "official_en_index": 14,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 14,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 14
+          "second_light_original": 14,
+          "second_light_quartet": 14
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "quartet_en_redacted",
+        "auxiliary_verification": "normalize_raw_unusable_auxiliary_to_null",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "changed",
+        "auxiliary_source_value": "-"
       }
     },
     {
@@ -467,14 +579,21 @@
         "initial_en_source": "official_en",
         "official_en_index": 15,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 15,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 15
+          "second_light_original": 15,
+          "second_light_quartet": 15
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "quartet_en_redacted",
+        "auxiliary_verification": "normalize_raw_unusable_auxiliary_to_null",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "changed",
+        "auxiliary_source_value": "-"
       }
     },
     {
@@ -495,14 +614,21 @@
         "initial_en_source": "official_en",
         "official_en_index": 16,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 16,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 16
+          "second_light_original": 16,
+          "second_light_quartet": 16
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "quartet_en_redacted",
+        "auxiliary_verification": "normalize_raw_unusable_auxiliary_to_null",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "changed",
+        "auxiliary_source_value": "-"
       }
     },
     {
@@ -523,14 +649,21 @@
         "initial_en_source": "official_en",
         "official_en_index": 17,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 17,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 17
+          "second_light_original": 17,
+          "second_light_quartet": 17
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "quartet_en_redacted",
+        "auxiliary_verification": "normalize_raw_unusable_auxiliary_to_null",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "changed",
+        "auxiliary_source_value": "-"
       }
     },
     {
@@ -551,14 +684,21 @@
         "initial_en_source": "official_en",
         "official_en_index": 18,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 18,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 18
+          "second_light_original": 18,
+          "second_light_quartet": 18
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "quartet_en_redacted",
+        "auxiliary_verification": "normalize_raw_unusable_auxiliary_to_null",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "changed",
+        "auxiliary_source_value": "-"
       }
     },
     {
@@ -579,14 +719,21 @@
         "initial_en_source": "official_en",
         "official_en_index": 19,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 19,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 19
+          "second_light_original": 19,
+          "second_light_quartet": 19
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "quartet_en_redacted",
+        "auxiliary_verification": "normalize_raw_unusable_auxiliary_to_null",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "changed",
+        "auxiliary_source_value": "-"
       }
     },
     {
@@ -607,14 +754,21 @@
         "initial_en_source": "official_en",
         "official_en_index": 20,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 20,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 20
+          "second_light_original": 20,
+          "second_light_quartet": 20
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "quartet_en_redacted",
+        "auxiliary_verification": "normalize_raw_unusable_auxiliary_to_null",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "changed",
+        "auxiliary_source_value": "-"
       }
     },
     {
@@ -628,21 +782,27 @@
       },
       "jp": "黄緑のビキニ",
       "en_original": "Canary Green Bikini",
-      "en_auxiliary": null,
+      "en_auxiliary": "Canary Green Bikini",
       "en": "Canary Green Bikini",
       "alignment": {
         "status": "exact_string_no",
         "initial_en_source": "official_en",
         "official_en_index": 21,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 21,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 21
+          "second_light_original": 21,
+          "second_light_quartet": 21
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -663,14 +823,21 @@
         "initial_en_source": "official_en",
         "official_en_index": 22,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 22,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 22
+          "second_light_original": 22,
+          "second_light_quartet": 22
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "quartet_en_redacted",
+        "auxiliary_verification": "normalize_raw_unusable_auxiliary_to_null",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "changed",
+        "auxiliary_source_value": "-"
       }
     },
     {
@@ -691,14 +858,21 @@
         "initial_en_source": "official_en",
         "official_en_index": 23,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 23,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 23
+          "second_light_original": 23,
+          "second_light_quartet": 23
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "quartet_en_redacted",
+        "auxiliary_verification": "normalize_raw_unusable_auxiliary_to_null",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "changed",
+        "auxiliary_source_value": "-"
       }
     },
     {
@@ -719,14 +893,21 @@
         "initial_en_source": "official_en",
         "official_en_index": 24,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 24,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 24
+          "second_light_original": 24,
+          "second_light_quartet": 24
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "quartet_en_redacted",
+        "auxiliary_verification": "normalize_raw_unusable_auxiliary_to_null",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "changed",
+        "auxiliary_source_value": "-"
       }
     },
     {
@@ -747,14 +928,21 @@
         "initial_en_source": "official_en",
         "official_en_index": 25,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 25,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 25
+          "second_light_original": 25,
+          "second_light_quartet": 25
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "quartet_en_redacted",
+        "auxiliary_verification": "normalize_raw_unusable_auxiliary_to_null",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "changed",
+        "auxiliary_source_value": "-"
       }
     }
   ]

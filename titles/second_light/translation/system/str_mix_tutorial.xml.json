@@ -1,7 +1,7 @@
 {
   "type": "br_system_translation_unit",
   "format_version": 1,
-  "tool_version": "translation-0.0.11",
+  "tool_version": "translation-0.0.15",
   "project": "second_light",
   "category": "system",
   "source_role": "canonical",
@@ -12,14 +12,25 @@
     "jp_encoding": "utf-8",
     "official_en_path": "titles/second_light/workspace/original/archives/PACK02/saves/text_en/str_mix_tutorial.xml",
     "official_en_sha256": "2a26c3c0ee64c0c7df11cd8e1b50414a22bf59b63915860aa5c875be5993fb5d",
-    "auxiliary_jp_path": null,
-    "auxiliary_en_path": null
+    "auxiliary_jp_path": "titles/second_light/workspace/quartet/archives/PACK02_03/saves/b4/text_jp/str_mix_tutorial.xml",
+    "auxiliary_en_path": "titles/second_light/workspace/quartet/archives/PACK02_03/saves/b4/text_en/str_mix_tutorial.xml"
   },
   "targets": {
     "second_light_original": {
       "template_language": "en",
       "template_path": "titles/second_light/workspace/original/archives/PACK02/saves/text_en/str_mix_tutorial.xml",
       "template_sha256": "2a26c3c0ee64c0c7df11cd8e1b50414a22bf59b63915860aa5c875be5993fb5d",
+      "row_count": 31,
+      "encoding": "utf-8",
+      "mapping_status_counts": {
+        "exact_string_no": 31
+      },
+      "complete_mapping": true
+    },
+    "second_light_quartet": {
+      "template_language": "en",
+      "template_path": "titles/second_light/workspace/quartet/archives/PACK02_03/saves/b4/text_en/str_mix_tutorial.xml",
+      "template_sha256": "e7e60b1ec3c356eedc7a2bd8ffaa3809d8fc337652585dff84ec7a5f1aeb9d0a",
       "row_count": 31,
       "encoding": "utf-8",
       "mapping_status_counts": {
@@ -40,21 +51,27 @@
       },
       "jp": "工作では素材から新たなアイテムを^00作成することができます。^00まずはメモリー一覧から^00<CLGR>卵焼き<CLNR>を選択しましょう^00",
       "en_original": "By crafting, you can make new items with materials that you've gathered. First, select <CLGR>Tamagoyaki<CLNR> from the Memory List.^00",
-      "en_auxiliary": null,
+      "en_auxiliary": "By crafting, you can make new items with materials that you've gathered. First, select <CLGR>Tamagoyaki<CLNR> from the Memory List.^00",
       "en": "By crafting, you can make new items with materials that you've gathered. First, select <CLGR>Tamagoyaki<CLNR> from the Memory List.^00",
       "alignment": {
         "status": "exact_string_no",
         "initial_en_source": "official_en",
         "official_en_index": 0,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 0,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 0
+          "second_light_original": 0,
+          "second_light_quartet": 0
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -68,21 +85,27 @@
       },
       "jp": "メモリーを選択したら作成個数を選択します。^00材料があれば複数作ることも可能です^00",
       "en_original": "After selecting a memory, choose the number you want to create. You can make multiple items if you have enough materials.^00",
-      "en_auxiliary": null,
+      "en_auxiliary": "After selecting a memory, choose the number you want to create. You can make multiple items if you have enough materials.^00",
       "en": "After selecting a memory, choose the number you want to create. You can make multiple items if you have enough materials.^00",
       "alignment": {
         "status": "exact_string_no",
         "initial_en_source": "official_en",
         "official_en_index": 1,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 1,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 1
+          "second_light_original": 1,
+          "second_light_quartet": 1
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -96,21 +119,27 @@
       },
       "jp": "材料選択画面では必要な素材を選択します。^00材料は<CLGR>アイテム指定<CLNR>と<CLGR>カテゴリ指定<CLNR>のものがあります^00",
       "en_original": "Select the required materials on the Material Select screen. You can sort by <CLGR>Item<CLNR> or by <CLGR>Category<CLNR>.^00",
-      "en_auxiliary": null,
+      "en_auxiliary": "Select the required materials on the Material Select screen. You can sort by <CLGR>Item<CLNR> or by <CLGR>Category<CLNR>.^00",
       "en": "Select the required materials on the Material Select screen. You can sort by <CLGR>Item<CLNR> or by <CLGR>Category<CLNR>.^00",
       "alignment": {
         "status": "exact_string_no",
         "initial_en_source": "official_en",
         "official_en_index": 2,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 2,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 2
+          "second_light_original": 2,
+          "second_light_quartet": 2
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -124,21 +153,27 @@
       },
       "jp": "これで工作の準備は完了です",
       "en_original": "You are now ready to begin crafting!",
-      "en_auxiliary": null,
+      "en_auxiliary": "You are now ready to begin crafting!",
       "en": "You are now ready to begin crafting!",
       "alignment": {
         "status": "exact_string_no",
         "initial_en_source": "official_en",
         "official_en_index": 3,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 3,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 3
+          "second_light_original": 3,
+          "second_light_quartet": 3
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -152,21 +187,27 @@
       },
       "jp": "卵焼きが完成しました。アイテムは<CLGR>メニュー画面<CLNR>から使用できます",
       "en_original": "You have made a Tamagoyaki! You can use this item from the <CLGR>Menu<CLNR>.",
-      "en_auxiliary": null,
+      "en_auxiliary": "You have made a Tamagoyaki! You can use this item from the <CLGR>Menu<CLNR>.",
       "en": "You have made a Tamagoyaki! You can use this item from the <CLGR>Menu<CLNR>.",
       "alignment": {
         "status": "exact_string_no",
         "initial_en_source": "official_en",
         "official_en_index": 4,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 4,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 4
+          "second_light_original": 4,
+          "second_light_quartet": 4
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -180,21 +221,27 @@
       },
       "jp": "工作に<CLGR>アビリティ<CLNR>と<CLGR>ユニット効果<CLNR>が解禁されました。^00<CLGR>卵焼き<CLNR>を作ってみましょう",
       "en_original": "<CLGR>Abilities<CLNR> and <CLGR>Unit Effects<CLNR> have been unlocked. Try making a <CLGR>Tamagoyaki<CLNR>.",
-      "en_auxiliary": null,
+      "en_auxiliary": "<CLGR>Abilities<CLNR> and <CLGR>Unit Effects<CLNR> have been unlocked. Try making a <CLGR>Tamagoyaki<CLNR>.",
       "en": "<CLGR>Abilities<CLNR> and <CLGR>Unit Effects<CLNR> have been unlocked. Try making a <CLGR>Tamagoyaki<CLNR>.",
       "alignment": {
         "status": "exact_string_no",
         "initial_en_source": "official_en",
         "official_en_index": 5,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 5,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 5
+          "second_light_original": 5,
+          "second_light_quartet": 5
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -208,21 +255,27 @@
       },
       "jp": "まずはキャラクターを選択します。^00愛央を選択しましょう",
       "en_original": "First, select a character. Choose Ao.",
-      "en_auxiliary": null,
+      "en_auxiliary": "First, select a character. Choose Ao.",
       "en": "First, select a character. Choose Ao.",
       "alignment": {
         "status": "exact_string_no",
         "initial_en_source": "official_en",
         "official_en_index": 6,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 6,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 6
+          "second_light_original": 6,
+          "second_light_quartet": 6
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -236,21 +289,27 @@
       },
       "jp": "愛央の所持アビリティ<CLGR>「活力効果向上」<CLNR>が発動しました。^00これにより卵焼きの効果に<CLGR>攻撃力アップ・小<CLNR>が追加されました",
       "en_original": "Ao's ability, <CLGR>Vitality Boost<CLNR>, has been activated. This will add the <CLGR>Attack Up - Small<CLNR> effect to the Tamagoyaki.",
-      "en_auxiliary": null,
+      "en_auxiliary": "Ao's ability, <CLGR>Vitality Boost<CLNR>, has been activated. This will add the <CLGR>Attack Up - Small<CLNR> effect to the Tamagoyaki.",
       "en": "Ao's ability, <CLGR>Vitality Boost<CLNR>, has been activated. This will add the <CLGR>Attack Up - Small<CLNR> effect to the Tamagoyaki.",
       "alignment": {
         "status": "exact_string_no",
         "initial_en_source": "official_en",
         "official_en_index": 7,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 7,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 7
+          "second_light_original": 7,
+          "second_light_quartet": 7
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -264,21 +323,27 @@
       },
       "jp": "アイテムの効果には<CLGR>【効果カテゴリ】<CLNR>が設定されており、それに対応する<CLGR>アビリティ<CLNR>が発動することで効果が上昇します。",
       "en_original": "The item's effect has a designated Effect Category, and the effect increases when a corresponding <CLGR>ability<CLNR> is activated.",
-      "en_auxiliary": null,
+      "en_auxiliary": "The item's effect has a designated Effect Category, and the effect increases when a corresponding <CLGR>ability<CLNR> is activated.",
       "en": "The item's effect has a designated Effect Category, and the effect increases when a corresponding <CLGR>ability<CLNR> is activated.",
       "alignment": {
         "status": "exact_string_no",
         "initial_en_source": "official_en",
         "official_en_index": 8,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 8,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 8
+          "second_light_original": 8,
+          "second_light_quartet": 8
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -292,21 +357,27 @@
       },
       "jp": "工作アビリティは<CLGR>タレント<CLNR>で習得できます。^00続けて残りのメンバーも選択しましょう",
       "en_original": "You can learn crafting abilities through <CLGR>Talents<CLNR>. Next, choose the remaining members of the unit.",
-      "en_auxiliary": null,
+      "en_auxiliary": "You can learn crafting abilities through <CLGR>Talents<CLNR>. Next, choose the remaining members of the unit.",
       "en": "You can learn crafting abilities through <CLGR>Talents<CLNR>. Next, choose the remaining members of the unit.",
       "alignment": {
         "status": "exact_string_no",
         "initial_en_source": "official_en",
         "official_en_index": 9,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 9,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 9
+          "second_light_original": 9,
+          "second_light_quartet": 9
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -320,21 +391,27 @@
       },
       "jp": "ユニット効果「<CLGR>詩帆お手伝い隊<CLNR>」が発動し、<CLGR>回復効果が強化<CLNR>されました！^00特定の4人で工作すると、<CLGR>ユニット<CLNR>が結成され工作物が強化されることがあります",
       "en_original": "The Unit Effect <CLGR>Operation Help Shiho<CLNR> was activated, <CLGR>powering up recovery<CLNR>! Certain combinations of 4 characters make <CLGR>Units<CLNR> that strengthen the crafted items.",
-      "en_auxiliary": null,
+      "en_auxiliary": "The Unit Effect <CLGR>Operation Help Shiho<CLNR> was activated, <CLGR>powering up recovery<CLNR>! Certain combinations of 4 characters make <CLGR>Units<CLNR> that strengthen the crafted items.",
       "en": "The Unit Effect <CLGR>Operation Help Shiho<CLNR> was activated, <CLGR>powering up recovery<CLNR>! Certain combinations of 4 characters make <CLGR>Units<CLNR> that strengthen the crafted items.",
       "alignment": {
         "status": "exact_string_no",
         "initial_en_source": "official_en",
         "official_en_index": 10,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 10,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 10
+          "second_light_original": 10,
+          "second_light_quartet": 10
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -348,21 +425,27 @@
       },
       "jp": "また、一度成立したユニットは<CLGR>ユニットタブ<CLNR>から選択することができます",
       "en_original": "Also, you can recall Units that you have used before from the <CLGR>Unit Tab<CLNR>.",
-      "en_auxiliary": null,
+      "en_auxiliary": "Also, you can recall Units that you have used before from the <CLGR>Unit Tab<CLNR>.",
       "en": "Also, you can recall Units that you have used before from the <CLGR>Unit Tab<CLNR>.",
       "alignment": {
         "status": "exact_string_no",
         "initial_en_source": "official_en",
         "official_en_index": 11,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 11,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 11
+          "second_light_original": 11,
+          "second_light_quartet": 11
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -376,21 +459,27 @@
       },
       "jp": "<CLGR>アビリティ<CLNR>と<CLGR>ユニット効果<CLNR>を組み合わせてより強力な効果のアイテムを作りましょう！^00",
       "en_original": "Combine <CLGR>Abilities<CLNR> and <CLGR>Unit Effects<CLNR> to create even more powerful items!^00",
-      "en_auxiliary": null,
+      "en_auxiliary": "Combine <CLGR>Abilities<CLNR> and <CLGR>Unit Effects<CLNR> to create even more powerful items!^00",
       "en": "Combine <CLGR>Abilities<CLNR> and <CLGR>Unit Effects<CLNR> to create even more powerful items!^00",
       "alignment": {
         "status": "exact_string_no",
         "initial_en_source": "official_en",
         "official_en_index": 12,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 12,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 12
+          "second_light_original": 12,
+          "second_light_quartet": 12
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -404,21 +493,27 @@
       },
       "jp": "新しく「<CLGR>エーテル合成<CLNR>」が解禁されました。^00<CLGR>工作メニュー<CLNR>のエーテル合成から起動できます",
       "en_original": "<CLGR>Ether Synthesis<CLNR> has been unlocked. Launch it by selecting Ether Synthesis from the <CLGR>Crafting Menu<CLNR>.",
-      "en_auxiliary": null,
+      "en_auxiliary": "<CLGR>Ether Synthesis<CLNR> has been unlocked. Launch it by selecting Ether Synthesis from the <CLGR>Crafting Menu<CLNR>.",
       "en": "<CLGR>Ether Synthesis<CLNR> has been unlocked. Launch it by selecting Ether Synthesis from the <CLGR>Crafting Menu<CLNR>.",
       "alignment": {
         "status": "exact_string_no",
         "initial_en_source": "official_en",
         "official_en_index": 13,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 13,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 13
+          "second_light_original": 13,
+          "second_light_quartet": 13
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -432,21 +527,27 @@
       },
       "jp": "<CLGR>エーテル合成<CLNR>を選択してください",
       "en_original": "Select <CLGR>Ether Synthesis<CLNR>.",
-      "en_auxiliary": null,
+      "en_auxiliary": "Select <CLGR>Ether Synthesis<CLNR>.",
       "en": "Select <CLGR>Ether Synthesis<CLNR>.",
       "alignment": {
         "status": "exact_string_no",
         "initial_en_source": "official_en",
         "official_en_index": 14,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 14,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 14
+          "second_light_original": 14,
+          "second_light_quartet": 14
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -460,21 +561,27 @@
       },
       "jp": "<CLGR>エーテル合成<CLNR>では不要な素材を分解し、入手したことのある別の素材を合成することができます",
       "en_original": "In <CLGR>Ether Synthesis<CLNR>, you can break down materials you don't need and turn them into different materals that you've gathered before!",
-      "en_auxiliary": null,
+      "en_auxiliary": "In <CLGR>Ether Synthesis<CLNR>, you can break down materials you don't need and turn them into different materals that you've gathered before!",
       "en": "In <CLGR>Ether Synthesis<CLNR>, you can break down materials you don't need and turn them into different materals that you've gathered before!",
       "alignment": {
         "status": "exact_string_no",
         "initial_en_source": "official_en",
         "official_en_index": 15,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 15,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 15
+          "second_light_original": 15,
+          "second_light_quartet": 15
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -488,21 +595,27 @@
       },
       "jp": "合成には素材ごとに決められた量のエーテルが必要です^00",
       "en_original": "A certain amount of Ether is required for the synthesis of every material.^00",
-      "en_auxiliary": null,
+      "en_auxiliary": "A certain amount of Ether is required for the synthesis of every material.^00",
       "en": "A certain amount of Ether is required for the synthesis of every material.^00",
       "alignment": {
         "status": "exact_string_no",
         "initial_en_source": "official_en",
         "official_en_index": 16,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 16,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 16
+          "second_light_original": 16,
+          "second_light_quartet": 16
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -516,21 +629,27 @@
       },
       "jp": "今回は<CLGR>パンの実<CLNR>を選択してみましょう",
       "en_original": "This time, choose the <CLGR>Bread Berry<CLNR>.",
-      "en_auxiliary": null,
+      "en_auxiliary": "This time, choose the <CLGR>Bread Berry<CLNR>.",
       "en": "This time, choose the <CLGR>Bread Berry<CLNR>.",
       "alignment": {
         "status": "exact_string_no",
         "initial_en_source": "official_en",
         "official_en_index": 17,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 17,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 17
+          "second_light_original": 17,
+          "second_light_quartet": 17
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -544,21 +663,27 @@
       },
       "jp": "合成したいアイテムを選択したら、合成する個数を選択します。素材があれば複数合成することも可能です",
       "en_original": "Select the item you want to synthesize, then the number you want to create. If you have enough materials, you can synthesize multiple items.",
-      "en_auxiliary": null,
+      "en_auxiliary": "Select the item you want to synthesize, then the number you want to create. If you have enough materials, you can synthesize multiple items.",
       "en": "Select the item you want to synthesize, then the number you want to create. If you have enough materials, you can synthesize multiple items.",
       "alignment": {
         "status": "exact_string_no",
         "initial_en_source": "official_en",
         "official_en_index": 18,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 18,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 18
+          "second_light_original": 18,
+          "second_light_quartet": 18
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -572,21 +697,27 @@
       },
       "jp": "分解するアイテムを選択します。^00<CLGR>パンの実<CLNR>の合成には「<CLGR>エーテル青<CLNR>」が30必要です",
       "en_original": "Select the item you will break down. You need 30 <CLGR>Blue Ethers<CLNR> to synthesize the <CLGR>Bread Berry<CLNR>.",
-      "en_auxiliary": null,
+      "en_auxiliary": "Select the item you will break down. You need 30 <CLGR>Blue Ethers<CLNR> to synthesize the <CLGR>Bread Berry<CLNR>.",
       "en": "Select the item you will break down. You need 30 <CLGR>Blue Ethers<CLNR> to synthesize the <CLGR>Bread Berry<CLNR>.",
       "alignment": {
         "status": "exact_string_no",
         "initial_en_source": "official_en",
         "official_en_index": 19,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 19,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 19
+          "second_light_original": 19,
+          "second_light_quartet": 19
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -600,21 +731,27 @@
       },
       "jp": "アイテムアイコンの下に分解した際に発生するエーテル量が表示されています。^00<CLGR>パンの実<CLNR>の合成のために、<CLGR>風船キャベツ<CLNR>を３つ選択しましょう",
       "en_original": "The amount of Ether you get from breaking down an item will be displayed under the Items icon. To synthesize the <CLGR>Bread Berry<CLNR>, select 3 <CLGR>Balloon Cabbage<CLNR>.",
-      "en_auxiliary": null,
+      "en_auxiliary": "The amount of Ether you get from breaking down an item will be displayed under the Items icon. To synthesize the <CLGR>Bread Berry<CLNR>, select 3 <CLGR>Balloon Cabbage<CLNR>.",
       "en": "The amount of Ether you get from breaking down an item will be displayed under the Items icon. To synthesize the <CLGR>Bread Berry<CLNR>, select 3 <CLGR>Balloon Cabbage<CLNR>.",
       "alignment": {
         "status": "exact_string_no",
         "initial_en_source": "official_en",
         "official_en_index": 20,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 20,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 20
+          "second_light_original": 20,
+          "second_light_quartet": 20
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -628,21 +765,27 @@
       },
       "jp": "エーテル合成の準備が調いました。^00ＯＫボタンを押して合成を開始しましょう！^00",
       "en_original": "You are now ready to perform Ether Synthesis! Press the OK button to begin!^00",
-      "en_auxiliary": null,
+      "en_auxiliary": "You are now ready to perform Ether Synthesis! Press the OK button to begin!^00",
       "en": "You are now ready to perform Ether Synthesis! Press the OK button to begin!^00",
       "alignment": {
         "status": "exact_string_no",
         "initial_en_source": "official_en",
         "official_en_index": 21,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 21,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 21
+          "second_light_original": 21,
+          "second_light_quartet": 21
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -656,21 +799,27 @@
       },
       "jp": "それじゃあ早速卵焼きを作っていこう！",
       "en_original": "Now try making some Tamagoyaki!",
-      "en_auxiliary": null,
+      "en_auxiliary": "Now try making some Tamagoyaki!",
       "en": "Now try making some Tamagoyaki!",
       "alignment": {
         "status": "exact_string_no",
         "initial_en_source": "official_en",
         "official_en_index": 22,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 22,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 22
+          "second_light_original": 22,
+          "second_light_quartet": 22
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -691,14 +840,21 @@
         "initial_en_source": "official_en",
         "official_en_index": 23,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 23,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 23
+          "second_light_original": 23,
+          "second_light_quartet": 23
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "quartet_en_empty",
+        "auxiliary_verification": "normalized_unusable_auxiliary_to_null",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "same",
+        "auxiliary_source_value": ""
       }
     },
     {
@@ -712,21 +868,27 @@
       },
       "jp": "これ、ちょうど食べごろみたい！",
       "en_original": "This looks perfect!",
-      "en_auxiliary": null,
+      "en_auxiliary": "This looks perfect!",
       "en": "This looks perfect!",
       "alignment": {
         "status": "exact_string_no",
         "initial_en_source": "official_en",
         "official_en_index": 24,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 24,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 24
+          "second_light_original": 24,
+          "second_light_quartet": 24
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -740,21 +902,27 @@
       },
       "jp": "うまくできたね",
       "en_original": "That went well.",
-      "en_auxiliary": null,
+      "en_auxiliary": "That went well.",
       "en": "That went well.",
       "alignment": {
         "status": "exact_string_no",
         "initial_en_source": "official_en",
         "official_en_index": 25,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 25,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 25
+          "second_light_original": 25,
+          "second_light_quartet": 25
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -775,14 +943,21 @@
         "initial_en_source": "official_en",
         "official_en_index": 26,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 26,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 26
+          "second_light_original": 26,
+          "second_light_quartet": 26
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "quartet_en_empty",
+        "auxiliary_verification": "normalized_unusable_auxiliary_to_null",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "same",
+        "auxiliary_source_value": ""
       }
     },
     {
@@ -796,21 +971,27 @@
       },
       "jp": "詩帆さん、すごい手際……！",
       "en_original": "Shiho! You've got some skills!",
-      "en_auxiliary": null,
+      "en_auxiliary": "Shiho! You've got some skills!",
       "en": "Shiho-san! You've got some skills!",
       "alignment": {
         "status": "exact_string_no",
         "initial_en_source": "official_en",
         "official_en_index": 27,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 27,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 27
+          "second_light_original": 27,
+          "second_light_quartet": 27
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -824,21 +1005,27 @@
       },
       "jp": "今日の夕食は煮物だし、大根が欲しいな～",
       "en_original": "It'd be nice if we had some radish for tonight's stew...",
-      "en_auxiliary": null,
+      "en_auxiliary": "It'd be nice if we had some radish for tonight's stew...",
       "en": "It'd be nice if we had some radish for tonight's stew...",
       "alignment": {
         "status": "exact_string_no",
         "initial_en_source": "official_en",
         "official_en_index": 28,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 28,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 28
+          "second_light_original": 28,
+          "second_light_quartet": 28
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -859,14 +1046,21 @@
         "initial_en_source": "official_en",
         "official_en_index": 29,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 29,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 29
+          "second_light_original": 29,
+          "second_light_quartet": 29
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "quartet_en_empty",
+        "auxiliary_verification": "normalized_unusable_auxiliary_to_null",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "same",
+        "auxiliary_source_value": ""
       }
     },
     {
@@ -880,21 +1074,27 @@
       },
       "jp": "布切れからできる大根…^00",
       "en_original": "Radish from rags...?^00",
-      "en_auxiliary": null,
+      "en_auxiliary": "Radish from rags...?^00",
       "en": "Radish from rags...?^00",
       "alignment": {
         "status": "exact_string_no",
         "initial_en_source": "official_en",
         "official_en_index": 30,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 30,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 30
+          "second_light_original": 30,
+          "second_light_quartet": 30
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     }
   ]

@@ -1,7 +1,7 @@
 {
   "type": "br_event_translation_unit",
   "format_version": 1,
-  "tool_version": "translation-0.0.11",
+  "tool_version": "translation-0.0.15",
   "project": "second_light",
   "category": "event",
   "logical_path": "xs00/event_message_xs00_090.ebm",
@@ -15,13 +15,24 @@
     },
     "official_en_path": "titles/second_light/workspace/original/archives/PACK01/event/event_en/xs00/event_message_xs00_090.ebm",
     "official_en_sha256": "eabf60ed00492523e19bb85b8e77907a7fe43795958a624be5dff5eccc3944d0",
-    "auxiliary_jp_path": null,
-    "auxiliary_en_path": null
+    "auxiliary_jp_path": "titles/second_light/workspace/quartet/archives/PACK01_03/event/b4/event_jp/xs00/event_message_xs00_090.ebm",
+    "auxiliary_en_path": "titles/second_light/workspace/quartet/archives/PACK01_03/event/b4/event_en/xs00/event_message_xs00_090.ebm"
   },
   "targets": {
     "second_light_original": {
       "template_language": "en",
       "template_path": "titles/second_light/workspace/original/archives/PACK01/event/event_en/xs00/event_message_xs00_090.ebm",
+      "template_sha256": "eabf60ed00492523e19bb85b8e77907a7fe43795958a624be5dff5eccc3944d0",
+      "message_count": 7,
+      "mapping_status_counts": {
+        "exact_unique_msg_id": 6,
+        "index_fallback_review": 1
+      },
+      "complete_mapping": true
+    },
+    "second_light_quartet": {
+      "template_language": "en",
+      "template_path": "titles/second_light/workspace/quartet/archives/PACK01_03/event/b4/event_en/xs00/event_message_xs00_090.ebm",
       "template_sha256": "eabf60ed00492523e19bb85b8e77907a7fe43795958a624be5dff5eccc3944d0",
       "message_count": 7,
       "mapping_status_counts": {
@@ -55,21 +66,27 @@
       },
       "jp": "<CLGR>コスチュームチェンジ<CLNR>が解禁されました",
       "en_original": "<CLGR>Change Outfit<CLNR> is now available.",
-      "en_auxiliary": null,
+      "en_auxiliary": "<CLGR>Change Outfit<CLNR> is now available.",
       "en": "<CLGR>Change Outfit<CLNR> is now available.",
       "alignment": {
         "status": "exact_unique_msg_id",
         "initial_en_source": "official_en",
         "official_en_index": 0,
         "official_en_mapping": "exact_unique_msg_id",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 0,
+        "auxiliary_mapping": "exact_unique_msg_id+exact_index_msg_id",
         "target_indices": {
-          "second_light_original": 0
+          "second_light_original": 0,
+          "second_light_quartet": 0
         },
         "target_mapping": {
-          "second_light_original": "exact_unique_msg_id"
-        }
+          "second_light_original": "exact_unique_msg_id",
+          "second_light_quartet": "exact_unique_msg_id"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_unique_msg_id[exact_structural]+exact_index_msg_id[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -95,21 +112,27 @@
       },
       "jp": "更衣室のロッカーにアクセスすることで、<CR>キャラクターのコスチュームを変更できます",
       "en_original": "You can change the characters' outfits by interacting with the locker in the Locker Room.",
-      "en_auxiliary": null,
+      "en_auxiliary": "You can change the characters' outfits by interacting with the locker in the Locker Room.",
       "en": "You can change the characters' outfits by interacting with the locker in the Locker Room.",
       "alignment": {
         "status": "exact_unique_msg_id",
         "initial_en_source": "official_en",
         "official_en_index": 1,
         "official_en_mapping": "exact_unique_msg_id",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 1,
+        "auxiliary_mapping": "exact_unique_msg_id+exact_index_msg_id",
         "target_indices": {
-          "second_light_original": 1
+          "second_light_original": 1,
+          "second_light_quartet": 1
         },
         "target_mapping": {
-          "second_light_original": "exact_unique_msg_id"
-        }
+          "second_light_original": "exact_unique_msg_id",
+          "second_light_quartet": "exact_unique_msg_id"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_unique_msg_id[exact_structural]+exact_index_msg_id[exact_structural]",
+        "auxiliary_source_jp_relation": "changed"
       }
     },
     {
@@ -135,21 +158,27 @@
       },
       "jp": "愛央と伶那の衣装「<CLGR>夏服<CLNR>」が解禁されました",
       "en_original": "Ao and Rena can now change into their <CLGR>Summer Uniform<CLNR>.",
-      "en_auxiliary": null,
+      "en_auxiliary": "Ao and Rena can now change into their <CLGR>Summer Uniform<CLNR>.",
       "en": "Ao and Rena can now change into their <CLGR>Summer Uniform<CLNR>.",
       "alignment": {
         "status": "exact_unique_msg_id",
         "initial_en_source": "official_en",
         "official_en_index": 2,
         "official_en_mapping": "exact_unique_msg_id",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 2,
+        "auxiliary_mapping": "exact_unique_msg_id+exact_index_msg_id",
         "target_indices": {
-          "second_light_original": 2
+          "second_light_original": 2,
+          "second_light_quartet": 2
         },
         "target_mapping": {
-          "second_light_original": "exact_unique_msg_id"
-        }
+          "second_light_original": "exact_unique_msg_id",
+          "second_light_quartet": "exact_unique_msg_id"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_unique_msg_id[exact_structural]+exact_index_msg_id[exact_structural]",
+        "auxiliary_source_jp_relation": "changed"
       }
     },
     {
@@ -175,21 +204,27 @@
       },
       "jp": "愛央の衣装「<CLGR>黄緑のビキニ<CLNR>」<CR>「<CLGR>星ノ宮魔改造水着<CLNR>」が解禁されました",
       "en_original": "Ao can now change into her <CLGR>Canary Green Bikini<CLNR> and <CLGR>Hoshinomiya Extreme Makeover Swimsuit<CLNR>.",
-      "en_auxiliary": null,
+      "en_auxiliary": "Ao can now change into her <CLGR>Canary Green Bikini<CLNR> and <CLGR>Hoshinomiya Extreme Makeover Swimsuit<CLNR>.",
       "en": "Ao can now change into her <CLGR>Canary Green Bikini<CLNR> and <CLGR>Hoshinomiya Extreme Makeover Swimsuit<CLNR>.",
       "alignment": {
         "status": "exact_unique_msg_id",
         "initial_en_source": "official_en",
         "official_en_index": 3,
         "official_en_mapping": "exact_unique_msg_id",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 3,
+        "auxiliary_mapping": "exact_unique_msg_id+exact_index_msg_id",
         "target_indices": {
-          "second_light_original": 3
+          "second_light_original": 3,
+          "second_light_quartet": 3
         },
         "target_mapping": {
-          "second_light_original": "exact_unique_msg_id"
-        }
+          "second_light_original": "exact_unique_msg_id",
+          "second_light_quartet": "exact_unique_msg_id"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_unique_msg_id[exact_structural]+exact_index_msg_id[exact_structural]",
+        "auxiliary_source_jp_relation": "changed"
       }
     },
     {
@@ -215,21 +250,27 @@
       },
       "jp": "さっそく更衣室で着替えてみましょう",
       "en_original": "Try changing outfits now.",
-      "en_auxiliary": null,
+      "en_auxiliary": "Try changing outfits now.",
       "en": "Try changing outfits now.",
       "alignment": {
         "status": "exact_unique_msg_id",
         "initial_en_source": "official_en",
         "official_en_index": 4,
         "official_en_mapping": "exact_unique_msg_id",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 4,
+        "auxiliary_mapping": "exact_unique_msg_id+exact_index_msg_id",
         "target_indices": {
-          "second_light_original": 4
+          "second_light_original": 4,
+          "second_light_quartet": 4
         },
         "target_mapping": {
-          "second_light_original": "exact_unique_msg_id"
-        }
+          "second_light_original": "exact_unique_msg_id",
+          "second_light_quartet": "exact_unique_msg_id"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_unique_msg_id[exact_structural]+exact_index_msg_id[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -255,21 +296,27 @@
       },
       "jp": "また、１階教室のベッドやソファで<CR><CLGR>寝る<CLNR>ことができるようになりました",
       "en_original": "You can also <CLGR>Sleep<CLNR> using the beds or sofa on the first floor.",
-      "en_auxiliary": null,
+      "en_auxiliary": "You can also <CLGR>Sleep<CLNR> using the beds or sofa on the first floor.",
       "en": "You can also <CLGR>Sleep<CLNR> using the beds or sofa on the first floor.",
       "alignment": {
         "status": "exact_unique_msg_id",
         "initial_en_source": "official_en",
         "official_en_index": 5,
         "official_en_mapping": "exact_unique_msg_id",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 5,
+        "auxiliary_mapping": "exact_unique_msg_id+exact_index_msg_id",
         "target_indices": {
-          "second_light_original": 5
+          "second_light_original": 5,
+          "second_light_quartet": 5
         },
         "target_mapping": {
-          "second_light_original": "exact_unique_msg_id"
-        }
+          "second_light_original": "exact_unique_msg_id",
+          "second_light_quartet": "exact_unique_msg_id"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_unique_msg_id[exact_structural]+exact_index_msg_id[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -295,21 +342,27 @@
       },
       "jp": "寝ると朝まで時間を進めることができます<CR>※物語の状況によって寝られないときもあります",
       "en_original": "You can pass time until morning by sleeping.<CR>*You may be unable to sleep depending on events in the story.",
-      "en_auxiliary": null,
+      "en_auxiliary": "You can pass time until morning by sleeping.<CR>*You may be unable to sleep depending on events in the story.",
       "en": "You can pass time until morning by sleeping.<CR>*You may be unable to sleep depending on events in the story.",
       "alignment": {
         "status": "index_fallback_review",
         "initial_en_source": "official_en",
         "official_en_index": 6,
         "official_en_mapping": "index_fallback_review",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 6,
+        "auxiliary_mapping": "index_fallback_review+exact_index_msg_id",
         "target_indices": {
-          "second_light_original": 6
+          "second_light_original": 6,
+          "second_light_quartet": 6
         },
         "target_mapping": {
-          "second_light_original": "index_fallback_review"
-        }
+          "second_light_original": "index_fallback_review",
+          "second_light_quartet": "index_fallback_review"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "index_fallback_review[same_index_exact_jp]+exact_index_msg_id[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     }
   ]

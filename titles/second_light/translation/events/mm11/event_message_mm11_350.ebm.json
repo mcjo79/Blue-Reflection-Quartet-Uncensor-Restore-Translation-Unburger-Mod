@@ -1,7 +1,7 @@
 {
   "type": "br_event_translation_unit",
   "format_version": 1,
-  "tool_version": "translation-0.0.11",
+  "tool_version": "translation-0.0.15",
   "project": "second_light",
   "category": "event",
   "logical_path": "mm11/event_message_mm11_350.ebm",
@@ -15,8 +15,8 @@
     },
     "official_en_path": "titles/second_light/workspace/original/archives/PACK01/event/event_en/mm11/event_message_mm11_350.ebm",
     "official_en_sha256": "f2849ffe72d794bca19b00f99c59da547dbfd12254d3b5ef288db6077cef7cbe",
-    "auxiliary_jp_path": null,
-    "auxiliary_en_path": null
+    "auxiliary_jp_path": "titles/second_light/workspace/quartet/archives/PACK01_03/event/b4/event_jp/mm11/event_message_mm11_350.ebm",
+    "auxiliary_en_path": "titles/second_light/workspace/quartet/archives/PACK01_03/event/b4/event_en/mm11/event_message_mm11_350.ebm"
   },
   "targets": {
     "second_light_original": {
@@ -28,6 +28,16 @@
         "exact_index_msg_id": 1
       },
       "complete_mapping": true
+    },
+    "second_light_quartet": {
+      "template_language": "en",
+      "template_path": "titles/second_light/workspace/quartet/archives/PACK01_03/event/b4/event_en/mm11/event_message_mm11_350.ebm",
+      "template_sha256": "c6f4008ae14f0be5da933fdd3925886444fb68458c19db3edbab52b2cbd93cda",
+      "message_count": 5,
+      "mapping_status_counts": {
+        "unmatched": 1
+      },
+      "complete_mapping": false
     }
   },
   "records": [
@@ -62,11 +72,17 @@
         "auxiliary_en_index": null,
         "auxiliary_mapping": "unavailable",
         "target_indices": {
-          "second_light_original": 0
+          "second_light_original": 0,
+          "second_light_quartet": null
         },
         "target_mapping": {
-          "second_light_original": "exact_index_msg_id"
-        }
+          "second_light_original": "exact_index_msg_id",
+          "second_light_quartet": "unmatched"
+        },
+        "auxiliary_value_status": "technical_record",
+        "auxiliary_verification": "verified_no_usable_auxiliary",
+        "auxiliary_mapping_authoritative": "unavailable",
+        "auxiliary_source_jp_relation": "unavailable"
       }
     }
   ]

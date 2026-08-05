@@ -1,7 +1,7 @@
 {
   "type": "br_event_translation_unit",
   "format_version": 1,
-  "tool_version": "translation-0.0.11",
+  "tool_version": "translation-0.0.15",
   "project": "second_light",
   "category": "event",
   "logical_path": "xx00/event_message_xx00_080.ebm",
@@ -15,14 +15,24 @@
     },
     "official_en_path": "titles/second_light/workspace/original/archives/PACK01/event/event_en/xx00/event_message_xx00_080.ebm",
     "official_en_sha256": "d851a7cd58636a18761b09d3966b7c51af5a20d8149e6979ed7680498b6e6a78",
-    "auxiliary_jp_path": null,
-    "auxiliary_en_path": null
+    "auxiliary_jp_path": "titles/second_light/workspace/quartet/archives/PACK01_03/event/b4/event_jp/xx00/event_message_xx00_080.ebm",
+    "auxiliary_en_path": "titles/second_light/workspace/quartet/archives/PACK01_03/event/b4/event_en/xx00/event_message_xx00_080.ebm"
   },
   "targets": {
     "second_light_original": {
       "template_language": "en",
       "template_path": "titles/second_light/workspace/original/archives/PACK01/event/event_en/xx00/event_message_xx00_080.ebm",
       "template_sha256": "d851a7cd58636a18761b09d3966b7c51af5a20d8149e6979ed7680498b6e6a78",
+      "message_count": 2,
+      "mapping_status_counts": {
+        "exact_index_msg_id": 2
+      },
+      "complete_mapping": true
+    },
+    "second_light_quartet": {
+      "template_language": "en",
+      "template_path": "titles/second_light/workspace/quartet/archives/PACK01_03/event/b4/event_en/xx00/event_message_xx00_080.ebm",
+      "template_sha256": "42c1c192b6767c746730202bffa954ccc6ef4ea4978c1e8e8ecf75080db79cd1",
       "message_count": 2,
       "mapping_status_counts": {
         "exact_index_msg_id": 2
@@ -61,14 +71,21 @@
         "initial_en_source": "official_en",
         "official_en_index": 0,
         "official_en_mapping": "exact_index_msg_id",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 0,
+        "auxiliary_mapping": "exact_index_msg_id+exact_index_msg_id",
         "target_indices": {
-          "second_light_original": 0
+          "second_light_original": 0,
+          "second_light_quartet": 0
         },
         "target_mapping": {
-          "second_light_original": "exact_index_msg_id"
-        }
+          "second_light_original": "exact_index_msg_id",
+          "second_light_quartet": "exact_index_msg_id"
+        },
+        "auxiliary_value_status": "quartet_en_redacted",
+        "auxiliary_verification": "normalize_raw_unusable_auxiliary_to_null",
+        "auxiliary_mapping_authoritative": "exact_index_msg_id[exact_structural]+exact_index_msg_id[exact_structural]",
+        "auxiliary_source_jp_relation": "changed",
+        "auxiliary_source_value": "-"
       }
     },
     {
@@ -101,14 +118,21 @@
         "initial_en_source": "official_en",
         "official_en_index": 1,
         "official_en_mapping": "exact_index_msg_id",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 1,
+        "auxiliary_mapping": "exact_index_msg_id+exact_index_msg_id",
         "target_indices": {
-          "second_light_original": 1
+          "second_light_original": 1,
+          "second_light_quartet": 1
         },
         "target_mapping": {
-          "second_light_original": "exact_index_msg_id"
-        }
+          "second_light_original": "exact_index_msg_id",
+          "second_light_quartet": "exact_index_msg_id"
+        },
+        "auxiliary_value_status": "quartet_en_redacted",
+        "auxiliary_verification": "normalize_raw_unusable_auxiliary_to_null",
+        "auxiliary_mapping_authoritative": "exact_index_msg_id[exact_structural]+exact_index_msg_id[exact_structural]",
+        "auxiliary_source_jp_relation": "changed",
+        "auxiliary_source_value": "-"
       }
     }
   ]

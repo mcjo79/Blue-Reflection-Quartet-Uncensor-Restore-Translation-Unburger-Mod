@@ -1,7 +1,7 @@
 {
   "type": "br_system_translation_unit",
   "format_version": 1,
-  "tool_version": "translation-0.0.11",
+  "tool_version": "translation-0.0.15",
   "project": "second_light",
   "category": "system",
   "source_role": "canonical",
@@ -12,13 +12,24 @@
     "jp_encoding": "utf-8",
     "official_en_path": "titles/second_light/workspace/original/archives/PACK02/saves/text_en/str_item_mix_ether.xml",
     "official_en_sha256": "5dcc18a3c0e1cede755b4899508671682bb3753ddbe0eaefe388d63a85bbf7b0",
-    "auxiliary_jp_path": null,
-    "auxiliary_en_path": null
+    "auxiliary_jp_path": "titles/second_light/workspace/quartet/archives/PACK02_03/saves/b4/text_jp/str_item_mix_ether.xml",
+    "auxiliary_en_path": "titles/second_light/workspace/quartet/archives/PACK02_03/saves/b4/text_en/str_item_mix_ether.xml"
   },
   "targets": {
     "second_light_original": {
       "template_language": "en",
       "template_path": "titles/second_light/workspace/original/archives/PACK02/saves/text_en/str_item_mix_ether.xml",
+      "template_sha256": "5dcc18a3c0e1cede755b4899508671682bb3753ddbe0eaefe388d63a85bbf7b0",
+      "row_count": 3,
+      "encoding": "utf-8",
+      "mapping_status_counts": {
+        "exact_string_no": 3
+      },
+      "complete_mapping": true
+    },
+    "second_light_quartet": {
+      "template_language": "en",
+      "template_path": "titles/second_light/workspace/quartet/archives/PACK02_03/saves/b4/text_en/str_item_mix_ether.xml",
       "template_sha256": "5dcc18a3c0e1cede755b4899508671682bb3753ddbe0eaefe388d63a85bbf7b0",
       "row_count": 3,
       "encoding": "utf-8",
@@ -40,21 +51,27 @@
       },
       "jp": "エーテル赤",
       "en_original": "Red Ether",
-      "en_auxiliary": null,
+      "en_auxiliary": "Red Ether",
       "en": "Red Ether",
       "alignment": {
         "status": "exact_string_no",
         "initial_en_source": "official_en",
         "official_en_index": 0,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 0,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 0
+          "second_light_original": 0,
+          "second_light_quartet": 0
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -68,21 +85,27 @@
       },
       "jp": "エーテル青",
       "en_original": "Blue Ether",
-      "en_auxiliary": null,
+      "en_auxiliary": "Blue Ether",
       "en": "Blue Ether",
       "alignment": {
         "status": "exact_string_no",
         "initial_en_source": "official_en",
         "official_en_index": 1,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 1,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 1
+          "second_light_original": 1,
+          "second_light_quartet": 1
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -96,21 +119,27 @@
       },
       "jp": "エーテル黄",
       "en_original": "Yellow Ether",
-      "en_auxiliary": null,
+      "en_auxiliary": "Yellow Ether",
       "en": "Yellow Ether",
       "alignment": {
         "status": "exact_string_no",
         "initial_en_source": "official_en",
         "official_en_index": 2,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 2,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 2
+          "second_light_original": 2,
+          "second_light_quartet": 2
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     }
   ]

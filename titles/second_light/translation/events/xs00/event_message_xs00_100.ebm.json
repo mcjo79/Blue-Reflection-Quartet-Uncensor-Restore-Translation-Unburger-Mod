@@ -1,7 +1,7 @@
 {
   "type": "br_event_translation_unit",
   "format_version": 1,
-  "tool_version": "translation-0.0.11",
+  "tool_version": "translation-0.0.15",
   "project": "second_light",
   "category": "event",
   "logical_path": "xs00/event_message_xs00_100.ebm",
@@ -15,13 +15,23 @@
     },
     "official_en_path": "titles/second_light/workspace/original/archives/PACK01/event/event_en/xs00/event_message_xs00_100.ebm",
     "official_en_sha256": "dc1309accfa98a1b0e9812f943b95913749d6705a5327f6aee3c36dc88bacce2",
-    "auxiliary_jp_path": null,
-    "auxiliary_en_path": null
+    "auxiliary_jp_path": "titles/second_light/workspace/quartet/archives/PACK01_03/event/b4/event_jp/xs00/event_message_xs00_100.ebm",
+    "auxiliary_en_path": "titles/second_light/workspace/quartet/archives/PACK01_03/event/b4/event_en/xs00/event_message_xs00_100.ebm"
   },
   "targets": {
     "second_light_original": {
       "template_language": "en",
       "template_path": "titles/second_light/workspace/original/archives/PACK01/event/event_en/xs00/event_message_xs00_100.ebm",
+      "template_sha256": "dc1309accfa98a1b0e9812f943b95913749d6705a5327f6aee3c36dc88bacce2",
+      "message_count": 3,
+      "mapping_status_counts": {
+        "index_fallback_review": 3
+      },
+      "complete_mapping": true
+    },
+    "second_light_quartet": {
+      "template_language": "en",
+      "template_path": "titles/second_light/workspace/quartet/archives/PACK01_03/event/b4/event_en/xs00/event_message_xs00_100.ebm",
       "template_sha256": "dc1309accfa98a1b0e9812f943b95913749d6705a5327f6aee3c36dc88bacce2",
       "message_count": 3,
       "mapping_status_counts": {
@@ -54,21 +64,27 @@
       },
       "jp": "<CLGR>フリスペ！<CLNR>　が使えるようになりました<CR><IM23>を押すとフリスペ！　が起動します",
       "en_original": "You can now use <CLGR>FreeSpace!<CLNR><CR>Press <IM23> to start FreeSpace!",
-      "en_auxiliary": null,
+      "en_auxiliary": "You can now use <CLGR>FreeSpace!<CLNR><CR>Press <IM23> to start FreeSpace!",
       "en": "You can now use <CLGR>FreeSpace!<CLNR><CR>Press <IM23> to start FreeSpace!",
       "alignment": {
         "status": "index_fallback_review",
         "initial_en_source": "official_en",
         "official_en_index": 0,
         "official_en_mapping": "index_fallback_review",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 0,
+        "auxiliary_mapping": "exact_index_msg_id+index_fallback_review",
         "target_indices": {
-          "second_light_original": 0
+          "second_light_original": 0,
+          "second_light_quartet": 0
         },
         "target_mapping": {
-          "second_light_original": "index_fallback_review"
-        }
+          "second_light_original": "index_fallback_review",
+          "second_light_quartet": "index_fallback_review"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_index_msg_id[exact_structural]+index_fallback_review[same_index_exact_jp]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -94,21 +110,27 @@
       },
       "jp": "フリスペ！　では、過去のログを閲覧できる他に、<CR>チャットで少女たちとやり取りをすることができます",
       "en_original": "You can view the Log as well as chat with the other girls using FreeSpace.",
-      "en_auxiliary": null,
+      "en_auxiliary": "You can view the Log as well as chat with the other girls using FreeSpace.",
       "en": "You can view the Log as well as chat with the other girls using FreeSpace.",
       "alignment": {
         "status": "index_fallback_review",
         "initial_en_source": "official_en",
         "official_en_index": 1,
         "official_en_mapping": "index_fallback_review",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 1,
+        "auxiliary_mapping": "exact_index_msg_id+index_fallback_review",
         "target_indices": {
-          "second_light_original": 1
+          "second_light_original": 1,
+          "second_light_quartet": 1
         },
         "target_mapping": {
-          "second_light_original": "index_fallback_review"
-        }
+          "second_light_original": "index_fallback_review",
+          "second_light_quartet": "index_fallback_review"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_index_msg_id[exact_structural]+index_fallback_review[same_index_exact_jp]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -134,21 +156,27 @@
       },
       "jp": "少女たちから連絡が来ることもあるので、<CR>時々確認してみましょう",
       "en_original": "The girls will occasionally contact you as well, so be sure to check it regularly.",
-      "en_auxiliary": null,
+      "en_auxiliary": "The girls will occasionally contact you as well, so be sure to check it regularly.",
       "en": "The girls will occasionally contact you as well, so be sure to check it regularly.",
       "alignment": {
         "status": "index_fallback_review",
         "initial_en_source": "official_en",
         "official_en_index": 2,
         "official_en_mapping": "index_fallback_review",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 2,
+        "auxiliary_mapping": "exact_index_msg_id+index_fallback_review",
         "target_indices": {
-          "second_light_original": 2
+          "second_light_original": 2,
+          "second_light_quartet": 2
         },
         "target_mapping": {
-          "second_light_original": "index_fallback_review"
-        }
+          "second_light_original": "index_fallback_review",
+          "second_light_quartet": "index_fallback_review"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_index_msg_id[exact_structural]+index_fallback_review[same_index_exact_jp]",
+        "auxiliary_source_jp_relation": "same"
       }
     }
   ]

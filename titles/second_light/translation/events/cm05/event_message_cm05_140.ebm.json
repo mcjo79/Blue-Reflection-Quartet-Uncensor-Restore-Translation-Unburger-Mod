@@ -1,7 +1,7 @@
 {
   "type": "br_event_translation_unit",
   "format_version": 1,
-  "tool_version": "translation-0.0.11",
+  "tool_version": "translation-0.0.15",
   "project": "second_light",
   "category": "event",
   "logical_path": "cm05/event_message_cm05_140.ebm",
@@ -15,13 +15,23 @@
     },
     "official_en_path": "titles/second_light/workspace/original/archives/PACK01/event/event_en/cm05/event_message_cm05_140.ebm",
     "official_en_sha256": "eb3869e3e1ba9ba855a5d7bee4311b855e855202f699ec8ebc5d2b8a9a90c003",
-    "auxiliary_jp_path": null,
-    "auxiliary_en_path": null
+    "auxiliary_jp_path": "titles/second_light/workspace/quartet/archives/PACK01_03/event/b4/event_jp/cm05/event_message_cm05_140.ebm",
+    "auxiliary_en_path": "titles/second_light/workspace/quartet/archives/PACK01_03/event/b4/event_en/cm05/event_message_cm05_140.ebm"
   },
   "targets": {
     "second_light_original": {
       "template_language": "en",
       "template_path": "titles/second_light/workspace/original/archives/PACK01/event/event_en/cm05/event_message_cm05_140.ebm",
+      "template_sha256": "eb3869e3e1ba9ba855a5d7bee4311b855e855202f699ec8ebc5d2b8a9a90c003",
+      "message_count": 2,
+      "mapping_status_counts": {
+        "exact_index_msg_id": 2
+      },
+      "complete_mapping": true
+    },
+    "second_light_quartet": {
+      "template_language": "en",
+      "template_path": "titles/second_light/workspace/quartet/archives/PACK01_03/event/b4/event_en/cm05/event_message_cm05_140.ebm",
       "template_sha256": "eb3869e3e1ba9ba855a5d7bee4311b855e855202f699ec8ebc5d2b8a9a90c003",
       "message_count": 2,
       "mapping_status_counts": {
@@ -54,21 +64,27 @@
       },
       "jp": "ごめん、ちょっと立て込んでて。<CR>また今度試飲させてもらってもいい？",
       "en_original": "Sorry, my schedule's a bit busy today. Can I try it another time?",
-      "en_auxiliary": null,
+      "en_auxiliary": "Sorry, my schedule's a bit busy today. Can I try it another time?",
       "en": "Sorry, things are a little hectic right now.<CR>Could I taste it another time?",
       "alignment": {
         "status": "exact_index_msg_id",
         "initial_en_source": "official_en",
         "official_en_index": 0,
         "official_en_mapping": "exact_index_msg_id",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 0,
+        "auxiliary_mapping": "exact_index_msg_id+exact_index_msg_id",
         "target_indices": {
-          "second_light_original": 0
+          "second_light_original": 0,
+          "second_light_quartet": 0
         },
         "target_mapping": {
-          "second_light_original": "exact_index_msg_id"
-        }
+          "second_light_original": "exact_index_msg_id",
+          "second_light_quartet": "exact_index_msg_id"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_index_msg_id[exact_structural]+exact_index_msg_id[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -94,21 +110,27 @@
       },
       "jp": "わかりました。それまでに、<CR>もっと美味しく淹れられるように研究しておきますね",
       "en_original": "Of course. I'll do my best to perfect it for when you try it.",
-      "en_auxiliary": null,
+      "en_auxiliary": "Of course. I'll do my best to perfect it for when you try it.",
       "en": "I understand. Until then,<CR>I'll study how to make it even more delicious.",
       "alignment": {
         "status": "exact_index_msg_id",
         "initial_en_source": "official_en",
         "official_en_index": 1,
         "official_en_mapping": "exact_index_msg_id",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 1,
+        "auxiliary_mapping": "exact_index_msg_id+exact_index_msg_id",
         "target_indices": {
-          "second_light_original": 1
+          "second_light_original": 1,
+          "second_light_quartet": 1
         },
         "target_mapping": {
-          "second_light_original": "exact_index_msg_id"
-        }
+          "second_light_original": "exact_index_msg_id",
+          "second_light_quartet": "exact_index_msg_id"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_index_msg_id[exact_structural]+exact_index_msg_id[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     }
   ]

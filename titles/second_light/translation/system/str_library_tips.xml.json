@@ -1,7 +1,7 @@
 {
   "type": "br_system_translation_unit",
   "format_version": 1,
-  "tool_version": "translation-0.0.11",
+  "tool_version": "translation-0.0.15",
   "project": "second_light",
   "category": "system",
   "source_role": "canonical",
@@ -12,14 +12,25 @@
     "jp_encoding": "utf-8",
     "official_en_path": "titles/second_light/workspace/original/archives/PACK02/saves/text_en/str_library_tips.xml",
     "official_en_sha256": "7d3d6d53f2d77a8c43b897c11aada81add2bcbaa0f86025b2c3b6a8bdc4200a5",
-    "auxiliary_jp_path": null,
-    "auxiliary_en_path": null
+    "auxiliary_jp_path": "titles/second_light/workspace/quartet/archives/PACK02_03/saves/b4/text_jp/str_library_tips.xml",
+    "auxiliary_en_path": "titles/second_light/workspace/quartet/archives/PACK02_03/saves/b4/text_en/str_library_tips.xml"
   },
   "targets": {
     "second_light_original": {
       "template_language": "en",
       "template_path": "titles/second_light/workspace/original/archives/PACK02/saves/text_en/str_library_tips.xml",
       "template_sha256": "7d3d6d53f2d77a8c43b897c11aada81add2bcbaa0f86025b2c3b6a8bdc4200a5",
+      "row_count": 60,
+      "encoding": "utf-8",
+      "mapping_status_counts": {
+        "exact_string_no": 60
+      },
+      "complete_mapping": true
+    },
+    "second_light_quartet": {
+      "template_language": "en",
+      "template_path": "titles/second_light/workspace/quartet/archives/PACK02_03/saves/b4/text_en/str_library_tips.xml",
+      "template_sha256": "1c5db6c3527a8f238b305409885879faba4b57df638b8b28038bb6d12058abc0",
       "row_count": 60,
       "encoding": "utf-8",
       "mapping_status_counts": {
@@ -40,21 +51,27 @@
       },
       "jp": "工作のススメ",
       "en_original": "Crafting Tips",
-      "en_auxiliary": null,
+      "en_auxiliary": "Crafting Tips",
       "en": "Crafting Tips",
       "alignment": {
         "status": "exact_string_no",
         "initial_en_source": "official_en",
         "official_en_index": 0,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 0,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 0
+          "second_light_original": 0,
+          "second_light_quartet": 0
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -68,21 +85,27 @@
       },
       "jp": "戦闘で重要になる回復アイテムや強化アイテムは、工作で作ることができます。^00沢山アイテムを作って、強敵に備えましょう",
       "en_original": "Recovery items and boost items are key to success in battle. Craft lots of items so you are prepared to take on strong enemies!",
-      "en_auxiliary": null,
+      "en_auxiliary": "Recovery items and boost items are key to success in battle. Craft lots of items so you are prepared to take on strong enemies!",
       "en": "Recovery items and boost items are key to success in battle. Craft lots of items so you are prepared to take on strong enemies!",
       "alignment": {
         "status": "exact_string_no",
         "initial_en_source": "official_en",
         "official_en_index": 1,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 1,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 1
+          "second_light_original": 1,
+          "second_light_quartet": 1
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -96,21 +119,27 @@
       },
       "jp": "タレントの取得のススメ",
       "en_original": "Learning Talents",
-      "en_auxiliary": null,
+      "en_auxiliary": "Learning Talents",
       "en": "Learning Talents",
       "alignment": {
         "status": "exact_string_no",
         "initial_en_source": "official_en",
         "official_en_index": 2,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 2,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 2
+          "second_light_original": 2,
+          "second_light_quartet": 2
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -124,21 +153,27 @@
       },
       "jp": "ＴＰを獲得したら、メインメニューからタレントの取得をしてみましょう。^00画面右上に「タレントの取得可能」表示が出ているときは、タレントの取得が可能なキャラクターがいるので確認してみましょう",
       "en_original": "Once you have enough TP, you can learn new Talents from the Main Menu. When \"Talent Learnable\" appears in the upper right corner of the screen, that means a character has a new Talent can be learned, so check it out!",
-      "en_auxiliary": null,
+      "en_auxiliary": "Once you have enough TP, you can learn new Talents from the Main Menu. When \"Talent Available\" appears in the upper right corner of the screen, that means a character has a new Talent available, so check it out!",
       "en": "Once you have enough TP, you can learn new Talents from the Main Menu. When \"Talent Learnable\" appears in the upper right corner of the screen, that means a character has a new Talent can be learned, so check it out!",
       "alignment": {
         "status": "exact_string_no",
         "initial_en_source": "official_en",
         "official_en_index": 3,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 3,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 3
+          "second_light_original": 3,
+          "second_light_quartet": 3
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -152,21 +187,27 @@
       },
       "jp": "学校開発のススメ",
       "en_original": "School Development Tips",
-      "en_auxiliary": null,
+      "en_auxiliary": "School Development Tips",
       "en": "School Development Tips",
       "alignment": {
         "status": "exact_string_no",
         "initial_en_source": "official_en",
         "official_en_index": 4,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 4,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 4
+          "second_light_original": 4,
+          "second_light_quartet": 4
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -180,21 +221,27 @@
       },
       "jp": "ストーリー進行やお願いで新しい施設を提案されたら、学校開発をしてみましょう。^00施設を開発すれば、戦闘や探索で有利になる効果を受けられます",
       "en_original": "If someone suggests building a new facility as you progress through the story or fulfill a request, try building it in School Development. Your facilities will give you advantages in battle and exploration!",
-      "en_auxiliary": null,
+      "en_auxiliary": "If someone suggests building a new facility as you progress through the story or fulfill a request, try building it in School Development. Your facilities will give you advantages in battle and exploration!",
       "en": "If someone suggests building a new facility as you progress through the story or fulfill a request, try building it in School Development. Your facilities will give you advantages in battle and exploration!",
       "alignment": {
         "status": "exact_string_no",
         "initial_en_source": "official_en",
         "official_en_index": 5,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 5,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 5
+          "second_light_original": 5,
+          "second_light_quartet": 5
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -208,21 +255,27 @@
       },
       "jp": "フラグメント装着のススメ",
       "en_original": "Fragment Equipping Tips",
-      "en_auxiliary": null,
+      "en_auxiliary": "Fragment Equipping Tips",
       "en": "Fragment Equipping Tips",
       "alignment": {
         "status": "exact_string_no",
         "initial_en_source": "official_en",
         "official_en_index": 6,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 6,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 6
+          "second_light_original": 6,
+          "second_light_quartet": 6
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -236,21 +289,27 @@
       },
       "jp": "デートで手に入ったフラグメントは、メインメニューから装着してみましょう。^00フラグメントの装着枠は、タレントの取得を進めると解放されていきます",
       "en_original": "You can equip Fragments that you receive on dates via the Main Menu. Additional Fragment slots will be unlocked as you learn more Talents.",
-      "en_auxiliary": null,
+      "en_auxiliary": "You can equip Fragments that you receive on dates via the Main Menu. Additional Fragment slots will be unlocked as you learn more Talents.",
       "en": "You can equip Fragments that you receive on dates via the Main Menu. Additional Fragment slots will be unlocked as you learn more Talents.",
       "alignment": {
         "status": "exact_string_no",
         "initial_en_source": "official_en",
         "official_en_index": 7,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 7,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 7
+          "second_light_original": 7,
+          "second_light_quartet": 7
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -264,21 +323,27 @@
       },
       "jp": "回復アイテム",
       "en_original": "Recovery Items",
-      "en_auxiliary": null,
+      "en_auxiliary": "Recovery Items",
       "en": "Recovery Items",
       "alignment": {
         "status": "exact_string_no",
         "initial_en_source": "official_en",
         "official_en_index": 8,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 8,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 8
+          "second_light_original": 8,
+          "second_light_quartet": 8
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -292,21 +357,27 @@
       },
       "jp": "ＨＰが減少したら、アイテムを使って回復しましょう。^00ＨＰ回復アイテムは工作で作ることができます",
       "en_original": "When your HP gets low, you can use items to recover it. HP recovery items can be made through crafting.",
-      "en_auxiliary": null,
+      "en_auxiliary": "When your HP gets low, you can use items to recover it. HP recovery items can be made through crafting.",
       "en": "When your HP gets low, you can use items to recover it. HP recovery items can be made through crafting.",
       "alignment": {
         "status": "exact_string_no",
         "initial_en_source": "official_en",
         "official_en_index": 9,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 9,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 9
+          "second_light_original": 9,
+          "second_light_quartet": 9
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -320,21 +391,27 @@
       },
       "jp": "フィールドでのアイテム使用",
       "en_original": "Using Items While Exploring",
-      "en_auxiliary": null,
+      "en_auxiliary": "Using Items While Exploring",
       "en": "Using Items While Exploring",
       "alignment": {
         "status": "exact_string_no",
         "initial_en_source": "official_en",
         "official_en_index": 10,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 10,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 10
+          "second_light_original": 10,
+          "second_light_quartet": 10
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -348,21 +425,27 @@
       },
       "jp": "フィールド移動中は、ＨＰ回復アイテムと強化アイテムを使うことができます。^00強化アイテムによって発生した補助効果などは、次の戦闘で発揮されます",
       "en_original": "You can use HP recovery items and boost items while exploring. Support effects granted by boost items will be applied in the next battle.",
-      "en_auxiliary": null,
+      "en_auxiliary": "You can use HP recovery items and boost items while exploring. Support effects granted by boost items will be applied in the next battle.",
       "en": "You can use HP recovery items and boost items while exploring. Support effects granted by boost items will be applied in the next battle.",
       "alignment": {
         "status": "exact_string_no",
         "initial_en_source": "official_en",
         "official_en_index": 11,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 11,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 11
+          "second_light_original": 11,
+          "second_light_quartet": 11
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -376,21 +459,27 @@
       },
       "jp": "サポーターのアイテム使用",
       "en_original": "Having Supporters Use Items",
-      "en_auxiliary": null,
+      "en_auxiliary": "Having Supporters Use Items",
       "en": "Having Supporters Use Items",
       "alignment": {
         "status": "exact_string_no",
         "initial_en_source": "official_en",
         "official_en_index": 12,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 12,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 12
+          "second_light_original": 12,
+          "second_light_quartet": 12
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -404,21 +493,27 @@
       },
       "jp": "サポーターメニューからは、サポーターにアイテムを使ってもらうことができます。^00オーダーリングがＭＡＸになったら、設定したアイテムを使用してくれます",
       "en_original": "You can have your Supporters use items via the Supporter menu. When the Order Ring is maxed out, they will use the selected item.",
-      "en_auxiliary": null,
+      "en_auxiliary": "You can have your Supporters use items via the Supporter menu. When the Order Ring is maxed out, they will use the selected item.",
       "en": "You can have your Supporters use items via the Supporter menu. When the Order Ring is maxed out, they will use the selected item.",
       "alignment": {
         "status": "exact_string_no",
         "initial_en_source": "official_en",
         "official_en_index": 13,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 13,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 13
+          "second_light_original": 13,
+          "second_light_quartet": 13
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -432,21 +527,27 @@
       },
       "jp": "サポーターと戦闘キャラの入れ替え",
       "en_original": "Swapping Characters",
-      "en_auxiliary": null,
+      "en_auxiliary": "Swapping Characters",
       "en": "Swapping Characters",
       "alignment": {
         "status": "exact_string_no",
         "initial_en_source": "official_en",
         "official_en_index": 14,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 14,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 14
+          "second_light_original": 14,
+          "second_light_quartet": 14
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -460,21 +561,27 @@
       },
       "jp": "サポーターは、戦闘キャラクターと入れ替えることができます。^00オーダーリングがＭＡＸになったら、設定したキャラクターと入れ替わってくれます",
       "en_original": "You can swap Supporters with characters in battle. When the Order Ring is maxed out, the selected character will be replaced by a Supporter.",
-      "en_auxiliary": null,
+      "en_auxiliary": "You can swap Supporters with characters in battle. When the Order Ring is maxed out, the selected character will be replaced by a Supporter.",
       "en": "You can swap Supporters with characters in battle. When the Order Ring is maxed out, the selected character will be replaced by a Supporter.",
       "alignment": {
         "status": "exact_string_no",
         "initial_en_source": "official_en",
         "official_en_index": 15,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 15,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 15
+          "second_light_original": 15,
+          "second_light_quartet": 15
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -488,21 +595,27 @@
       },
       "jp": "サポートオーダーの設定",
       "en_original": "Setting Support Orders",
-      "en_auxiliary": null,
+      "en_auxiliary": "Setting Support Orders",
       "en": "Setting Support Orders",
       "alignment": {
         "status": "exact_string_no",
         "initial_en_source": "official_en",
         "official_en_index": 16,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 16,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 16
+          "second_light_original": 16,
+          "second_light_quartet": 16
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -516,21 +629,27 @@
       },
       "jp": "サポーターが使用するサポートオーダーは、メインメニューで設定することができます。^00ＨＰ回復や味方の強化など様々な効果があるため、戦う敵に応じて設定を見直してみましょう",
       "en_original": "Support orders used by Supporters can be set from the Main Menu. There are various effects, such as HP recovery and buffing allies, so choose them strategically based on the enemy you are fighting.",
-      "en_auxiliary": null,
+      "en_auxiliary": "Support orders used by Supporters can be set from the Main Menu. There are various effects, such as HP recovery and buffing allies, so choose them strategically based on the enemy you are fighting.",
       "en": "Support orders used by Supporters can be set from the Main Menu. There are various effects, such as HP recovery and buffing allies, so choose them strategically based on the enemy you are fighting.",
       "alignment": {
         "status": "exact_string_no",
         "initial_en_source": "official_en",
         "official_en_index": 17,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 17,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 17
+          "second_light_original": 17,
+          "second_light_quartet": 17
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -544,21 +663,27 @@
       },
       "jp": "ＴＰの上げ方",
       "en_original": "Earning TP",
-      "en_auxiliary": null,
+      "en_auxiliary": "Earning TP",
       "en": "Earning TP",
       "alignment": {
         "status": "exact_string_no",
         "initial_en_source": "official_en",
         "official_en_index": 18,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 18,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 18
+          "second_light_original": 18,
+          "second_light_quartet": 18
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -572,21 +697,27 @@
       },
       "jp": "タレントの取得に必要なＴＰは、仲間のお願いを叶えたり、一緒にデートをしたりすることで増やすことができます。^00学校へ帰ったら、積極的に仲間に話しかけてみましょう",
       "en_original": "You can earn the TP used to learn Talents by fulfilling your friends' requests and going on dates with them. Make sure to talk with everyone when you're at the school!",
-      "en_auxiliary": null,
+      "en_auxiliary": "You can earn the TP used to learn Talents by fulfilling your friends' requests and going on dates with them. Make sure to talk with everyone when you're at the school!",
       "en": "You can earn the TP used to learn Talents by fulfilling your friends' requests and going on dates with them. Make sure to talk with everyone when you're at the school!",
       "alignment": {
         "status": "exact_string_no",
         "initial_en_source": "official_en",
         "official_en_index": 19,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 19,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 19
+          "second_light_original": 19,
+          "second_light_quartet": 19
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -600,21 +731,27 @@
       },
       "jp": "愛央",
       "en_original": "Ao",
-      "en_auxiliary": null,
+      "en_auxiliary": "Ao",
       "en": "Ao",
       "alignment": {
         "status": "exact_string_no",
         "initial_en_source": "official_en",
         "official_en_index": 20,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 20,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 20
+          "second_light_original": 20,
+          "second_light_quartet": 20
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -628,21 +765,27 @@
       },
       "jp": "愛央はバランスの取れたステータスを持つリフレクターです。^00コンボガードのスキルを持つため、強敵相手では頼もしい存在です",
       "en_original": "Ao is a Reflector with well-balanced stats. Her Combo Guard skill makes her indispensable against strong opponents.",
-      "en_auxiliary": null,
+      "en_auxiliary": "Ao is a Reflector with well-balanced stats. Her Combo Guard skill makes her indispensable against strong opponents.",
       "en": "Ao is a Reflector with well-balanced stats. Her Combo Guard skill makes her indispensable against strong opponents.",
       "alignment": {
         "status": "exact_string_no",
         "initial_en_source": "official_en",
         "official_en_index": 21,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 21,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 21
+          "second_light_original": 21,
+          "second_light_quartet": 21
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -656,21 +799,27 @@
       },
       "jp": "こころ",
       "en_original": "Kokoro",
-      "en_auxiliary": null,
+      "en_auxiliary": "Kokoro",
       "en": "Kokoro",
       "alignment": {
         "status": "exact_string_no",
         "initial_en_source": "official_en",
         "official_en_index": 22,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 22,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 22
+          "second_light_original": 22,
+          "second_light_quartet": 22
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -684,21 +833,27 @@
       },
       "jp": "こころは耐久力が低いですが、攻撃力が高く、大きなダメージを与えることが可能なリフレクターです。^00また、いくつかの補助スキルを駆使して敵の妨害も行えます",
       "en_original": "Kokoro is a Reflector with low endurance but high attack power, capable of inflicting great damage. She can also use several support skills to thwart the enemy.",
-      "en_auxiliary": null,
+      "en_auxiliary": "Kokoro is a Reflector with low endurance but high attack power, capable of inflicting great damage. She can also use several support skills to thwart the enemy.",
       "en": "Kokoro is a Reflector with low endurance but high attack power, capable of inflicting great damage. She can also use several support skills to thwart the enemy.",
       "alignment": {
         "status": "exact_string_no",
         "initial_en_source": "official_en",
         "official_en_index": 23,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 23,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 23
+          "second_light_original": 23,
+          "second_light_quartet": 23
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -712,21 +867,27 @@
       },
       "jp": "伶那",
       "en_original": "Rena",
-      "en_auxiliary": null,
+      "en_auxiliary": "Rena",
       "en": "Rena",
       "alignment": {
         "status": "exact_string_no",
         "initial_en_source": "official_en",
         "official_en_index": 24,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 24,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 24
+          "second_light_original": 24,
+          "second_light_quartet": 24
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -740,21 +901,27 @@
       },
       "jp": "伶那は強化や回復など、味方を支援するスキルを得意とするリフレクターです。^00味方を強力にサポートし、一気に猛攻を仕掛けましょう",
       "en_original": "Rena is a Reflector who specializes in skills that support her allies, such as buffs and recovery. She can provide solid support to her allies while launching an onslaught at the same time.",
-      "en_auxiliary": null,
+      "en_auxiliary": "Rena is a Reflector who specializes in skills that support her allies, such as buffs and recovery. She can provide solid support to her allies while launching an onslaught at the same time.",
       "en": "Rena is a Reflector who specializes in skills that support her allies, such as buffs and recovery. She can provide solid support to her allies while launching an onslaught at the same time.",
       "alignment": {
         "status": "exact_string_no",
         "initial_en_source": "official_en",
         "official_en_index": 25,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 25,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 25
+          "second_light_original": 25,
+          "second_light_quartet": 25
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -768,21 +935,27 @@
       },
       "jp": "詩帆",
       "en_original": "Shiho",
-      "en_auxiliary": null,
+      "en_auxiliary": "Shiho",
       "en": "Shiho",
       "alignment": {
         "status": "exact_string_no",
         "initial_en_source": "official_en",
         "official_en_index": 26,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 26,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 26
+          "second_light_original": 26,
+          "second_light_quartet": 26
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -796,21 +969,27 @@
       },
       "jp": "詩帆は、味方の回復を得意とするリフレクターです。^00強力な攻撃を使う敵を相手にしたとき、パーティの安定性を上げてくれます",
       "en_original": "Shiho is a Reflector that specializes in recovery. She will uphold the stability of your party when dealing with enemies that use powerful attacks.",
-      "en_auxiliary": null,
+      "en_auxiliary": "Shiho is a Reflector that specializes in recovery. She will uphold the stability of your party when dealing with enemies that use powerful attacks.",
       "en": "Shiho is a Reflector that specializes in recovery. She will uphold the stability of your party when dealing with enemies that use powerful attacks.",
       "alignment": {
         "status": "exact_string_no",
         "initial_en_source": "official_en",
         "official_en_index": 27,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 27,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 27
+          "second_light_original": 27,
+          "second_light_quartet": 27
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -824,21 +1003,27 @@
       },
       "jp": "日菜子",
       "en_original": "Hinako",
-      "en_auxiliary": null,
+      "en_auxiliary": "Hinako",
       "en": "Hinako",
       "alignment": {
         "status": "exact_string_no",
         "initial_en_source": "official_en",
         "official_en_index": 28,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 28,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 28
+          "second_light_original": 28,
+          "second_light_quartet": 28
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -852,21 +1037,27 @@
       },
       "jp": "日菜子はエーテル加速度が大きく、連続攻撃を得意とするリフレクターです。^00素早く攻撃をたたみかけ、コンボを稼いで必殺技に繋げましょう",
       "en_original": "Hinako is a Reflector with fast Ether recovery speed who specializes in continuous attacks. She attacks in rapid succession to rack up combos and pull off special skills.",
-      "en_auxiliary": null,
+      "en_auxiliary": "Hinako is a Reflector with fast Ether recovery speed who specializes in continuous attacks. She attacks in rapid succession to rack up combos and pull off special skills.",
       "en": "Hinako is a Reflector with fast Ether recovery speed who specializes in continuous attacks. She attacks in rapid succession to rack up combos and pull off special skills.",
       "alignment": {
         "status": "exact_string_no",
         "initial_en_source": "official_en",
         "official_en_index": 29,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 29,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 29
+          "second_light_original": 29,
+          "second_light_quartet": 29
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -880,21 +1071,27 @@
       },
       "jp": "陽桜莉",
       "en_original": "Hiori",
-      "en_auxiliary": null,
+      "en_auxiliary": "Hiori",
       "en": "Hiori",
       "alignment": {
         "status": "exact_string_no",
         "initial_en_source": "official_en",
         "official_en_index": 30,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 30,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 30
+          "second_light_original": 30,
+          "second_light_quartet": 30
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -908,21 +1105,27 @@
       },
       "jp": "陽桜莉はエーテル加速度が小さい代わりに、一撃の威力がとても大きいリフレクターです。^00コンボの繋がっていない序盤から、強力な攻撃で攻めていくことができます",
       "en_original": "Hiori is a Reflector with slow Ether recovery speed, but each of her blows do great damage. She can launch powerful attacks from the beginning of combat even without a combo.",
-      "en_auxiliary": null,
+      "en_auxiliary": "Hiori is a Reflector with slow Ether recovery speed, but each of her blows do great damage. She can launch powerful attacks from the beginning of combat even without a combo.",
       "en": "Hiori is a Reflector with slow Ether recovery speed, but each of her blows do great damage. She can launch powerful attacks from the beginning of combat even without a combo.",
       "alignment": {
         "status": "exact_string_no",
         "initial_en_source": "official_en",
         "official_en_index": 31,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 31,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 31
+          "second_light_original": 31,
+          "second_light_quartet": 31
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -943,14 +1146,21 @@
         "initial_en_source": "official_en",
         "official_en_index": 32,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 32,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 32
+          "second_light_original": 32,
+          "second_light_quartet": 32
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "quartet_en_empty",
+        "auxiliary_verification": "normalized_unusable_auxiliary_to_null",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "same",
+        "auxiliary_source_value": ""
       }
     },
     {
@@ -971,14 +1181,21 @@
         "initial_en_source": "official_en",
         "official_en_index": 33,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 33,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 33
+          "second_light_original": 33,
+          "second_light_quartet": 33
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "quartet_en_empty",
+        "auxiliary_verification": "normalized_unusable_auxiliary_to_null",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "same",
+        "auxiliary_source_value": ""
       }
     },
     {
@@ -999,14 +1216,21 @@
         "initial_en_source": "official_en",
         "official_en_index": 34,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 34,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 34
+          "second_light_original": 34,
+          "second_light_quartet": 34
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "quartet_en_empty",
+        "auxiliary_verification": "normalized_unusable_auxiliary_to_null",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "same",
+        "auxiliary_source_value": ""
       }
     },
     {
@@ -1027,14 +1251,21 @@
         "initial_en_source": "official_en",
         "official_en_index": 35,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 35,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 35
+          "second_light_original": 35,
+          "second_light_quartet": 35
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "quartet_en_empty",
+        "auxiliary_verification": "normalized_unusable_auxiliary_to_null",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "same",
+        "auxiliary_source_value": ""
       }
     },
     {
@@ -1055,14 +1286,21 @@
         "initial_en_source": "official_en",
         "official_en_index": 36,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 36,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 36
+          "second_light_original": 36,
+          "second_light_quartet": 36
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "quartet_en_empty",
+        "auxiliary_verification": "normalized_unusable_auxiliary_to_null",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "same",
+        "auxiliary_source_value": ""
       }
     },
     {
@@ -1083,14 +1321,21 @@
         "initial_en_source": "official_en",
         "official_en_index": 37,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 37,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 37
+          "second_light_original": 37,
+          "second_light_quartet": 37
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "quartet_en_empty",
+        "auxiliary_verification": "normalized_unusable_auxiliary_to_null",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "same",
+        "auxiliary_source_value": ""
       }
     },
     {
@@ -1111,14 +1356,21 @@
         "initial_en_source": "official_en",
         "official_en_index": 38,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 38,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 38
+          "second_light_original": 38,
+          "second_light_quartet": 38
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "quartet_en_empty",
+        "auxiliary_verification": "normalized_unusable_auxiliary_to_null",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "same",
+        "auxiliary_source_value": ""
       }
     },
     {
@@ -1139,14 +1391,21 @@
         "initial_en_source": "official_en",
         "official_en_index": 39,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 39,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 39
+          "second_light_original": 39,
+          "second_light_quartet": 39
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "quartet_en_empty",
+        "auxiliary_verification": "normalized_unusable_auxiliary_to_null",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "same",
+        "auxiliary_source_value": ""
       }
     },
     {
@@ -1160,21 +1419,27 @@
       },
       "jp": "レア採取",
       "en_original": "Collecting Rare Items",
-      "en_auxiliary": null,
+      "en_auxiliary": "Collecting Rare Items",
       "en": "Collecting Rare Items",
       "alignment": {
         "status": "exact_string_no",
         "initial_en_source": "official_en",
         "official_en_index": 40,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 40,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 40
+          "second_light_original": 40,
+          "second_light_quartet": 40
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -1188,21 +1453,27 @@
       },
       "jp": "黄色い採取ポイントからは、珍しいアイテムが手に入ります",
       "en_original": "You can obtain rare items from the yellow collection points.",
-      "en_auxiliary": null,
+      "en_auxiliary": "You can obtain rare items from the yellow collection points.",
       "en": "You can obtain rare items from the yellow collection points.",
       "alignment": {
         "status": "exact_string_no",
         "initial_en_source": "official_en",
         "official_en_index": 41,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 41,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 41
+          "second_light_original": 41,
+          "second_light_quartet": 41
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -1216,21 +1487,27 @@
       },
       "jp": "メモリー",
       "en_original": "Memories",
-      "en_auxiliary": null,
+      "en_auxiliary": "Memories",
       "en": "Memories",
       "alignment": {
         "status": "exact_string_no",
         "initial_en_source": "official_en",
         "official_en_index": 42,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 42,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 42
+          "second_light_original": 42,
+          "second_light_quartet": 42
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -1244,21 +1521,27 @@
       },
       "jp": "豪華な見た目の採取ポイントからは、メモリーが手に入ります。^00メモリーを獲得すると、工作で新しいアイテムを作れるようになります",
       "en_original": "You can acquire memories from the fancy-looking collection points. Getting memories will allow you to craft new items.",
-      "en_auxiliary": null,
+      "en_auxiliary": "You can acquire memories from the fancy-looking collection points. Getting memories will allow you to craft new items.",
       "en": "You can acquire memories from the fancy-looking collection points. Getting memories will allow you to craft new items.",
       "alignment": {
         "status": "exact_string_no",
         "initial_en_source": "official_en",
         "official_en_index": 43,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 43,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 43
+          "second_light_original": 43,
+          "second_light_quartet": 43
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -1272,21 +1555,27 @@
       },
       "jp": "記憶の欠片",
       "en_original": "Memory Shards",
-      "en_auxiliary": null,
+      "en_auxiliary": "Memory Shards",
       "en": "Memory Shards",
       "alignment": {
         "status": "exact_string_no",
         "initial_en_source": "official_en",
         "official_en_index": 44,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 44,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 44
+          "second_light_original": 44,
+          "second_light_quartet": 44
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -1300,21 +1589,27 @@
       },
       "jp": "青くてとげとげしたオブジェクトは、記憶の欠片です。^00触れると誰かの記憶を垣間見ることができます",
       "en_original": "The blue, pointy objects are memory shards. If you touch one, you will catch a glimpse of someone's memory.",
-      "en_auxiliary": null,
+      "en_auxiliary": "The blue, pointy objects are memory shards. If you touch one, you will catch a glimpse of someone's memory.",
       "en": "The blue, pointy objects are memory shards. If you touch one, you will catch a glimpse of someone's memory.",
       "alignment": {
         "status": "exact_string_no",
         "initial_en_source": "official_en",
         "official_en_index": 45,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 45,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 45
+          "second_light_original": 45,
+          "second_light_quartet": 45
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -1328,21 +1623,27 @@
       },
       "jp": "工作アビリティ",
       "en_original": "Crafting Abilities",
-      "en_auxiliary": null,
+      "en_auxiliary": "Crafting Abilities",
       "en": "Crafting Abilities",
       "alignment": {
         "status": "exact_string_no",
         "initial_en_source": "official_en",
         "official_en_index": 46,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 46,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 46
+          "second_light_original": 46,
+          "second_light_quartet": 46
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -1356,21 +1657,27 @@
       },
       "jp": "工作アビリティは、タレントで習得可能です。^00アイテムの隠された力を引き出すために、色々なアビリティを習得してみましょう",
       "en_original": "Crafting abilities can be learned via Talents. Learn lots of different abilities to bring out an item's true potential!",
-      "en_auxiliary": null,
+      "en_auxiliary": "Crafting abilities can be learned via Talents. Learn lots of different abilities to bring out an item's true potential!",
       "en": "Crafting abilities can be learned via Talents. Learn lots of different abilities to bring out an item's true potential!",
       "alignment": {
         "status": "exact_string_no",
         "initial_en_source": "official_en",
         "official_en_index": 47,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 47,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 47
+          "second_light_original": 47,
+          "second_light_quartet": 47
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -1384,21 +1691,27 @@
       },
       "jp": "学校へ戻る",
       "en_original": "Return to School",
-      "en_auxiliary": null,
+      "en_auxiliary": "Return to School",
       "en": "Return to School",
       "alignment": {
         "status": "exact_string_no",
         "initial_en_source": "official_en",
         "official_en_index": 48,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 48,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 48
+          "second_light_original": 48,
+          "second_light_quartet": 48
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -1412,21 +1725,27 @@
       },
       "jp": "学校へ戻ると、ＨＰが全回復します。^00探索中、ＨＰが減ってきたら学校へ戻りましょう。^00全体マップで<IM25>を押すと、学校に帰れます",
       "en_original": "Returning to the school will fully restore your party's HP. When your HP starts getting low while exploring, you should go back to the school. You can return to the school by pressing <IM25> in the map.",
-      "en_auxiliary": null,
+      "en_auxiliary": "Returning to the school will fully restore your party's HP. When your HP starts getting low while exploring, you should go back to the school. You can return to the school by pressing <IM25> in the map.",
       "en": "Returning to the school will fully restore your party's HP. When your HP starts getting low while exploring, you should go back to the school. You can return to the school by pressing <IM25> in the map.",
       "alignment": {
         "status": "exact_string_no",
         "initial_en_source": "official_en",
         "official_en_index": 49,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 49,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 49
+          "second_light_original": 49,
+          "second_light_quartet": 49
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -1440,21 +1759,27 @@
       },
       "jp": "用語：リフレクター",
       "en_original": "Term: Reflector",
-      "en_auxiliary": null,
+      "en_auxiliary": "Term: Reflector",
       "en": "Term: Reflector",
       "alignment": {
         "status": "exact_string_no",
         "initial_en_source": "official_en",
         "official_en_index": 50,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 50,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 50
+          "second_light_original": 50,
+          "second_light_quartet": 50
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -1468,21 +1793,27 @@
       },
       "jp": "『指輪』を通じてエーテルをエネルギー源とし、“想い”を力に戦うことができる少女。^00想いをこめることで武器を形成したり、変身したりすることが可能。^00ただし、『指輪』があれば誰でも力が使えるわけではないようだ",
       "en_original": "Young women that can fight using the power of \"feelings\" by using rings to harness the power of Ether as energy.^00They can infuse their feelings to create weapons, transform, and more.^00However, not just anyone can make use of the rings' powers.",
-      "en_auxiliary": null,
+      "en_auxiliary": "Young women that can fight using the power of \"feelings\" by using rings to harness the power of Ether as energy.^00They can infuse their feelings to create weapons, transform, and more.^00However, not just anyone can make use of the rings' powers.",
       "en": "Young women that can fight using the power of \"feelings\" by using rings to harness the power of Ether as energy.^00They can infuse their feelings to create weapons, transform, and more.^00However, not just anyone can make use of the rings' powers.",
       "alignment": {
         "status": "exact_string_no",
         "initial_en_source": "official_en",
         "official_en_index": 51,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 51,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 51
+          "second_light_original": 51,
+          "second_light_quartet": 51
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -1496,21 +1827,27 @@
       },
       "jp": "用語：フラグメント",
       "en_original": "Term: Fragment",
-      "en_auxiliary": null,
+      "en_auxiliary": "Term: Fragment",
       "en": "Term: Fragment",
       "alignment": {
         "status": "exact_string_no",
         "initial_en_source": "official_en",
         "official_en_index": 52,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 52,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 52
+          "second_light_original": 52,
+          "second_light_quartet": 52
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -1524,21 +1861,27 @@
       },
       "jp": "人の想いの欠片が形となったもの。^00リフレクターにとっては強力なエネルギー源となる。^00扱いを誤ると、フラグメントの持ち主の精神に多大な影響を与えることも",
       "en_original": "A person's memories in the form of a shard.^00For Reflectors, they are a source of tremendous energy.^00If they are used incorrectly, Fragments can have a major effect on the spirit of their wielder.",
-      "en_auxiliary": null,
+      "en_auxiliary": "A person's memories in the form of a shard.^00For Reflectors, they are a source of tremendous energy.^00If they are used incorrectly, Fragments can have a major effect on the spirit of their wielder.",
       "en": "A person's memories in the form of a shard.^00For Reflectors, they are a source of tremendous energy.^00If they are used incorrectly, Fragments can have a major effect on the spirit of their wielder.",
       "alignment": {
         "status": "exact_string_no",
         "initial_en_source": "official_en",
         "official_en_index": 53,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 53,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 53
+          "second_light_original": 53,
+          "second_light_quartet": 53
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -1552,21 +1895,27 @@
       },
       "jp": "用語：原種",
       "en_original": "Term: Sephira",
-      "en_auxiliary": null,
+      "en_auxiliary": "Term: Sephira",
       "en": "Term: Sephira",
       "alignment": {
         "status": "exact_string_no",
         "initial_en_source": "official_en",
         "official_en_index": 54,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 54,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 54
+          "second_light_original": 54,
+          "second_light_quartet": 54
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -1580,21 +1929,27 @@
       },
       "jp": "古来より存在している、この世界の管理者、および管理者候補である上位存在。^00地球や人間もまた、ある一体の原種により生み出された存在である",
       "en_original": "Ancient beings that act as overseer or overseer candidates of this world.^00The earth and humanity were born from one of the Sephira.",
-      "en_auxiliary": null,
+      "en_auxiliary": "Ancient beings that act as overseer or overseer candidates of this world.^00The earth and humanity were born from one of the Sephira.",
       "en": "Ancient beings that act as overseer or overseer candidates of this world.^00The earth and humanity were born from one of the Sephira.",
       "alignment": {
         "status": "exact_string_no",
         "initial_en_source": "official_en",
         "official_en_index": 55,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 55,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 55
+          "second_light_original": 55,
+          "second_light_quartet": 55
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -1608,21 +1963,27 @@
       },
       "jp": "用語：AASA",
       "en_original": "Term: AASA",
-      "en_auxiliary": null,
+      "en_auxiliary": "Term: AASA",
       "en": "Term: AASA",
       "alignment": {
         "status": "exact_string_no",
         "initial_en_source": "official_en",
         "official_en_index": 56,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 56,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 56
+          "second_light_original": 56,
+          "second_light_quartet": 56
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -1636,21 +1997,27 @@
       },
       "jp": "超古代遺物研究機関。^00[Ancient Ark Solving Agency]^00元はその名の通り古代文明やオーパーツの研究を行う機関であったが、ある研究から世界の危機を観測。^00その危機や“灰”に対抗する力としてリフレクターに活路を見出したAASAは、適性を持つ少女を探しては『指輪』を提供し、協力者を集めていたという",
       "en_original": "The Ancient Ark Solving Agency.^00Originally, as its name applies, it was an agency that researched ancient civilizations and artifacts. However, one day, through its research, it discovered a threat to the world known as Ash.^00The AASA also discovered that the crisis of the ash could be countered by using the power of the Reflectors. As such, they sought out suitable girls to give rings to, and gathered those who would cooperate.",
-      "en_auxiliary": null,
+      "en_auxiliary": "The Ancient Ark Solving Agency.^00Originally, as its name applies, it was an agency that researched ancient civilizations and artifacts. However, one day, through its research, it discovered a threat to the world known as Ash.^00The AASA also discovered that the crisis of the ash could be countered by using the power of the Reflectors. As such, they sought out suitable girls to give rings to, and gathered those who would cooperate.",
       "en": "The Ancient Ark Solving Agency.^00Originally, as its name applies, it was an agency that researched ancient civilizations and artifacts. However, one day, through its research, it discovered a threat to the world known as Ash.^00The AASA also discovered that the crisis of the ash could be countered by using the power of the Reflectors. As such, they sought out suitable girls to give rings to, and gathered those who would cooperate.",
       "alignment": {
         "status": "exact_string_no",
         "initial_en_source": "official_en",
         "official_en_index": 57,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 57,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 57
+          "second_light_original": 57,
+          "second_light_quartet": 57
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -1664,21 +2031,27 @@
       },
       "jp": "用語：コモン",
       "en_original": "Term: The Commons",
-      "en_auxiliary": null,
+      "en_auxiliary": "Term: The Commons",
       "en": "Term: The Commons",
       "alignment": {
         "status": "exact_string_no",
         "initial_en_source": "official_en",
         "official_en_index": 58,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 58,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 58
+          "second_light_original": 58,
+          "second_light_quartet": 58
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     },
     {
@@ -1692,21 +2065,27 @@
       },
       "jp": "人間の集合的無意識により形成されている世界。^00ユズとライムは人々の想いを守るため、この世界の管理を行っていた",
       "en_original": "A world formed by the collective unconsciousness of humans.^00In order to protect the feelings of humans, Yuzu and Lime oversee the world.",
-      "en_auxiliary": null,
+      "en_auxiliary": "A world formed by the collective unconsciousness of humans.^00In order to protect the feelings of humans, Yuzu and Lime oversee the world.",
       "en": "A world formed by the collective unconsciousness of humans.^00In order to protect the feelings of humans, Yuzu and Lime oversee the world.",
       "alignment": {
         "status": "exact_string_no",
         "initial_en_source": "official_en",
         "official_en_index": 59,
         "official_en_mapping": "exact_string_no",
-        "auxiliary_en_index": null,
-        "auxiliary_mapping": "unavailable",
+        "auxiliary_en_index": 59,
+        "auxiliary_mapping": "exact_string_no+exact_string_no",
         "target_indices": {
-          "second_light_original": 59
+          "second_light_original": 59,
+          "second_light_quartet": 59
         },
         "target_mapping": {
-          "second_light_original": "exact_string_no"
-        }
+          "second_light_original": "exact_string_no",
+          "second_light_quartet": "exact_string_no"
+        },
+        "auxiliary_value_status": "available",
+        "auxiliary_verification": "verified_authoritative_structural_mapping",
+        "auxiliary_mapping_authoritative": "exact_string_no[exact_structural]+exact_string_no[exact_structural]",
+        "auxiliary_source_jp_relation": "same"
       }
     }
   ]
