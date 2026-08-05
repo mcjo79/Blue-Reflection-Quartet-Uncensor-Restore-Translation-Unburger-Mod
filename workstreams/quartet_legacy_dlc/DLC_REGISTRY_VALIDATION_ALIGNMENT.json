@@ -1,0 +1,144 @@
+{
+  "type": "br_quartet_legacy_dlc_registry_validation_alignment",
+  "format_version": 1,
+  "generated_utc": "2026-08-05T20:48:38Z",
+  "workstream_id": "quartet_legacy_dlc",
+  "workstream_version": "0.0.36",
+  "status": "canonical_validator_vocabulary_aligned",
+  "input_registry_sha256": "a3013062b83c2a967499f3528090df0cd6b54f54b56d30e5663727cecce9f9b5",
+  "output_registry_sha256": "00e8316e0b442c8b0c7ed12e8fc0231d74d84b10f3a337579291a73c6f281313",
+  "validator_owner": "core",
+  "validator_file": "Blue_Reflection_Text_Tool/br_extension_tool.py",
+  "validator_contract": {
+    "allowed_quartet_statuses": [
+      "not_mapped",
+      "assets_identified",
+      "conversion_required",
+      "integrated",
+      "in_game_tested",
+      "blocked",
+      "unsupported"
+    ],
+    "required_source_ownership": "requires_original_dlc"
+  },
+  "pre_alignment_validation": {
+    "report": "BR_PROJECT_BASE_VALIDATION.json",
+    "status": "failed",
+    "warning_count": 0,
+    "error_count": 21,
+    "unsupported_quartet_status_count": 13,
+    "source_ownership_error_count": 8,
+    "other_error_count": 0
+  },
+  "changes": [
+    {
+      "content_id": "legacy_dlc_nonscenario_costume_and_appearance",
+      "old_quartet_status": "metadata_inventory_only",
+      "new_quartet_status": "assets_identified",
+      "old_source_ownership": "requires_original_dlc",
+      "new_source_ownership": "requires_original_dlc"
+    },
+    {
+      "content_id": "legacy_dlc_nonscenario_items_rewards_recipes",
+      "old_quartet_status": "metadata_inventory_only",
+      "new_quartet_status": "assets_identified",
+      "old_source_ownership": "requires_original_dlc",
+      "new_source_ownership": "requires_original_dlc"
+    },
+    {
+      "content_id": "legacy_dlc_nonscenario_theme_ui_freespace",
+      "old_quartet_status": "metadata_inventory_only",
+      "new_quartet_status": "assets_identified",
+      "old_source_ownership": "requires_original_dlc",
+      "new_source_ownership": "requires_original_dlc"
+    },
+    {
+      "content_id": "legacy_dlc_nonscenario_entitlement_and_unlock",
+      "old_quartet_status": "not_synthesized",
+      "new_quartet_status": "assets_identified",
+      "old_source_ownership": "requires_original_dlc",
+      "new_source_ownership": "requires_original_dlc"
+    },
+    {
+      "content_id": "legacy_dlc_technical_catalog_costume_or_outfit",
+      "old_quartet_status": "generated_metadata_registry_only",
+      "new_quartet_status": "assets_identified",
+      "old_source_ownership": "requires_original_dlc_when_applicable",
+      "new_source_ownership": "requires_original_dlc"
+    },
+    {
+      "content_id": "legacy_dlc_technical_catalog_accessory",
+      "old_quartet_status": "generated_metadata_registry_only",
+      "new_quartet_status": "assets_identified",
+      "old_source_ownership": "requires_original_dlc_when_applicable",
+      "new_source_ownership": "requires_original_dlc"
+    },
+    {
+      "content_id": "legacy_dlc_technical_catalog_item_or_reward",
+      "old_quartet_status": "generated_metadata_registry_only",
+      "new_quartet_status": "assets_identified",
+      "old_source_ownership": "requires_original_dlc_when_applicable",
+      "new_source_ownership": "requires_original_dlc"
+    },
+    {
+      "content_id": "legacy_dlc_technical_catalog_recipe_or_system_bonus",
+      "old_quartet_status": "generated_metadata_registry_only",
+      "new_quartet_status": "assets_identified",
+      "old_source_ownership": "requires_original_dlc_when_applicable",
+      "new_source_ownership": "requires_original_dlc"
+    },
+    {
+      "content_id": "legacy_dlc_technical_catalog_theme_or_ui_content",
+      "old_quartet_status": "generated_metadata_registry_only",
+      "new_quartet_status": "assets_identified",
+      "old_source_ownership": "requires_original_dlc_when_applicable",
+      "new_source_ownership": "requires_original_dlc"
+    },
+    {
+      "content_id": "legacy_dlc_technical_catalog_unlock_or_entitlement",
+      "old_quartet_status": "generated_metadata_registry_only",
+      "new_quartet_status": "assets_identified",
+      "old_source_ownership": "requires_original_dlc_when_applicable",
+      "new_source_ownership": "requires_original_dlc"
+    },
+    {
+      "content_id": "legacy_dlc_technical_catalog_shared_asset_dependency",
+      "old_quartet_status": "generated_metadata_registry_only",
+      "new_quartet_status": "assets_identified",
+      "old_source_ownership": "requires_original_dlc_when_applicable",
+      "new_source_ownership": "requires_original_dlc"
+    },
+    {
+      "content_id": "legacy_dlc_technical_catalog_unknown_legacy_dlc_candidate",
+      "old_quartet_status": "generated_metadata_registry_only",
+      "new_quartet_status": "assets_identified",
+      "old_source_ownership": "requires_original_dlc_when_applicable",
+      "new_source_ownership": "requires_original_dlc"
+    },
+    {
+      "content_id": "legacy_dlc_nested_parent_container_closure",
+      "old_quartet_status": "nested_inventory_metadata_only",
+      "new_quartet_status": "assets_identified",
+      "old_source_ownership": "requires_original_dlc",
+      "new_source_ownership": "requires_original_dlc"
+    }
+  ],
+  "change_counts": {
+    "items_changed": 13,
+    "quartet_status_normalized": 13,
+    "source_ownership_normalized": 8
+  },
+  "semantic_policy": {
+    "normalized_status": "assets_identified",
+    "reason": "inventory and dependency records exist, but no integrated or runtime-tested Quartet profile is claimed",
+    "profile_build_allowed": false,
+    "default_enabled": false,
+    "runtime_validated": false,
+    "raw_assets_embedded": false
+  },
+  "post_alignment_unit_validation": {
+    "validate_dlc_registry_errors": 0,
+    "full_project_validation_requires_local_regeneration": true,
+    "command": "bash 04_validate_project_base.sh"
+  }
+}

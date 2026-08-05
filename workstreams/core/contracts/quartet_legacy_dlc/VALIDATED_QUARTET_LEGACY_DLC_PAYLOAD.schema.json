@@ -1,0 +1,116 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "br://core/contracts/validated_quartet_legacy_dlc_payload/v1",
+  "title": "Validated Quartet Legacy DLC Payload Manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "type",
+    "format_version",
+    "family_id",
+    "generation",
+    "members",
+    "source_kind",
+    "target_id",
+    "artifacts",
+    "transaction",
+    "provenance",
+    "authorization"
+  ],
+  "properties": {
+    "type": {"const": "validated_quartet_legacy_dlc_payload"},
+    "format_version": {"const": 1},
+    "family_id": {"type": "string", "minLength": 1},
+    "generation": {"type": "integer", "minimum": 1},
+    "members": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {"type": "string", "minLength": 1}
+    },
+    "source_kind": {"const": "validated_quartet_legacy_dlc_handoff"},
+    "target_id": {"const": "blue_reflection_quartet"},
+    "artifacts": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "target_path",
+          "operation",
+          "candidate_relative_path",
+          "candidate_size",
+          "candidate_sha256",
+          "baseline_size",
+          "baseline_sha256",
+          "member_delta"
+        ],
+        "properties": {
+          "target_path": {"type": "string", "minLength": 1},
+          "operation": {"const": "replace"},
+          "candidate_relative_path": {"type": "string", "minLength": 1},
+          "candidate_size": {"type": "integer", "minimum": 1},
+          "candidate_sha256": {"type": "string", "pattern": "^[0-9a-fA-F]{64}$"},
+          "baseline_size": {"type": "integer", "minimum": 1},
+          "baseline_sha256": {"type": "string", "pattern": "^[0-9a-fA-F]{64}$"},
+          "member_delta": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["added", "changed", "removed"],
+            "properties": {
+              "added": {"type": "array", "uniqueItems": true, "items": {"type": "string"}},
+              "changed": {"type": "array", "uniqueItems": true, "items": {"type": "string"}},
+              "removed": {"type": "array", "uniqueItems": true, "items": {"type": "string"}}
+            }
+          }
+        }
+      }
+    },
+    "transaction": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["group", "all_or_none", "commit_enabled"],
+      "properties": {
+        "group": {"type": "string", "minLength": 1},
+        "all_or_none": {"const": true},
+        "commit_enabled": {"const": false}
+      }
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["workstream_id", "workstream_version", "evidence_relative_path", "evidence_sha256"],
+      "properties": {
+        "workstream_id": {"const": "quartet_legacy_dlc"},
+        "workstream_version": {"type": "string", "minLength": 1},
+        "evidence_relative_path": {"type": "string", "minLength": 1},
+        "evidence_sha256": {"type": "string", "pattern": "^[0-9a-fA-F]{64}$"}
+      }
+    },
+    "authorization": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "core_handoff_ready",
+        "real_transaction_prepare_enabled",
+        "real_transaction_commit_enabled",
+        "candidate_installed",
+        "profile_registered",
+        "runtime_validated",
+        "wet_variant_included",
+        "game_modified"
+      ],
+      "properties": {
+        "core_handoff_ready": {"const": true},
+        "real_transaction_prepare_enabled": {"const": false},
+        "real_transaction_commit_enabled": {"const": false},
+        "candidate_installed": {"const": false},
+        "profile_registered": {"const": false},
+        "runtime_validated": {"const": false},
+        "wet_variant_included": {"const": false},
+        "game_modified": {"const": false}
+      }
+    }
+  }
+}

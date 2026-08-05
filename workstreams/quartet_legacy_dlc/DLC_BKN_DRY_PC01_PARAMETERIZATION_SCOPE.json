@@ -1,0 +1,29 @@
+{
+  "type": "br_quartet_legacy_dlc_bkn_dry_pc01_parameterization_scope",
+  "format_version": 1,
+  "selected_character_id": "PC01",
+  "reference_character_id": "PC00",
+  "selection_source": "accepted stage-83 family-expansion evidence",
+  "purpose": "identify every PC00-specific production-code point that must be generalized before a bounded PC01 dry probe",
+  "allowed_inputs": [
+    "latest validated stage-83 report archive under .local/reports/quartet_legacy_dlc",
+    "repository source files under workstreams/quartet_legacy_dlc"
+  ],
+  "allowed_outputs": [
+    "metadata reports",
+    "hash-addressed snapshots of repository source text needed for the next patch"
+  ],
+  "forbidden_inputs": [
+    "game installations",
+    "raw proprietary assets",
+    "candidate PAK payloads"
+  ],
+  "build_authorized": false,
+  "prepare_allowed": false,
+  "commit_allowed": false,
+  "installation_allowed": false,
+  "profile_registration_allowed": false,
+  "runtime_validation_allowed": false,
+  "wet_bkn_included": false,
+  "machine_specific_paths_allowed": false
+}

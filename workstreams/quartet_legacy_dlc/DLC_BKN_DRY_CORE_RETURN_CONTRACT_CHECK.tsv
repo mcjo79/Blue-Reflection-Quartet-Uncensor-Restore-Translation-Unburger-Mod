@@ -1,0 +1,16 @@
+field	expected	actual	result	source
+patch_or_equivalent_applied	true	true	pass	DLC_BKN_DRY_CORE_PATCH_RETURN_EVIDENCE.json
+result_file_hashes_match	true	true	pass	semantic merge source hashes documented
+payloadpreview_go_tests_pass	true	true (13/13)	pass	PAYLOADPREVIEW_GO_TESTS.txt
+source_kind	validated_quartet_legacy_dlc_handoff	validated_quartet_legacy_dlc_handoff	pass	canonical preview evidence
+artifact_count	2	2	pass	canonical preview evidence
+artifact_paths	Data/PACK10_02.PAK;Data/PACK12.PAK	Data/PACK10_02.PAK;Data/PACK12.PAK	pass	canonical preview evidence
+all_or_none_ready	true	true	pass	canonical preview evidence
+commit_enabled	false	false	pass	canonical preview evidence
+transaction_function_called	false	false	pass	return evidence
+real_transaction_prepare	not authorized	not performed	pass	authorization block
+real_transaction_commit	not authorized	not performed	pass	authorization block
+candidate_installation	not authorized	not performed	pass	authorization block
+profile_registration	not authorized	not performed	pass	authorization block
+runtime_validation	not authorized	not performed	pass	authorization block
+wet_variant	not authorized	not included	pass	authorization block

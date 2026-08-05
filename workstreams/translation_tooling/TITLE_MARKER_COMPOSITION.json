@@ -1,0 +1,126 @@
+{
+  "type": "br_title_marker_composition",
+  "format_version": 1,
+  "owner": "core_composition",
+  "development_default": null,
+  "profiles": [
+    {
+      "translation": false,
+      "quartet_restoration": false,
+      "marker": null
+    },
+    {
+      "translation": true,
+      "quartet_restoration": false,
+      "marker": "UNBURGER"
+    },
+    {
+      "translation": false,
+      "quartet_restoration": true,
+      "marker": "UNCENSOR"
+    },
+    {
+      "translation": true,
+      "quartet_restoration": true,
+      "marker": "UNBURGER / UNCENSOR"
+    }
+  ],
+  "second_light": {
+    "supported_modules": [
+      "translation",
+      "quartet_restoration"
+    ],
+    "proof_default": "UNBURGER / UNCENSOR",
+    "runtime_test_status": "confirmed_polished_marker_visible_and_approved"
+  },
+  "implementation": {
+    "marker_override_environment": "BR_TITLE_MARKER",
+    "prerequisite_steps": [
+      "07_build_translation_files.sh with marker disabled",
+      "08_repack_translation_archives.sh"
+    ],
+    "targets": {
+      "second_light_original": {
+        "method": "in-place transparent BC7 mode-5 patch of existing seed_title.g1t",
+        "resource_archive": "Data/PACK00_04_01.PAK",
+        "resource_path": "data/x64/res_en/ui/seed_title.g1t",
+        "style_binding": "unchanged",
+        "build_script": "workstreams/translation_tooling/16_build_second_light_title_marker.sh",
+        "runtime_status": "confirmed_visible_and_visual_design_approved"
+      },
+      "blue_reflection_original": {
+        "method": "in-place replacement of the embedded fnt_credit BC3/DXT5 texture in 12_title.kscl",
+        "resource_archive": "DATA/PACK00_04_1.PAK",
+        "resource_path": "data/x64/res_en/layout/12_title.kscl",
+        "embedded_texture": "fnt_credit",
+        "texture_index": 7,
+        "texture_dimensions": [
+          480,
+          32
+        ],
+        "build_script": "workstreams/translation_tooling/24_build_blue_reflection_title_marker.sh",
+        "config": "workstreams/translation_tooling/config/title_markers/blue_reflection_title_marker.json",
+        "runtime_status": "confirmed_visible_and_visual_design_approved",
+        "allowed_variants": [
+          "UNBURGER MOD"
+        ],
+        "approved_label_template": "UNBURGER MOD (v<translation>)",
+        "version_source": "workstreams/translation/VERSION",
+        "approved_text_rgba": [
+          45,
+          45,
+          45,
+          255
+        ]
+      },
+      "blue_reflection_quartet": {
+        "method": "in-place full-texture transparent BC7 mode-5 replacement of runtime-confirmed b0_title.g1t texture 002.dds",
+        "resource_archive": "Data/PACK00_04_01.PAK",
+        "resource_path": "data/b4/x64/res_en/ui/b0_title.g1t",
+        "build_script": "workstreams/translation_tooling/22_build_quartet_title_marker.sh",
+        "runtime_status": "confirmed_visible_and_visual_design_approved",
+        "texture_index": 2,
+        "texture_dimensions": [
+          1760,
+          100
+        ],
+        "config": "workstreams/translation_tooling/config/title_markers/quartet_title_marker.json",
+        "approved_text_rect": [
+          320,
+          55,
+          1120,
+          24
+        ],
+        "allowed_variants": [
+          "UNBURGER",
+          "UNCENSOR",
+          "UNBURGER / UNCENSOR"
+        ],
+        "version_sources": [
+          "workstreams/translation/VERSION",
+          "workstreams/quartet_restoration/VERSION"
+        ]
+      }
+    },
+    "legacy_synthetic_new_resource_binding": "retired_after_negative_second_light_runtime_test",
+    "do_not_repeat_diagnostics": [
+      "11_collect_title_texture_evidence.sh",
+      "12_carve_hidden_title_textures.sh",
+      "13_scan_recursive_title_textures.sh"
+    ],
+    "validation_script": "workstreams/translation_tooling/25_validate_title_marker_profiles.sh",
+    "diagnostic_only_steps": [
+      "11_collect_title_texture_evidence.sh",
+      "12_carve_hidden_title_textures.sh",
+      "13_scan_recursive_title_textures.sh",
+      "14_build_second_light_title_marker_proof.sh",
+      "15_build_second_light_seed_title_pixel_proof.sh",
+      "17_build_blue_reflection_title_markers.sh",
+      "18_build_blue_reflection_title_layout_probe.sh",
+      "19_collect_quartet_title_candidates.sh",
+      "20_build_title_resource_pixel_probe.sh",
+      "21_build_quartet_b0_title_texture_probe.sh",
+      "23_build_blue_reflection_title_kscl_probe.sh"
+    ]
+  }
+}

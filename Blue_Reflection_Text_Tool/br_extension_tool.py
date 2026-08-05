@@ -21,7 +21,7 @@ from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Any, Iterable
 
-TOOL_VERSION = "0.0.8"
+TOOL_VERSION = "0.0.9"
 FORMAT_VERSION = 1
 SAMPLE_BLOCK_SIZE = 65536
 SAMPLE_BLOCKS = 32
@@ -312,19 +312,11 @@ def validate_dlc_registry(data: dict[str, Any]) -> list[str]:
         if not isinstance(item.get("dependencies"), list):
             errors.append(f"{label}: dependencies must be an array")
 
-    if declared_technical_types:
-        represented_types = {
-            item.get("content_type")
-            for item in items
-            if isinstance(item, dict)
-            and item.get("quartet_status") == "generated_metadata_registry_only"
-        }
-        missing_items = declared_technical_types - represented_types
-        if missing_items:
-            errors.append(
-                "generated_registry.technical_types has no registry item for: "
-                + ", ".join(sorted(missing_items))
-            )
+    # generated_registry.technical_types is a versioned allowlist of
+    # technical categories that the DLC workstream may emit. It is intentionally
+    # not a materialization checklist: a declared category may have no row yet.
+    # Every emitted generated_metadata_registry_only row is still required above
+    # to use a supported and explicitly declared content_type.
 
     return errors
 

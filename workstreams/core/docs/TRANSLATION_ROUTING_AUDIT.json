@@ -1,0 +1,52 @@
+{
+  "type": "br_translation_routing_audit",
+  "format_version": 1,
+  "status": "fixed_in_isolated_update_candidate",
+  "minimum_translation_version": "0.0.113",
+  "game_files_modified": false,
+  "git_modified": false,
+  "findings": [
+    {
+      "id": "registry_builder_split",
+      "severity": "blocking",
+      "before": "source registry had six content targets but production workflow built three",
+      "after": "one shared routing registry drives builder and workflow for all six"
+    },
+    {
+      "id": "second_light_module_mismatch",
+      "severity": "blocking",
+      "before": "standalone Second Light workflow required blue_reflection_translation",
+      "after": "module is resolved per installation and requires second_light_translation"
+    },
+    {
+      "id": "quartet_partition_payload_gap",
+      "severity": "blocking",
+      "before": "Quartet preview exposed only b1 text PAKs and marker",
+      "after": "preview exposes b1, b2/RAY, b3/SUN, b4/Second Light and marker with explicit build_target_id"
+    },
+    {
+      "id": "stale_payload_acceptance",
+      "severity": "blocking",
+      "before": "complete old repack reports could pass preview",
+      "after": "format 2, exact workstream versions, >=0.0.113, loose-report fingerprint and canonical-input fingerprint are mandatory"
+    },
+    {
+      "id": "composition_b1_only",
+      "severity": "blocking",
+      "before": "Translation+Restoration composition considered b1 only",
+      "after": "all four Quartet partitions and marker are verified/published; Restoration overlays remain member-level"
+    },
+    {
+      "id": "marker_repack_provenance_gap",
+      "severity": "blocking",
+      "before": "runtime marker builders replaced repack entries without the format-2 baseline fingerprint and full-reextract fields",
+      "after": "all active marker builders preserve a fingerprinted current-baseline source, changed-member list and full re-extraction proof; structurally compatible current Quartet marker textures no longer require one fixed payload hash"
+    },
+    {
+      "id": "legacy_dlc_stale_contract",
+      "severity": "safety_gate",
+      "before": "catalog exposed a future adapter without exact current contract",
+      "after": "selection is explicitly blocked until a current exact return contract is integrated"
+    }
+  ]
+}

@@ -1,0 +1,98 @@
+{
+  "type": "br_quartet_legacy_dlc_core_return_acceptance",
+  "format_version": 1,
+  "generated_utc": "2026-08-05T20:29:54Z",
+  "workstream_id": "quartet_legacy_dlc",
+  "workstream_version": "0.0.35",
+  "content_id": "costume_pc00_bkn",
+  "target_id": "blue_reflection_quartet",
+  "variant": "dry",
+  "status": "accepted_core_return_local_production_payload_preview_pending",
+  "source_workstream": "core",
+  "accepted_core_update": {
+    "from_version": "0.0.41",
+    "to_version": "0.0.42",
+    "file": "Blue_Reflection_core_0.0.41_to_0.0.42_DRY_BKN_CANONICAL_PAYLOAD_PREVIEW.zip",
+    "sha256": "d17aa6263452316b13378ba743c61150ee58df0b3f77d03fb21d6610968473c1"
+  },
+  "received_bundle": {
+    "uploaded_name": "BR_quartet_legacy_dlc_bkn_dry_core_return_evidence_WITH_DLC_CHAT_HANDOFF.tar(1).zst",
+    "size": 9374,
+    "sha256": "7c52528c0c04473b66eead8afbf53a5fd55546ed77d0b13a81e20d136fe09daa"
+  },
+  "contract": {
+    "sha256": "160c399ad6274820e11bff8048ead0bafa4f53d10042c3f946a2a43337806154",
+    "matches_stage_79_return_contract_exactly": true
+  },
+  "accepted_evidence": {
+    "return_evidence_sha256": "b4a4bcb3a909eade6d78ddd076351f1bf5aea8c6d212a6a392370c5664c7baaf",
+    "canonical_fixture_preview_evidence_sha256": "04b526e7815ac0980354426dd5275f37bd11cdbb8f87abfde12e9bdb83f2af3c",
+    "payloadpreview_required_tests_passed": 13,
+    "payloadpreview_required_tests_total": 13,
+    "all_go_tests_pass": true,
+    "go_vet_pass": true,
+    "linux_build_pass": true,
+    "windows_amd64_build_pass": true,
+    "semantic_merge_documented": true,
+    "patch_or_equivalent_applied": true,
+    "source_kind": "validated_quartet_legacy_dlc_handoff",
+    "artifact_count": 2,
+    "artifact_paths": [
+      "Data/PACK10_02.PAK",
+      "Data/PACK12.PAK"
+    ],
+    "all_or_none_ready": true,
+    "commit_enabled": false,
+    "transaction_function_called": false
+  },
+  "production_contract": [
+    {
+      "relative_path": "Data/PACK10_02.PAK",
+      "baseline_size": 11402829898,
+      "baseline_sha256": "e798f39c3bcdbb11381197bddf9bd3ad8de6ccf5d7c0c78b22613046d47f5302",
+      "candidate_size": 11417346202,
+      "candidate_sha256": "d1540211904948efd9edb0580094f70bfbc1b6b98f32a66c814ee9e1f3f1d9ef"
+    },
+    {
+      "relative_path": "Data/PACK12.PAK",
+      "baseline_size": 26124649,
+      "baseline_sha256": "a108a22dd59116e79cf0fabcffd5d0427f72e13de267318869431d28717404f4",
+      "candidate_size": 26124657,
+      "candidate_sha256": "68a360c58f30ac00721b6ed8f513c9d02f01cf15c5ef6f1772fe1102ec2ad139"
+    }
+  ],
+  "remaining_gate": {
+    "local_core_version_required": "0.0.42",
+    "production_candidate_hashes_directly_reverified_after_core_merge": false,
+    "installed_baseline_hashes_directly_reverified_after_core_merge": false,
+    "required_action": "run stage 82 read-only canonical payload-preview and return its evidence bundle"
+  },
+  "authorization": {
+    "real_transaction_prepare": false,
+    "real_transaction_commit": false,
+    "candidate_installation": false,
+    "profile_registration": false,
+    "runtime_validation": false,
+    "wet_variant": false,
+    "translation_modification": false,
+    "restoration_modification": false,
+    "git_modification": false
+  },
+  "non_blocking_packaging_note": {
+    "runner_sidecar_uses_absolute_sandbox_path": true,
+    "runner_sha256": "0ad003aa5de8b192c8578831096a070711a316537f6a0129a3529563730bb992",
+    "impact": "none; the script hash was recomputed directly and stage 82 carries a workstream-local copy"
+  },
+  "return_archive_retention": {
+    "embedded_in_workstream_update": false,
+    "copied_to_local_reports_by_update": false,
+    "acceptance_preserved_by_exact_bundle_sha256": true,
+    "acceptance_preserved_by_exact_contract_sha256": true,
+    "accepted_metadata_files": [
+      "DLC_BKN_DRY_CORE_RETURN_ACCEPTANCE.json",
+      "DLC_BKN_DRY_CORE_RETURN_CONTRACT_CHECK.tsv",
+      "BKN_DRY_CORE_RETURN_ACCEPTANCE.md"
+    ],
+    "reason": "workstream update packages do not write generated evidence archives into .local/reports"
+  }
+}

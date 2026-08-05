@@ -1,0 +1,72 @@
+{
+  "type": "br_quartet_legacy_dlc_canonical_payload_preview_acceptance",
+  "format_version": 1,
+  "generated_utc": "2026-08-05T20:48:38Z",
+  "workstream_id": "quartet_legacy_dlc",
+  "workstream_version": "0.0.36",
+  "content_id": "costume_pc00_bkn",
+  "variant": "dry",
+  "target_id": "blue_reflection_quartet",
+  "status": "accepted_ready_preview_only_no_transaction",
+  "core_version": "0.0.42",
+  "diagnostic_bundle": {
+    "file": "BR_quartet_legacy_dlc_stage82_and_registry_validation_20260805T204838Z.tar.zst",
+    "sha256": "54ef163b0e200e86052f3570a4a7a35665529bbb38f7816bfa95c486ac0ecb5a",
+    "internal_manifest_verified": true,
+    "sidecar_absolute_path_ignored_for_location_only": true,
+    "sidecar_digest_matched_uploaded_archive": true
+  },
+  "canonical_payload_preview_evidence": {
+    "file": "BR_QUARTET_DLC_BKN_CANONICAL_PAYLOAD_PREVIEW_20260805T204243Z.tar.zst",
+    "sha256": "7f6f925176683847b930930eddafadc9573978e13297d1b484c0396bb7bdf3be",
+    "sidecar_verified": true,
+    "report": "PAYLOAD_PREVIEW.json",
+    "report_status": "ready",
+    "source_kind": "validated_quartet_legacy_dlc_handoff",
+    "artifact_count": 2,
+    "all_or_none_ready": true,
+    "commit_enabled": false,
+    "transaction_prepared": false,
+    "transaction_committed": false,
+    "game_files_modified": false
+  },
+  "artifacts": [
+    {
+      "relative_path": "Data/PACK10_02.PAK",
+      "desired_action": "replace",
+      "candidate_size": 11417346202,
+      "candidate_sha256": "d1540211904948efd9edb0580094f70bfbc1b6b98f32a66c814ee9e1f3f1d9ef",
+      "baseline_size": 11402829898,
+      "baseline_sha256": "e798f39c3bcdbb11381197bddf9bd3ad8de6ccf5d7c0c78b22613046d47f5302",
+      "report_verified": true,
+      "transaction_ready_preview_only": true
+    },
+    {
+      "relative_path": "Data/PACK12.PAK",
+      "desired_action": "replace",
+      "candidate_size": 26124657,
+      "candidate_sha256": "68a360c58f30ac00721b6ed8f513c9d02f01cf15c5ef6f1772fe1102ec2ad139",
+      "baseline_size": 26124649,
+      "baseline_sha256": "a108a22dd59116e79cf0fabcffd5d0427f72e13de267318869431d28717404f4",
+      "report_verified": true,
+      "transaction_ready_preview_only": true
+    }
+  ],
+  "core_return_contract": {
+    "file": "DLC_BKN_DRY_CORE_PATCH_RETURN_CONTRACT.json",
+    "sha256": "160c399ad6274820e11bff8048ead0bafa4f53d10042c3f946a2a43337806154",
+    "production_hashes_match_return_contract": true
+  },
+  "authorization": {
+    "real_transaction_prepare": false,
+    "real_transaction_commit": false,
+    "candidate_installation": false,
+    "profile_registration": false,
+    "runtime_validation": false,
+    "wet_variant": false,
+    "translation_modification": false,
+    "restoration_modification": false,
+    "core_modification": false,
+    "git_modification": false
+  }
+}

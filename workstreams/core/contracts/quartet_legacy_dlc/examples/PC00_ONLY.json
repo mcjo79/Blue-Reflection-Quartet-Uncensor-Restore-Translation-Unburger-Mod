@@ -1,0 +1,67 @@
+{
+  "type": "validated_quartet_legacy_dlc_payload",
+  "format_version": 1,
+  "family_id": "bkn_dry",
+  "generation": 1,
+  "members": [
+    "costume_pc00_bkn"
+  ],
+  "source_kind": "validated_quartet_legacy_dlc_handoff",
+  "target_id": "blue_reflection_quartet",
+  "artifacts": [
+    {
+      "target_path": "Data/PACK10_02.PAK",
+      "operation": "replace",
+      "candidate_relative_path": ".local/build/quartet_legacy_dlc/pak_insertion_tests/costume_pc00_bkn_dry/candidate/PACK10_02.PAK",
+      "candidate_size": 11417346202,
+      "candidate_sha256": "d1540211904948efd9edb0580094f70bfbc1b6b98f32a66c814ee9e1f3f1d9ef",
+      "baseline_size": 11402829898,
+      "baseline_sha256": "e798f39c3bcdbb11381197bddf9bd3ad8de6ccf5d7c0c78b22613046d47f5302",
+      "member_delta": {
+        "added": [
+          "data/b1/x64/character/pc00/pc00_dlc_bkn.elixir.gz",
+          "data/b1/x64/character/pc00/pc00_dlc_bkn.g1t"
+        ],
+        "changed": [],
+        "removed": []
+      }
+    },
+    {
+      "target_path": "Data/PACK12.PAK",
+      "operation": "replace",
+      "candidate_relative_path": ".local/build/quartet_legacy_dlc/pack12_repack_tests/costume_pc00_bkn_dry/candidate/PACK12.PAK",
+      "candidate_size": 26124657,
+      "candidate_sha256": "68a360c58f30ac00721b6ed8f513c9d02f01cf15c5ef6f1772fe1102ec2ad139",
+      "baseline_size": 26124649,
+      "baseline_sha256": "a108a22dd59116e79cf0fabcffd5d0427f72e13de267318869431d28717404f4",
+      "member_delta": {
+        "added": [],
+        "changed": [
+          "saves/b1/chara/charabase.xml"
+        ],
+        "removed": []
+      }
+    }
+  ],
+  "transaction": {
+    "group": "quartet_legacy_dlc_bkn_dry",
+    "all_or_none": true,
+    "commit_enabled": false
+  },
+  "provenance": {
+    "workstream_id": "quartet_legacy_dlc",
+    "workstream_version": "0.0.30",
+    "evidence_relative_path": ".local/reports/quartet_legacy_dlc/bkn_dry_core_integration_handoff_evidence/DLC_BKN_DRY_CORE_INTEGRATION_HANDOFF.json",
+    "evidence_sha256": "918e95108c286a9d71f25288d31920c8d720d9c5a02cb62524ed36c4d22c4603"
+  },
+  "authorization": {
+    "core_handoff_ready": true,
+    "real_transaction_prepare_enabled": false,
+    "real_transaction_commit_enabled": false,
+    "candidate_installed": false,
+    "profile_registered": false,
+    "runtime_validated": false,
+    "wet_variant_included": false,
+    "game_modified": false
+  }
+}

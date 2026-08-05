@@ -1,0 +1,28 @@
+{
+  "type": "br_quartet_legacy_dlc_generic_manifest_adapter_return_contract",
+  "format_version": 1,
+  "core_manifest_path": ".local/reports/quartet_legacy_dlc/validated_payloads/ACTIVE.json",
+  "manifest_type": "validated_quartet_legacy_dlc_payload",
+  "manifest_format_version": 1,
+  "source_kind": "validated_quartet_legacy_dlc_handoff",
+  "target_id": "blue_reflection_quartet",
+  "current_family_policy": {
+    "family_id": "bkn_dry",
+    "transaction_group": "quartet_legacy_dlc_bkn_dry",
+    "allowed_target_operations": [
+      {"target_path": "Data/PACK10_02.PAK", "operation": "replace"},
+      {"target_path": "Data/PACK12.PAK", "operation": "replace"}
+    ],
+    "all_or_none": true,
+    "commit_enabled": false
+  },
+  "future_generation_rule": "A later dry-BKN generation changes only the DLC-owned active manifest, candidates and evidence while the family policy remains unchanged.",
+  "core_source_change_required_when": [
+    "manifest schema version changes",
+    "family identifier or member identifier model changes",
+    "allowed target PAK set changes",
+    "operation type changes",
+    "allowed member-delta model changes",
+    "transaction model changes"
+  ]
+}

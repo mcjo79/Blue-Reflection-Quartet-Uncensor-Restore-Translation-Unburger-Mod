@@ -1,0 +1,46 @@
+{
+  "type": "br_quartet_legacy_dlc_generic_manifest_core_return_acceptance",
+  "format_version": 1,
+  "status": "accepted_pc00_pc01_active_manifest_publication_pending",
+  "accepted_by_workstream": "quartet_legacy_dlc",
+  "workstream_version": "0.0.44",
+  "core_version_required": "0.0.47",
+  "return_bundle": {
+    "sha256": "d70b87b6f432dd65a618b5e5893abfbb4a595259d0c3e8d3c97ca1d0fc745161",
+    "report_manifest_entries": 37,
+    "all_internal_files_verified": true
+  },
+  "contracts": {
+    "return_contract_sha256": "7be5d5e0b9d59997cac0c3cdb3c053c10392d39f9e2facbeed29b8f4535fe316",
+    "schema_sha256": "e2162dfbe8f6b5a5f78a7ec7a2123ec6a11af6da01790c599d3483e497591fd0",
+    "manifest_policy_sha256": "054c6231729db2b979ae2ea0e5e82c82d2aa4ab6c0ff20679599b75e575b0411",
+    "embedded_policy_sha256": "17d31e43dd111caaa182a0a0567d2545fb510005e5cf6c8434307d4e014e011c",
+    "runner_sha256": "81044708177aa8c482f8dfd96a3bc293ae799d2dfe2cd5c060be22d13f87ad7d"
+  },
+  "active_manifest": {
+    "source_path": "workstreams/quartet_legacy_dlc/BKN_DRY_PC00_PC01_ACTIVE_MANIFEST.json",
+    "production_path": ".local/reports/quartet_legacy_dlc/validated_payloads/ACTIVE.json",
+    "sha256": "4f8280c7c3ac8a1205c9daf90c0c08b64d06ee7c4fc1f94bec9f51a38ee75130",
+    "family_id": "bkn_dry",
+    "generation": 2,
+    "members": [
+      "costume_pc00_bkn",
+      "costume_pc01_bkn"
+    ],
+    "artifact_paths": [
+      "Data/PACK10_02.PAK",
+      "Data/PACK12.PAK"
+    ]
+  },
+  "authorization": {
+    "publish_active_manifest_after_dlc_side_validation": true,
+    "canonical_read_only_preview": true,
+    "transaction_prepare": false,
+    "transaction_commit": false,
+    "candidate_installation": false,
+    "profile_registration": false,
+    "runtime_validation": false,
+    "pc02_progression": false,
+    "core_modification": false
+  }
+}

@@ -1,0 +1,119 @@
+{
+  "type": "br_quartet_legacy_dlc_bkn_dry_pc04_generation_acceptance",
+  "format_version": 1,
+  "workstream_id": "quartet_legacy_dlc",
+  "accepted_at_version": "0.0.47",
+  "status": "accepted_for_checksum_gated_local_pc00_pc01_pc02_pc03_pc04_generation",
+  "source_evidence": {
+    "family_expansion_bundle": "BR_QUARTET_DLC_BKN_DRY_FAMILY_EXPANSION_20260806T060337Z.tar.zst",
+    "family_expansion_sha256": "7c3e88602fd6408f30fabac378561eb6858ae44f4df39777943329c2a035974a",
+    "generic_generation4_preview_bundle": "BR_QUARTET_DLC_BKN_DRY_PC03_GENERATION_PREVIEW_20260806T104302Z.tar.zst",
+    "generic_generation4_preview_sha256": "dbc362b2a09e6c3e2b026d97fa546df3d305c8ee9a9fc32adaaefdc8ec1502e2",
+    "validation_status": "pass",
+    "selected_character_id": "PC04",
+    "candidate_state": "metadata_ready_for_bounded_dry_probe",
+    "gaps": 0
+  },
+  "source_assets": [
+    {
+      "role": "dry_parent",
+      "source_archive": "DATA/PACK00_02.PAK",
+      "source_member": "data/x64/character/pc04/pc04_dlc_bkn.elixir.gz",
+      "target_member": "data/b1/x64/character/pc04/pc04_dlc_bkn.elixir.gz",
+      "size": 1439697,
+      "sha256": "f39679b0791d1359b68764a29b6c9960c98632214b28792973aaf521733d325a"
+    },
+    {
+      "role": "dry_external_texture",
+      "source_archive": "DATA/PACK00_02.PAK",
+      "source_member": "data/x64/character/pc04/pc04_dlc_bkn.g1t",
+      "target_member": "data/b1/x64/character/pc04/pc04_dlc_bkn.g1t",
+      "size": 17047756,
+      "sha256": "2b2052e1693b207b8c694c7cd85f1f7c33ac12f6b2b7f9e504f9b9a9448678c3"
+    }
+  ],
+  "charabase_patch": {
+    "target_member": "saves/b1/chara/charabase.xml",
+    "dry_tag": "PC04_DLC_BKN",
+    "wet_tag": "PC04_DLC_BKN_W",
+    "expected_old_values": {
+      "Model": "PC04/PC04_Scl",
+      "defaultTexture": "PC04/PC04_Scl"
+    },
+    "new_values": {
+      "Model": "PC04/PC04_DLC_Bkn",
+      "defaultTexture": "PC04/PC04_DLC_Bkn"
+    },
+    "allowed_changed_fields": [
+      "Model",
+      "defaultTexture"
+    ],
+    "source_record_sha256": "6c9dc3f64e9aaf11bcb30e8fa5e98f79ac62e4b265ebfb90055830146fb25f74",
+    "target_record_sha256": "8c53caee468a34ad5ee5171574d7e472538ef56f105a8be95ba727ccf43e6d13"
+  },
+  "installed_baselines": [
+    {
+      "relative_path": "Data/PACK10_02.PAK",
+      "size": 11402829898,
+      "sha256": "e798f39c3bcdbb11381197bddf9bd3ad8de6ccf5d7c0c78b22613046d47f5302"
+    },
+    {
+      "relative_path": "Data/PACK12.PAK",
+      "size": 26124649,
+      "sha256": "a108a22dd59116e79cf0fabcffd5d0427f72e13de267318869431d28717404f4"
+    }
+  ],
+  "helper_source_gates": {
+    "br_dlc_transfer_probe_tool.py": "4322c8771970a1c08767476c77183737922af05141399ae8739a3a822a1f2623",
+    "br_dlc_dry_pak_insertion_tool.py": "39019d488e0db35b0fc105930604c3dfbe533d20f6203ee3c00ae89d2378b095",
+    "br_dlc_bkn_dry_pack12_repack_tool.py": "c87747bc28c13b27632a0d46b01a212e0258d4999f3c617e57b66eb6dd392980"
+  },
+  "core_contract_gates": {
+    "Blue_Reflection_Patcher/internal/plan/payloadpreview/legacy_dlc.go": "e97aad18f69089cc68c006c88687d30a8a748918b7fbb812e0294cdd6b3047d5",
+    "Blue_Reflection_Patcher/internal/plan/payloadpreview/legacy_dlc_policy.json": "17d31e43dd111caaa182a0a0567d2545fb510005e5cf6c8434307d4e014e011c",
+    "workstreams/core/contracts/quartet_legacy_dlc/GENERIC_ADAPTER_RETURN_CONTRACT.json": "7be5d5e0b9d59997cac0c3cdb3c053c10392d39f9e2facbeed29b8f4535fe316",
+    "workstreams/core/contracts/quartet_legacy_dlc/MANIFEST_POLICY.md": "054c6231729db2b979ae2ea0e5e82c82d2aa4ab6c0ff20679599b75e575b0411",
+    "workstreams/core/contracts/quartet_legacy_dlc/VALIDATED_QUARTET_LEGACY_DLC_PAYLOAD.schema.json": "e2162dfbe8f6b5a5f78a7ec7a2123ec6a11af6da01790c599d3483e497591fd0",
+    "workstreams/core/tools/validate_quartet_legacy_dlc_active_manifest.sh": "81044708177aa8c482f8dfd96a3bc293ae799d2dfe2cd5c060be22d13f87ad7d"
+  },
+  "authorization": {
+    "local_candidate_build": true,
+    "read_only_canonical_preview": true,
+    "prepare": false,
+    "commit": false,
+    "installation": false,
+    "profile_registration": false,
+    "runtime_validation": false,
+    "wet_bkn": false,
+    "translation_modification": false,
+    "restoration_modification": false,
+    "core_modification": false,
+    "git_modification": false,
+    "active_manifest_generation_5_publication": true
+  },
+  "accepted_generation4_parent_candidates": [
+    {
+      "relative_path": ".local/build/quartet_legacy_dlc/family_expansion/costume_pc00_pc01_pc02_pc03_bkn_dry/candidate/PACK10_02.PAK",
+      "target_path": "Data/PACK10_02.PAK",
+      "size": 11471113996,
+      "sha256": "8f0ed3e0538a3476870a67adafca64f2f9dfb6e2c3a468b55bffa33ef23925c4"
+    },
+    {
+      "relative_path": ".local/build/quartet_legacy_dlc/family_expansion/costume_pc00_pc01_pc02_pc03_bkn_dry/candidate/PACK12.PAK",
+      "target_path": "Data/PACK12.PAK",
+      "size": 26124681,
+      "sha256": "25ed634a6e28b9b2764b7890b30ff03f99e889d3aeeb37ea2c33188517ca310a"
+    }
+  ],
+  "active_generation4": {
+    "relative_path": ".local/reports/quartet_legacy_dlc/validated_payloads/ACTIVE.json",
+    "sha256": "9c95c449e5bcb68d58089d1f82b806d3622ab37ff72f020fbd3e970b961ddc75",
+    "generation": 4,
+    "members": [
+      "costume_pc00_bkn",
+      "costume_pc01_bkn",
+      "costume_pc02_bkn",
+      "costume_pc03_bkn"
+    ]
+  }
+}

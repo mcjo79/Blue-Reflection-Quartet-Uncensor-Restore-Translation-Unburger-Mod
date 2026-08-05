@@ -1,0 +1,281 @@
+{
+  "type": "br_workstream_status",
+  "format_version": 1,
+  "workstream_id": "translation_tooling",
+  "status": "active",
+  "current_stage": "six_target_translation_routing_build_repack_and_stale_payload_gate",
+  "next_stage": "apply_core_0.0.41_and_translation_tooling_0.0.54_then_run_fresh_six_target_build_and_payload_preview_without_game_write",
+  "owns": [
+    "EBM/XML parser, importer and validation",
+    "translation build/repack/install tooling",
+    "runtime adapters and diagnostics",
+    "title marker UNBURGER / UNCENSOR integration",
+    "translation patcher operations and module integration"
+  ],
+  "must_not_modify": [
+    "canonical translated line content except through an explicit translation-content update",
+    "quartet restoration registry and mappings",
+    "legacy DLC registry and mappings",
+    "patcher core without a core update"
+  ],
+  "safety": {
+    "installed_game_files_modified": false,
+    "development_outputs_root": ".local/build/translation",
+    "ambiguous_layout_policy": "score all structurally valid layouts; tie keeps shortest layout",
+    "existing_edit_policy": "preserve en only when it differs from its previous generated baseline; preserve notes/status",
+    "repack_verification": "full_reextract_and_hash_all_manifest_entries",
+    "pak_manifest_policy": "opaque_gust_pak_input; archive membership verified with gust_pak -l",
+    "game_test_policy": "backup current PAKs; atomic install; refuse restore over post-install changes",
+    "game_test_targets": "one target at a time",
+    "title_marker_policy": "All three runtime targets are confirmed. Original Blue Reflection uses the UNBURGER MOD translation label; Quartet supports UNBURGER, UNCENSOR, and combined variants. Second Light keeps its approved production marker.",
+    "runtime_canary": "diagnostic only; opt-in through BR_RUNTIME_CANARY; modifies one early dialogue line",
+    "title_marker_source_policy": "all active marker builders read the current installed baseline read-only, overlay only the declared marker member, record source SHA-256/size and full re-extraction proof; a known member hash is diagnostic rather than a whole-PAK whitelist",
+    "canonical_text_field": "records[*].en only; en_auxiliary and en_original are never production fallbacks",
+    "routing_registry": "config/translation_target_routes.json is the shared six-content-target production contract",
+    "stale_payload_policy": "reject translation builds older than 0.0.113 and reports not matching current Translation/Translation Tooling versions",
+    "quartet_composition": "all b1/b2/b3/b4 text PAKs plus marker participate; Restoration remains member-level; Legacy DLC requires a current exact core contract"
+  },
+  "completed_milestones": {
+    "blue_reflection_original_smoke_test": "passed",
+    "blue_reflection_quartet_smoke_test": "passed",
+    "second_light_original_smoke_test": "passed",
+    "six_pak_roundtrip": "passed",
+    "active_english_runtime_canary": "passed",
+    "title_texture_steps_11_13": "completed_no_br1_quartet_geometry_match",
+    "second_light_seed_title_binding": "located",
+    "second_light_synthetic_g1t_runtime_test": "not_visible",
+    "second_light_existing_atlas_runtime_test": "visible",
+    "second_light_polished_marker_runtime_test": "visible_and_visual_design_approved",
+    "blue_reflection_original_quartet_a17_common_runtime_test": "not_visible",
+    "blue_reflection_localized_a17_a18_layout_probe": "not_visible_in_original_or_quartet",
+    "quartet_launcher_candidate_inventory": "b4_common_and_english_seed_select_game_and_title_resources_located",
+    "quartet_launcher_b0_title_target": "confirmed Data/PACK00_04_01.PAK:data/b4/x64/res_en/ui/b0_title.g1t texture 002.dds",
+    "quartet_combined_title_marker_runtime_test": "visible_and_visual_design_approved_at_text_rect_y_55",
+    "blue_reflection_explicit_g1t_probe": "no_visible_change_for_all_six_DATA_PACK00_01_UI_resources",
+    "blue_reflection_original_title_kscl_target": "confirmed DATA/PACK00_04_1.PAK:data/x64/res_en/layout/12_title.kscl embedded texture fnt_credit",
+    "blue_reflection_original_title_marker_runtime_test": "visible_and_visual_design_approved_dark_gray_UNBURGER_MOD"
+  },
+  "known_issue_fixed": {
+    "version": "0.0.9",
+    "issue": "Original English title layout lives in PACK02_1/saves_en; previous marker changed only PACK02_3/saves_jp"
+  },
+  "diagnostic_correction": {
+    "invalid_previous_canary_path": "event_jp",
+    "correct_active_canary_path": "event_en",
+    "title_marker_result": "not_runtime_conclusive"
+  },
+  "runtime_confirmation": {
+    "status": "confirmed",
+    "proof": "[UNBURGER ACTIVE EN] displayed from PACK01/event/event_en",
+    "consequence": "production translation adapter remains active_english"
+  },
+  "production_target_adapter": "active_english",
+  "quick_test_canary": {
+    "profile": "saved_game_tardy_kashiwagi",
+    "string_no": "35192864",
+    "suffix": " [UNBURGER MOD]"
+  },
+  "title_marker": {
+    "implementation": "Three runtime-confirmed production marker adapters: Second Light seed_title.g1t BC7 crop; Quartet b0_title.g1t texture 002.dds BC7 replacement; Original Blue Reflection 12_title.kscl embedded fnt_credit BC3/DXT5 replacement.",
+    "development_default": null,
+    "profiles": [
+      "UNBURGER",
+      "UNCENSOR",
+      "UNBURGER / UNCENSOR"
+    ],
+    "texture_edit_required": true,
+    "runtime_confirmation": "Second Light, Quartet, and Original Blue Reflection production markers are visible and approved.",
+    "proof_default": "UNBURGER / UNCENSOR",
+    "resource_archive": "Data/PACK00_04_01.PAK",
+    "resource_path": "data/x64/res_en/ui/seed_title.g1t",
+    "style_archive": "Data/PACK02.PAK",
+    "style_path": "saves/ui_en/gen_styles/uis_gen_seed_title.xml",
+    "style_name": "gen_seed_Title_copyrights_overseas",
+    "synthetic_g1t_runtime_result": "not_visible",
+    "existing_atlas_format": "G1T type 0x5F; DDS DX10 DXGI_FORMAT_BC7_UNORM; 1024x1428; one mip",
+    "pixel_proof_patch_rect": [
+      256,
+      420,
+      680,
+      24
+    ],
+    "pixel_proof_style_uvwh": [
+      514,
+      844,
+      1356,
+      41
+    ],
+    "production_design": "transparent cool-white label with dark navy outline and soft drop shadow; no opaque background",
+    "production_encoder": "self-contained BC7 mode 5 with independent colour and alpha selectors",
+    "blue_reflection_original": {
+      "resource_archive": "DATA/PACK00_04_1.PAK",
+      "resource_path": "data/x64/res_en/layout/12_title.kscl",
+      "embedded_texture": "fnt_credit",
+      "texture_index": 7,
+      "texture_dimensions": [
+        480,
+        32
+      ],
+      "texture_format": "BC3/DXT5",
+      "runtime_status": "confirmed_visible_and_visual_design_approved",
+      "allowed_labels": [
+        "UNBURGER MOD"
+      ],
+      "approved_label_template": "UNBURGER MOD (v<translation>)",
+      "version_source": "workstreams/translation/VERSION",
+      "build_script": "workstreams/translation_tooling/24_build_blue_reflection_title_marker.sh",
+      "config": "workstreams/translation_tooling/config/title_markers/blue_reflection_title_marker.json",
+      "approved_text_rgba": [
+        45,
+        45,
+        45,
+        255
+      ]
+    },
+    "blue_reflection_quartet": {
+      "resource_archive": "Data/PACK00_04_01.PAK",
+      "resource_path": "data/b4/x64/res_en/ui/b0_title.g1t",
+      "patch_rect": [
+        0,
+        0,
+        1760,
+        100
+      ],
+      "runtime_status": "confirmed_combined_marker_visible_and_approved",
+      "allowed_labels": [
+        "UNBURGER",
+        "UNCENSOR",
+        "UNBURGER / UNCENSOR"
+      ],
+      "texture_index": 2,
+      "texture_dimensions": [
+        1760,
+        100
+      ],
+      "texture_format": "BC7; one mipmap",
+      "build_script": "workstreams/translation_tooling/22_build_quartet_title_marker.sh",
+      "config": "workstreams/translation_tooling/config/title_markers/quartet_title_marker.json",
+      "approved_text_rect": [
+        320,
+        55,
+        1120,
+        24
+      ],
+      "approved_combined_label": "UNBURGER (v<translation>) / UNCENSOR (v<restoration>)",
+      "version_sources": [
+        "workstreams/translation/VERSION",
+        "workstreams/quartet_restoration/VERSION"
+      ]
+    }
+  },
+  "title_marker_evidence_issue": {
+    "previous_collector_result": "missed_referenced_title_g1t",
+    "required_textures": {
+      "blue_reflection_original": [
+        "data/x64/ui/a17_title.g1t",
+        "data/x64/ui/a18_title.g1t"
+      ],
+      "blue_reflection_quartet": [
+        "data/b1/x64/ui/a17_title.g1t",
+        "data/b1/x64/ui/a18_title.g1t"
+      ],
+      "second_light_original": [
+        "data/x64/res_en/ui/seed_title.g1t"
+      ]
+    }
+  },
+  "next_script": "workstreams/translation_tooling/25_validate_title_marker_profiles.sh",
+  "title_texture_diagnostic": {
+    "raw_top_level_carve_result": "no exact a17_title/a18_title geometry",
+    "recursive_focused_scan_result": {
+      "files_scanned": 2170,
+      "bytes_scanned": 2975730598,
+      "header_candidates": 712,
+      "valid_g1t": 10,
+      "exact_title_geometry_matches": 0
+    },
+    "conclusion": "BR1/Quartet title atlases are not present as direct or recursively embedded G1T resources in the focused common/language PAK set.",
+    "second_light": "the synthetic DXT5 G1T/new binding was not visible; step 15 keeps texture path, style and UV unchanged and patches only the existing BC7 atlas blocks covering the overseas copyright crop.",
+    "do_not_repeat": [
+      "11_collect_title_texture_evidence.sh",
+      "12_carve_hidden_title_textures.sh",
+      "13_scan_recursive_title_textures.sh"
+    ],
+    "remaining_games_strategy": "completed: production runtime assets are identified for all three games; keep old probe scripts diagnostic-only"
+  },
+  "scope": "technical_pipeline_only",
+  "orchestrator_next_action": "Apply core 0.0.41 and translation_tooling 0.0.54, verify local VERSION files first, then run a fresh build and payload-preview/preflight only. Do not commit a transaction or write game files. Quartet Legacy DLC remains fail-closed until its current exact return contract is integrated.",
+  "quartet_translation_partition_policy": {
+    "blue_reflection": "b1 / PACK11 + PACK12",
+    "blue_reflection_ray": "b2 / PACK01_01 + PACK02_01",
+    "blue_reflection_sun": "b3 / PACK01_02 + PACK02_02",
+    "second_light": "b4 / PACK01_03 + PACK02_03"
+  },
+  "partial_project_export_hotfix": {
+    "version": "0.0.49",
+    "issue": "cmd_export generated reports for all projects but assumed events/system existed for projects omitted by --project filters",
+    "fix": "non-selected project/category exception sections are emitted as empty lists; selected category exception rows are still moved out of the concise report",
+    "canonical_translation_modified": false,
+    "game_files_modified": false
+  },
+  "second_light_quartet_alignment_audit": {
+    "version": "0.0.50",
+    "mode": "read_only",
+    "scope": "all Second Light canonical and Quartet b4 extension records",
+    "checks": [
+      "classify every null en_auxiliary without generic manual_required as a final reason",
+      "recompute conservative source JP to Quartet b4 JP mapping using exact sequence context",
+      "verify every existing non-null en_auxiliary against recomputed b4 EN",
+      "emit high-confidence recovery proposals without modifying canonical JSON",
+      "archive derived reports only; no PAK, EBM, XML, workspace or game files"
+    ],
+    "script": "workstreams/translation_tooling/32_audit_second_light_quartet_alignment.sh",
+    "canonical_translation_modified": false,
+    "game_files_modified": false,
+    "result": "reviewed_complete",
+    "findings": {
+      "quartet_only_extension_null_not_applicable": 4987,
+      "official_empty_english_records": 1582,
+      "existing_redaction_placeholders_requiring_null_normalization": 1953,
+      "reported_structural_mismatches_confirmed_false_positive": 4,
+      "non_redaction_existing_values_requiring_structural_reverification": 15,
+      "generic_manual_required_final_classifications": 0
+    }
+  },
+  "second_light_auxiliary_finalization": {
+    "status": "ready_to_apply",
+    "input_translation_version": "0.0.112",
+    "output_translation_version": "0.0.113",
+    "policy": "en_auxiliary contains only usable English; empty/redacted/invalid/unavailable values are null with precise alignment metadata",
+    "content_fields_preserved": [
+      "en",
+      "notes",
+      "status"
+    ],
+    "game_files_modified": false
+  },
+  "second_light_b4_alignment_finalization_v2": {
+    "status": "ready",
+    "from_tooling_version": "0.0.51",
+    "to_tooling_version": "0.0.52",
+    "correction": "same-count fallback records with revised JP are accepted only when exact same-index anchors prove the unit has no structural shift; unanchored usable candidates are written to a diagnostic report and block all writes",
+    "rollback": "wrapper restores Translation from a local backup on every nonzero exit",
+    "translation_version_on_success": "0.0.113"
+  },
+  "second_light_quartet_redaction_placeholder_fix": {
+    "version": "0.0.53",
+    "diagnostic_source": ".local/reports/translation/second_light_b4_alignment_finalization/20260805T184412Z/UNRESOLVED_USABLE_CANDIDATES.json",
+    "records": 159,
+    "units": 6,
+    "scope": "events/xs07 only",
+    "observed_pattern": {
+      "source_method": "index_fallback_review",
+      "quartet_jp_same_index": "-",
+      "quartet_en_same_index": "-",
+      "existing_en_auxiliary": "-"
+    },
+    "resolution": "A known single-token redaction placeholder is never usable auxiliary English, even when Quartet redacted JP to the same token. Normalize en_auxiliary to null and retain raw placeholder evidence in alignment.",
+    "translation_content_fields_modified": false,
+    "game_files_modified": false
+  }
+}

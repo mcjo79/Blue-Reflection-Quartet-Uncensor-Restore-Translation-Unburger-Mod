@@ -1,0 +1,34 @@
+{
+  "type": "br_workstream_status",
+  "format_version": 1,
+  "workstream_id": "translation",
+  "status": "active",
+  "scope": "translation_content_only",
+  "version": "0.0.113",
+  "canonical_databases": [
+    "titles/blue_reflection/translation/",
+    "titles/second_light/translation/",
+    "titles/blue_reflection_sun/translation/",
+    "titles/blue_reflection_ray/translation/"
+  ],
+  "quartet_policy": "Quartet b1 reuses canonical Blue Reflection records; RAY is Quartet b2; SUN is Quartet b3; Second Light uses its standalone JP/EN as canonical content and Quartet b4 as en_auxiliary and target data.",
+  "owns": [
+    "translated line content",
+    "translation notes and per-record review status",
+    "content changelog and batch summaries"
+  ],
+  "must_not_modify": [
+    "Blue_Reflection_Text_Tool/",
+    "config/",
+    "workstreams/translation_tooling/",
+    "build/repack/install/runtime scripts",
+    "UNBURGER / DECENSOR MOD marker implementation",
+    "restoration and DLC workstreams"
+  ],
+  "next_update": {
+    "from_version": "0.0.113",
+    "to_version": "0.0.114",
+    "workstream_id": "translation"
+  },
+  "second_light_auxiliary_policy": "Quartet b4 auxiliary references are stored only when they contain usable English. Empty, redacted, invalid-copy and unavailable source values remain null and are classified precisely in alignment.auxiliary_value_status. Quartet-only extension records do not use en_auxiliary."
+}
