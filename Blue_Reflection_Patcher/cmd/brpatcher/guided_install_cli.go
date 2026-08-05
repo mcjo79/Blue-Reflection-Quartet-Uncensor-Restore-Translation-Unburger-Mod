@@ -24,6 +24,8 @@ type guidedPayloadResult struct {
 	CommitReport  transactionCommitReport
 }
 
+var prepareGuidedPayloadTransaction = prepareRevalidatedPayloadTransaction
+
 func previewReadyForGuidedAction(preview payloadpreview.Preview) bool {
 	return preview.Status == "ready" && len(preview.Targets) == 1 && preview.Targets[0].Status == "ready" && preview.Targets[0].PendingModuleCount == 0 && len(preview.Targets[0].SelectedModules) > 0
 }
@@ -44,6 +46,25 @@ func previewActionCounts(preview payloadpreview.Preview) (changes, noops int) {
 	return changes, noops
 }
 
+func guidedPayloadSourceSummary(preview payloadpreview.Preview) string {
+	composition := false
+	unique := map[string]bool{}
+	for _, target := range preview.Targets {
+		for _, module := range target.Modules {
+			for _, artifact := range module.Artifacts {
+				if artifact.CompositionVerified {
+					composition = true
+				}
+				unique[strings.ToLower(strings.TrimSpace(artifact.RelativePath))] = true
+			}
+		}
+	}
+	if composition {
+		return fmt.Sprintf("verified shared member-level composition (%d unique game files)", len(unique))
+	}
+	return fmt.Sprintf("verified module payload set (%d unique game files)", len(unique))
+}
+
 func executeGuidedPayloadAction(preview payloadpreview.Preview, action guidedPayloadAction, out io.Writer) (guidedPayloadResult, error) {
 	result := guidedPayloadResult{Action: action}
 	switch action {
@@ -53,7 +74,7 @@ func executeGuidedPayloadAction(preview payloadpreview.Preview, action guidedPay
 		if !previewReadyForGuidedAction(preview) {
 			return result, fmt.Errorf("payload set is not ready for guided preparation: %s", describePayloadPreviewReadiness(preview))
 		}
-		prepared, err := preparePayloadTransaction(preview)
+		prepared, err := prepareGuidedPayloadTransaction(preview)
 		if err != nil {
 			return result, err
 		}
@@ -91,9 +112,9 @@ func chooseGuidedPayloadActionLine(preview payloadpreview.Preview, in io.Reader,
 	target := preview.Targets[0]
 	changes, noops := previewActionCounts(preview)
 	fmt.Fprintf(out, "\nReady for %s\n", target.DisplayName)
-	fmt.Fprintf(out, "Game: %s\nModules: %s\nChanges: %d; already current: %d\n", target.GameRoot, strings.Join(target.SelectedModules, ", "), changes, noops)
-	fmt.Fprintln(out, "  1) Install/update now (modifies game files after creating verified backups)")
-	fmt.Fprintln(out, "  2) Prepare only (does not modify game files)")
+	fmt.Fprintf(out, "Game: %s\nModules: %s\nPayload source: %s\nChanges: %d; already current: %d\n", target.GameRoot, strings.Join(target.SelectedModules, ", "), guidedPayloadSourceSummary(preview), changes, noops)
+	fmt.Fprintln(out, "  1) Install/update now (revalidates the complete plan, then modifies game files after verified backups)")
+	fmt.Fprintln(out, "  2) Prepare only (revalidates the complete plan; does not modify game files)")
 	fmt.Fprintln(out, "  3) Cancel")
 	fmt.Fprint(out, "Choose 1-3: ")
 	line, err := bufio.NewReader(in).ReadString('\n')
@@ -164,6 +185,7 @@ func renderGuidedPayloadActionMenu(out io.Writer, preview payloadpreview.Preview
 	fmt.Fprintf(out, "%sReady:%s %s%s%s\n", ansiBold, ansiReset, ansiBold, target.DisplayName, ansiReset)
 	fmt.Fprintf(out, "%sGame directory:%s %s\n", ansiGray, ansiReset, target.GameRoot)
 	fmt.Fprintf(out, "%sModules:%s %s\n", ansiGray, ansiReset, strings.Join(target.SelectedModules, ", "))
+	fmt.Fprintf(out, "%sPayload source:%s %s\n", ansiGray, ansiReset, guidedPayloadSourceSummary(preview))
 	fmt.Fprintf(out, "%sPlanned changes:%s %d   %sAlready current:%s %d\n\n", ansiGray, ansiReset, changes, ansiGray, ansiReset, noops)
 	fmt.Fprintf(out, "%sChoose action%s\n", ansiBold, ansiReset)
 	fmt.Fprintf(out, "%s↑/↓ move   Enter confirms   Q cancels%s\n\n", ansiDim, ansiReset)
@@ -174,8 +196,8 @@ func renderGuidedPayloadActionMenu(out io.Writer, preview payloadpreview.Preview
 		"Cancel",
 	}
 	descriptions := []string{
-		"Create or reuse the persistent baseline, stage verified payloads, then atomically modify the selected game files.",
-		"Create the verified baseline, staging, backups and journal, but leave all game files unchanged.",
+		"Rebuild and compare the canonical preview, revalidate the composition report and current game files, create or reuse the persistent baseline, then atomically install one deduplicated transaction.",
+		"Rebuild and compare the canonical preview, then create the verified baseline, staging, backups and one journal while leaving all game files unchanged.",
 		"Exit without preparing or modifying anything.",
 	}
 	for index, label := range labels {

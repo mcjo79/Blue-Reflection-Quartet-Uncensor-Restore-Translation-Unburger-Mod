@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"sort"
+	"strings"
 	"testing"
 
 	"local/blue-reflection-patcher/internal/model"
@@ -31,18 +33,56 @@ func syntheticProject(t *testing.T, targetID string, artifacts map[string][]byte
 	root := t.TempDir()
 	game := filepath.Join(root, "game")
 	testWrite(t, filepath.Join(root, "workstreams/core/VERSION"), []byte("test\n"))
+	testWrite(t, filepath.Join(root, "workstreams/translation/VERSION"), []byte("0.0.113\n"))
+	testWrite(t, filepath.Join(root, "workstreams/translation_tooling/VERSION"), []byte("0.0.54\n"))
 	testWrite(t, filepath.Join(root, "Blue_Reflection_Patcher/go.mod"), []byte("module test\n"))
+	looseRelative := ".local/reports/translation/BR_TRANSLATION_LOOSE_BUILD_REPORT.json"
+	looseData := []byte("{\"type\":\"br_translation_loose_build_report\",\"format_version\":2,\"status\":\"ok\"}\n")
+	testWrite(t, filepath.Join(root, filepath.FromSlash(looseRelative)), looseData)
 	var archives []repackArchiveEntry
+	if targetID == quartetTargetID {
+		for _, relative := range []string{
+			"Data/PACK11.PAK", "Data/PACK12.PAK", "Data/PACK01_01.PAK", "Data/PACK02_01.PAK",
+			"Data/PACK01_02.PAK", "Data/PACK02_02.PAK", "Data/PACK01_03.PAK", "Data/PACK02_03.PAK",
+			"Data/PACK00_04_01.PAK",
+		} {
+			if _, ok := artifacts[relative]; !ok {
+				artifacts[relative] = []byte("translated-" + relative)
+			}
+		}
+	}
 	for relative, data := range artifacts {
-		outputRelative := filepath.ToSlash(filepath.Join(".local/build/translation/archives", targetID, filepath.FromSlash(relative)))
+		buildTargetID := targetID
+		if targetID == quartetTargetID {
+			switch relative {
+			case "Data/PACK01_01.PAK", "Data/PACK02_01.PAK":
+				buildTargetID = "blue_reflection_ray_quartet"
+			case "Data/PACK01_02.PAK", "Data/PACK02_02.PAK":
+				buildTargetID = "blue_reflection_sun_quartet"
+			case "Data/PACK01_03.PAK", "Data/PACK02_03.PAK":
+				buildTargetID = "second_light_quartet"
+			}
+		}
+		outputRelative := filepath.ToSlash(filepath.Join(".local/build/translation/archives", buildTargetID, filepath.FromSlash(relative)))
 		testWrite(t, filepath.Join(root, filepath.FromSlash(outputRelative)), data)
 		testWrite(t, filepath.Join(game, filepath.FromSlash(relative)), []byte("stock-"+relative))
+		sourcePolicy := "current_installation_baseline_extraction"
+		if relative == "DATA/PACK00_04_1.PAK" || relative == "Data/PACK00_04_01.PAK" {
+			sourcePolicy = "current_installation_baseline_extraction_plus_verified_marker_overlay"
+		}
 		archives = append(archives, repackArchiveEntry{
-			TargetID: targetID, ArchiveRelativePath: relative, OutputPath: outputRelative,
+			TargetID: buildTargetID, ArchiveRelativePath: relative, OutputPath: outputRelative,
 			OutputSHA256: digest(data), OutputBytes: int64(len(data)), Failures: []string{},
+			SourcePolicy: sourcePolicy, SourceArchiveSHA256: digest([]byte("baseline-" + relative)), SourceArchiveBytes: 1,
+			FullReextractVerified: true,
 		})
 	}
-	reportData, err := json.Marshal(repackReport{Status: "ok", Archives: archives})
+	reportData, err := json.Marshal(repackReport{
+		Type: translationRepackReportType, FormatVersion: 2, Status: "ok",
+		TranslationVersion: "0.0.113", TranslationToolingVersion: "0.0.54", MinimumTranslationVersion: "0.0.113",
+		CanonicalInputFingerprint: digest([]byte("inputs")), LooseReportPath: looseRelative,
+		LooseReportSHA256: digest(looseData), LooseReportBytes: int64(len(looseData)), Archives: archives,
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -107,30 +147,75 @@ func TestSelectedRestorationRequiresCompositionBuild(t *testing.T) {
 func writeSyntheticComposition(t *testing.T, root, game string, payloads map[string][]byte) {
 	t.Helper()
 	looseRelative := ".local/reports/translation/BR_TRANSLATION_LOOSE_BUILD_REPORT.json"
-	looseData := []byte("{\"status\":\"ok\"}\n")
-	testWrite(t, filepath.Join(root, filepath.FromSlash(looseRelative)), looseData)
+	looseData, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(looseRelative)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, relative := range []string{
+		"Data/PACK11.PAK", "Data/PACK12.PAK", "Data/PACK01_01.PAK", "Data/PACK02_01.PAK",
+		"Data/PACK01_02.PAK", "Data/PACK02_02.PAK", "Data/PACK01_03.PAK", "Data/PACK02_03.PAK",
+		"Data/PACK00_04_01.PAK",
+	} {
+		if _, ok := payloads[relative]; ok {
+			continue
+		}
+		var buildTargetID = quartetTargetID
+		switch relative {
+		case "Data/PACK01_01.PAK", "Data/PACK02_01.PAK":
+			buildTargetID = "blue_reflection_ray_quartet"
+		case "Data/PACK01_02.PAK", "Data/PACK02_02.PAK":
+			buildTargetID = "blue_reflection_sun_quartet"
+		case "Data/PACK01_03.PAK", "Data/PACK02_03.PAK":
+			buildTargetID = "second_light_quartet"
+		}
+		path := filepath.Join(root, ".local/build/translation/archives", buildTargetID, filepath.FromSlash(relative))
+		data, readErr := os.ReadFile(path)
+		if readErr != nil {
+			t.Fatal(readErr)
+		}
+		payloads[relative] = data
+	}
 
-	profilePayloadRelative := ".local/build/quartet_restoration/synthetic/runtime-profile/Data/PACK11.PAK"
-	profilePayload := []byte("runtime-profile-payload")
-	testWrite(t, filepath.Join(root, filepath.FromSlash(profilePayloadRelative)), profilePayload)
-	pack11Game := filepath.Join(game, "Data/PACK11.PAK")
-	pack11Baseline, err := os.ReadFile(pack11Game)
-	if err != nil {
-		t.Fatal(err)
+	profileInputs := []compositionBuildProfileInput{}
+	profileIDs := []string{}
+	profileByTarget := map[string]string{}
+	addProfile := func(profileID, targetRelative string) {
+		profilePayloadRelative := filepath.ToSlash(filepath.Join(".local/build/quartet_restoration/synthetic", profileID, filepath.FromSlash(targetRelative)))
+		profilePayload := []byte("profile-payload-" + profileID)
+		testWrite(t, filepath.Join(root, filepath.FromSlash(profilePayloadRelative)), profilePayload)
+		gamePath := filepath.Join(game, filepath.FromSlash(targetRelative))
+		baseline, readErr := os.ReadFile(gamePath)
+		if readErr != nil {
+			baseline = []byte("synthetic-installed-baseline-" + targetRelative)
+			testWrite(t, gamePath, baseline)
+		}
+		profileManifestRelative := filepath.ToSlash(filepath.Join(".local/build/quartet_restoration/core_profiles", profileID+".json"))
+		profileManifest := currentProfileManifest{
+			SchemaVersion: 1, ProfileID: profileID, TargetRelativePath: targetRelative,
+			BaselineSHA256: digest(baseline), BaselineSize: int64(len(baseline)),
+			ProfileSHA256: digest(profilePayload), ProfileSize: int64(len(profilePayload)),
+			LocalProfilePath: profilePayloadRelative, RuntimeValidated: true, WorkstreamID: "quartet_restoration",
+		}
+		profileManifestData, marshalErr := json.MarshalIndent(profileManifest, "", "  ")
+		if marshalErr != nil {
+			t.Fatal(marshalErr)
+		}
+		profileManifestData = append(profileManifestData, byte('\n'))
+		testWrite(t, filepath.Join(root, filepath.FromSlash(profileManifestRelative)), profileManifestData)
+		profileIDs = append(profileIDs, profileID)
+		profileByTarget[targetRelative] = profileID
+		profileInputs = append(profileInputs, compositionBuildProfileInput{
+			ProfileID: profileID, ManifestPath: profileManifestRelative, ManifestSHA256: digest(profileManifestData), ManifestBytes: int64(len(profileManifestData)),
+			PayloadPath: profilePayloadRelative, PayloadSHA256: digest(profilePayload), PayloadBytes: int64(len(profilePayload)),
+			TargetRelativePath: targetRelative, BaselineSHA256: digest(baseline), BaselineBytes: int64(len(baseline)), RuntimeValidated: true,
+		})
 	}
-	profileManifestRelative := ".local/build/quartet_restoration/core_profiles/runtime-profile.json"
-	profileManifest := currentProfileManifest{
-		SchemaVersion: 1, ProfileID: "runtime-profile", TargetRelativePath: "Data/PACK11.PAK",
-		BaselineSHA256: digest(pack11Baseline), BaselineSize: int64(len(pack11Baseline)),
-		ProfileSHA256: digest(profilePayload), ProfileSize: int64(len(profilePayload)),
-		LocalProfilePath: profilePayloadRelative, RuntimeValidated: true, WorkstreamID: "quartet_restoration",
+	addProfile("runtime-profile", "Data/PACK11.PAK")
+	if _, ok := payloads["Data/PACK10_01.PAK"]; ok {
+		addProfile("runtime-profile-pack10", "Data/PACK10_01.PAK")
 	}
-	profileManifestData, err := json.MarshalIndent(profileManifest, "", "  ")
-	if err != nil {
-		t.Fatal(err)
-	}
-	profileManifestData = append(profileManifestData, byte('\n'))
-	testWrite(t, filepath.Join(root, filepath.FromSlash(profileManifestRelative)), profileManifestData)
+	sort.Strings(profileIDs)
+	sort.Slice(profileInputs, func(i, j int) bool { return profileInputs[i].ProfileID < profileInputs[j].ProfileID })
 
 	archives := make([]compositionBuildArchive, 0, len(payloads))
 	composed := 0
@@ -143,7 +228,16 @@ func writeSyntheticComposition(t *testing.T, root, game string, payloads map[str
 		full := false
 		profiles := []string{}
 		baseSourceKind := "verified_translation_archive"
-		rawPath := filepath.Join(root, ".local/build/translation/archives", quartetTargetID, filepath.FromSlash(relative))
+		buildTargetID := quartetTargetID
+		switch relative {
+		case "Data/PACK01_01.PAK", "Data/PACK02_01.PAK":
+			buildTargetID = "blue_reflection_ray_quartet"
+		case "Data/PACK01_02.PAK", "Data/PACK02_02.PAK":
+			buildTargetID = "blue_reflection_sun_quartet"
+		case "Data/PACK01_03.PAK", "Data/PACK02_03.PAK":
+			buildTargetID = "second_light_quartet"
+		}
+		rawPath := filepath.Join(root, ".local/build/translation/archives", buildTargetID, filepath.FromSlash(relative))
 		rawData, rawErr := os.ReadFile(rawPath)
 		baseHash := ""
 		baseBytes := int64(0)
@@ -156,11 +250,11 @@ func writeSyntheticComposition(t *testing.T, root, game string, payloads map[str
 			installedData = []byte("synthetic-installed-baseline-" + relative)
 			testWrite(t, installedPath, installedData)
 		}
-		if relative == "Data/PACK11.PAK" || relative == "Data/PACK10_01.PAK" {
+		if profileID, ok := profileByTarget[relative]; ok {
 			mode = "member_overlay"
 			status = "published_member_overlay_verified"
 			full = true
-			profiles = []string{"runtime-profile"}
+			profiles = []string{profileID}
 			composed++
 			if rawErr != nil {
 				baseSourceKind = "installed_baseline_archive"
@@ -171,7 +265,7 @@ func writeSyntheticComposition(t *testing.T, root, game string, payloads map[str
 		}
 		archives = append(archives, compositionBuildArchive{
 			ArchiveRelativePath: relative, Mode: mode, BaseSourceKind: baseSourceKind,
-			BaseSourcePath: filepath.ToSlash(filepath.Join(".local/build/translation/archives", quartetTargetID, filepath.FromSlash(relative))),
+			BaseSourcePath: filepath.ToSlash(filepath.Join(".local/build/translation/archives", buildTargetID, filepath.FromSlash(relative))),
 			BaseSHA256:     baseHash, BaseBytes: baseBytes,
 			InstalledBaselineSHA256: digest(installedData), InstalledBaselineBytes: int64(len(installedData)),
 			OutputPath: outputRelative, OutputSHA256: digest(data), OutputBytes: int64(len(data)), FullReextractVerified: full,
@@ -184,19 +278,16 @@ func writeSyntheticComposition(t *testing.T, root, game string, payloads map[str
 		t.Fatal(err)
 	}
 	report := compositionBuildReport{
-		Type: compositionReportType, FormatVersion: 2, Status: "ok",
-		ProjectRoot: root, GameRoot: game, TargetID: quartetTargetID, CommitEnabled: false,
+		Type: compositionReportType, FormatVersion: 4, Status: "ok",
+		SelectedModules: []string{"blue_reflection_translation", "quartet_restoration"},
+		ProjectRoot:     root, GameRoot: game, TargetID: quartetTargetID, CommitEnabled: false,
 		PreflightStatus: "ready_for_composition_build", OutputRoot: compositionOutputRelative,
 		EmbeddedReportPath:         compositionEmbeddedReportRelative,
 		TranslationLooseReportPath: looseRelative, TranslationLooseReportSHA256: digest(looseData), TranslationLooseReportBytes: int64(len(looseData)),
 		TranslationRepackReportPath: repackReportRelative, TranslationRepackReportSHA256: digest(repackData), TranslationRepackReportBytes: int64(len(repackData)),
-		ProductionProfileIDs: []string{"runtime-profile"},
-		ProfileInputs: []compositionBuildProfileInput{{
-			ProfileID: "runtime-profile", ManifestPath: profileManifestRelative, ManifestSHA256: digest(profileManifestData), ManifestBytes: int64(len(profileManifestData)),
-			PayloadPath: profilePayloadRelative, PayloadSHA256: digest(profilePayload), PayloadBytes: int64(len(profilePayload)),
-			TargetRelativePath: "Data/PACK11.PAK", BaselineSHA256: digest(pack11Baseline), BaselineBytes: int64(len(pack11Baseline)), RuntimeValidated: true,
-		}},
-		Archives: archives, PublishedArchiveCount: len(archives), ComposedArchiveCount: composed,
+		ProductionProfileIDs: profileIDs,
+		ProfileInputs:        profileInputs,
+		Archives:             archives, PublishedArchiveCount: len(archives), ComposedArchiveCount: composed,
 		PassthroughArchiveCount: passthrough, FullReextractCount: composed, Errors: []string{},
 	}
 	data, err := json.MarshalIndent(report, "", "  ")
@@ -230,12 +321,12 @@ func TestVerifiedCompositionReplacesBlindWholePakPreview(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if preview.Status != "ready" || preview.Targets[0].Status != "ready" || preview.Targets[0].PendingModuleCount != 0 || preview.Targets[0].ReadyArtifactCount != 4 {
+	if preview.Status != "ready" || preview.Targets[0].Status != "ready" || preview.Targets[0].PendingModuleCount != 0 || preview.Targets[0].ReadyArtifactCount != 10 {
 		t.Fatalf("verified composition did not become transaction-preview ready: %+v", preview)
 	}
 	translation := preview.Targets[0].Modules[0]
 	restoration := preview.Targets[0].Modules[1]
-	if !translation.Ready || len(translation.Artifacts) != 4 || !restoration.Ready || len(restoration.Artifacts) != 0 {
+	if !translation.Ready || len(translation.Artifacts) != 10 || !restoration.Ready || len(restoration.Artifacts) != 0 {
 		t.Fatalf("composition modules are wrong: translation=%+v restoration=%+v", translation, restoration)
 	}
 	for _, artifact := range translation.Artifacts {
@@ -343,5 +434,297 @@ func TestExternallyChangedOverlayTargetIsBlocked(t *testing.T) {
 	}
 	if preview.Status != "partial" || preview.Targets[0].Modules[0].Ready || preview.Targets[0].Modules[1].Ready {
 		t.Fatalf("external target modification was not blocked: %+v", preview)
+	}
+}
+
+func addSyntheticLegacyDLCContract(t *testing.T, root, game string) LegacyDLCCompositionContract {
+	t.Helper()
+	policy, err := loadLegacyDLCPolicy()
+	if err != nil {
+		t.Fatal(err)
+	}
+	family, ok := legacyDLCFamily(policy, "bkn_dry")
+	if !ok {
+		t.Fatal("missing bkn_dry policy")
+	}
+	members := []string{"costume_pc00_bkn"}
+	evidenceRelative := ".local/reports/quartet_legacy_dlc/evidence/synthetic.json"
+	evidence := []byte(`{"type":"synthetic"}` + "\n")
+	testWrite(t, filepath.Join(root, filepath.FromSlash(evidenceRelative)), evidence)
+	manifest := legacyDLCManifest{
+		Type: legacyDLCManifestType, FormatVersion: legacyDLCManifestFormatVersion,
+		FamilyID: "bkn_dry", Generation: 1, Members: members,
+		SourceKind: legacyDLCSourceKind, TargetID: quartetTargetID,
+		Transaction:   legacyDLCManifestTransaction{Group: family.TransactionGroup, AllOrNone: true},
+		Provenance:    legacyDLCManifestProvenance{WorkstreamID: "quartet_legacy_dlc", WorkstreamVersion: "fixture", EvidenceRelativePath: evidenceRelative, EvidenceSHA256: digest(evidence)},
+		Authorization: legacyDLCManifestAuthorization{CoreHandoffReady: true},
+	}
+	candidateData := map[string][]byte{
+		"Data/PACK10_02.PAK": []byte("legacy-candidate-pack10"),
+		"Data/PACK12.PAK":    []byte("legacy-candidate-pack12"),
+	}
+	for _, policyArtifact := range family.Artifacts {
+		relative := policyArtifact.TargetPath
+		candidate := candidateData[relative]
+		candidateRelative := filepath.ToSlash(filepath.Join(policy.CandidateRoot, "synthetic", filepath.Base(relative)))
+		testWrite(t, filepath.Join(root, filepath.FromSlash(candidateRelative)), candidate)
+		baselinePath := filepath.Join(game, filepath.FromSlash(relative))
+		baseline, readErr := os.ReadFile(baselinePath)
+		if readErr != nil {
+			baseline = []byte("stock-" + relative)
+			testWrite(t, baselinePath, baseline)
+		}
+		added, changed, removed, deltaErr := expectedLegacyDLCMemberDelta(family, policyArtifact, members)
+		if deltaErr != nil {
+			t.Fatal(deltaErr)
+		}
+		manifest.Artifacts = append(manifest.Artifacts, legacyDLCManifestArtifact{
+			TargetPath: relative, Operation: policyArtifact.Operation,
+			CandidateRelativePath: candidateRelative, CandidateSize: int64(len(candidate)), CandidateSHA256: digest(candidate),
+			BaselineSize: int64(len(baseline)), BaselineSHA256: digest(baseline),
+			MemberDelta: legacyDLCManifestMemberDelta{Added: added, Changed: changed, Removed: removed},
+		})
+	}
+	data, err := json.MarshalIndent(manifest, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	testWrite(t, filepath.Join(root, filepath.FromSlash(policy.ManifestRelativePath)), append(data, '\n'))
+	contract, err := LoadLegacyDLCCompositionContract(root, game)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return contract
+}
+
+func writeSyntheticTranslationLegacyComposition(t *testing.T, root, game string) {
+	t.Helper()
+	contract := addSyntheticLegacyDLCContract(t, root, game)
+	looseRelative := ".local/reports/translation/BR_TRANSLATION_LOOSE_BUILD_REPORT.json"
+	looseData, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(looseRelative)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	repackData, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(repackReportRelative)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var repack repackReport
+	if err := json.Unmarshal(repackData, &repack); err != nil {
+		t.Fatal(err)
+	}
+	archives := []compositionBuildArchive{}
+	composed := 0
+	passthrough := 0
+	for _, relative := range quartetTranslationArchives() {
+		entry, ok := findReportEntry(repack, quartetTranslationBuildTarget(relative), relative)
+		if !ok {
+			t.Fatalf("missing synthetic translation entry: %s", relative)
+		}
+		baseData, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(entry.OutputPath)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		outputData := baseData
+		mode := "verified_translation_passthrough"
+		status := "published_verified_translation_passthrough"
+		full := false
+		if relative == "Data/PACK12.PAK" {
+			outputData = []byte("composed-translation-plus-legacy-pack12")
+			mode = "member_overlay"
+			status = "published_member_overlay_verified"
+			full = true
+			composed++
+		} else {
+			passthrough++
+		}
+		outputRelative := filepath.ToSlash(filepath.Join(compositionOutputRelative, filepath.FromSlash(relative)))
+		testWrite(t, filepath.Join(root, filepath.FromSlash(outputRelative)), outputData)
+		installedData, err := os.ReadFile(filepath.Join(game, filepath.FromSlash(relative)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		archives = append(archives, compositionBuildArchive{
+			ArchiveRelativePath: relative, Mode: mode, BaseSourceKind: "verified_translation_archive",
+			BaseSourcePath: entry.OutputPath, BaseSHA256: digest(baseData), BaseBytes: int64(len(baseData)),
+			InstalledBaselineSHA256: digest(installedData), InstalledBaselineBytes: int64(len(installedData)),
+			OutputPath: outputRelative, OutputSHA256: digest(outputData), OutputBytes: int64(len(outputData)),
+			FullReextractVerified: full, ManifestDeclarationChecked: true, Status: status, ProfileIDs: []string{},
+		})
+	}
+	legacyInputs := []compositionBuildLegacyDLCInput{}
+	for _, item := range contract.Artifacts {
+		legacyInputs = append(legacyInputs, compositionBuildLegacyDLCInput{
+			ManifestPath: contract.ManifestPath, ManifestSHA256: contract.ManifestSHA256, ManifestBytes: contract.ManifestBytes,
+			FamilyID: contract.FamilyID, Generation: contract.Generation, Members: append([]string{}, contract.Members...), TransactionGroup: contract.TransactionGroup,
+			WorkstreamVersion: contract.WorkstreamVersion, ProvenanceEvidencePath: contract.ProvenanceEvidencePath, ProvenanceEvidenceHash: contract.ProvenanceEvidenceHash,
+			ArchiveRelativePath: item.RelativePath, CandidatePath: item.CandidateRelativePath,
+			CandidateSHA256: item.CandidateSHA256, CandidateBytes: item.CandidateSize,
+			BaselinePath: item.BaselinePath, BaselineSHA256: item.BaselineSHA256, BaselineBytes: item.BaselineSize,
+			AddedMembers: append([]string{}, item.AddedMembers...), ChangedMembers: append([]string{}, item.ChangedMembers...), RemovedMembers: append([]string{}, item.RemovedMembers...),
+		})
+		if item.RelativePath != "Data/PACK10_02.PAK" {
+			continue
+		}
+		candidateData, err := os.ReadFile(item.CandidatePath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		outputRelative := filepath.ToSlash(filepath.Join(compositionOutputRelative, filepath.FromSlash(item.RelativePath)))
+		testWrite(t, filepath.Join(root, filepath.FromSlash(outputRelative)), candidateData)
+		archives = append(archives, compositionBuildArchive{
+			ArchiveRelativePath: item.RelativePath, Mode: "verified_legacy_dlc_passthrough", BaseSourceKind: "verified_legacy_dlc_candidate",
+			BaseSourcePath: item.CandidateRelativePath, BaseSHA256: item.CandidateSHA256, BaseBytes: item.CandidateSize,
+			InstalledBaselineSHA256: item.BaselineSHA256, InstalledBaselineBytes: item.BaselineSize,
+			OutputPath: outputRelative, OutputSHA256: item.CandidateSHA256, OutputBytes: item.CandidateSize,
+			FullReextractVerified: false, ManifestDeclarationChecked: true, Status: "published_verified_legacy_dlc_passthrough", ProfileIDs: []string{},
+		})
+		passthrough++
+	}
+	sort.Slice(archives, func(i, j int) bool { return archives[i].ArchiveRelativePath < archives[j].ArchiveRelativePath })
+	report := compositionBuildReport{
+		Type: compositionReportType, FormatVersion: 4, Status: "ok",
+		ProjectRoot: root, GameRoot: game, TargetID: quartetTargetID, CommitEnabled: false,
+		SelectedModules: []string{"blue_reflection_translation", "quartet_legacy_dlc"},
+		PreflightStatus: "ready_for_composition_build", OutputRoot: compositionOutputRelative,
+		EmbeddedReportPath:         compositionEmbeddedReportRelative,
+		TranslationLooseReportPath: looseRelative, TranslationLooseReportSHA256: digest(looseData), TranslationLooseReportBytes: int64(len(looseData)),
+		TranslationRepackReportPath: repackReportRelative, TranslationRepackReportSHA256: digest(repackData), TranslationRepackReportBytes: int64(len(repackData)),
+		ProductionProfileIDs: []string{}, ProfileInputs: []compositionBuildProfileInput{}, LegacyDLCInputs: legacyInputs,
+		Archives: archives, PublishedArchiveCount: len(archives), ComposedArchiveCount: composed,
+		PassthroughArchiveCount: passthrough, FullReextractCount: composed, Errors: []string{},
+	}
+	data, err := json.MarshalIndent(report, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	data = append(data, '\n')
+	testWrite(t, filepath.Join(root, filepath.FromSlash(compositionReportRelative)), data)
+	testWrite(t, filepath.Join(root, filepath.FromSlash(compositionEmbeddedReportRelative)), data)
+}
+
+func TestTranslationPlusLegacyDLCUsesOneVerifiedCompositionSet(t *testing.T) {
+	root, game := syntheticProject(t, quartetTargetID, map[string][]byte{})
+	writeSyntheticTranslationLegacyComposition(t, root, game)
+	selection := model.SelectionResult{Targets: []model.TargetSelection{{
+		TargetID: quartetTargetID, DisplayName: "Quartet", Root: game, DetectionSource: "test",
+		SelectedModuleIDs: []string{"blue_reflection_translation", "quartet_legacy_dlc"},
+	}}}
+	preview, err := Build(root, filepath.Join(root, "state"), selection)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if preview.CommitEnabled || preview.Status != "ready" || len(preview.Targets) != 1 {
+		t.Fatalf("unexpected T+D preview: %+v", preview)
+	}
+	target := preview.Targets[0]
+	if target.ReadyArtifactCount != 10 || target.PendingModuleCount != 0 || len(target.Modules) != 2 {
+		t.Fatalf("unexpected T+D target: %+v", target)
+	}
+	if !target.Modules[0].Ready || len(target.Modules[0].Artifacts) != 10 || !target.Modules[1].Ready || len(target.Modules[1].Artifacts) != 0 {
+		t.Fatalf("shared artifacts were not assigned once: %+v", target.Modules)
+	}
+	seen := map[string]bool{}
+	for _, artifact := range target.Modules[0].Artifacts {
+		key := strings.ToLower(artifact.RelativePath)
+		if seen[key] {
+			t.Fatalf("duplicate transaction path: %s", artifact.RelativePath)
+		}
+		seen[key] = true
+		if !artifact.TransactionReady || !artifact.CompositionVerified {
+			t.Fatalf("unverified T+D artifact: %+v", artifact)
+		}
+	}
+	if !seen[strings.ToLower("Data/PACK12.PAK")] || !seen[strings.ToLower("Data/PACK10_02.PAK")] {
+		t.Fatalf("shared DLC paths missing: %v", seen)
+	}
+}
+
+func TestTranslationPlusLegacyDLCWithoutCompositionNeverReturnsRawDuplicatePaths(t *testing.T) {
+	root, game := syntheticProject(t, quartetTargetID, map[string][]byte{})
+	addSyntheticLegacyDLCContract(t, root, game)
+	selection := model.SelectionResult{Targets: []model.TargetSelection{{
+		TargetID: quartetTargetID, Root: game,
+		SelectedModuleIDs: []string{"blue_reflection_translation", "quartet_legacy_dlc"},
+	}}}
+	preview, err := Build(root, filepath.Join(root, "state"), selection)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if preview.Status != "not_ready" || preview.Targets[0].ReadyArtifactCount != 0 || preview.Targets[0].PendingModuleCount != 2 {
+		t.Fatalf("raw overlapping payloads escaped without composition: %+v", preview)
+	}
+	for _, module := range preview.Targets[0].Modules {
+		if len(module.Artifacts) != 0 || module.Ready {
+			t.Fatalf("raw artifact escaped composition gate: %+v", module)
+		}
+	}
+}
+
+func TestCompositionReportForDifferentModuleSelectionIsRejected(t *testing.T) {
+	root, game := syntheticProject(t, quartetTargetID, map[string][]byte{})
+	writeSyntheticTranslationLegacyComposition(t, root, game)
+	reportPath := filepath.Join(root, filepath.FromSlash(compositionReportRelative))
+	data, err := os.ReadFile(reportPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var report compositionBuildReport
+	if err := json.Unmarshal(data, &report); err != nil {
+		t.Fatal(err)
+	}
+	report.SelectedModules = []string{"blue_reflection_translation", "quartet_restoration"}
+	data, _ = json.MarshalIndent(report, "", "  ")
+	data = append(data, '\n')
+	testWrite(t, reportPath, data)
+	testWrite(t, filepath.Join(root, filepath.FromSlash(compositionEmbeddedReportRelative)), data)
+	selection := model.SelectionResult{Targets: []model.TargetSelection{{
+		TargetID: quartetTargetID, Root: game,
+		SelectedModuleIDs: []string{"blue_reflection_translation", "quartet_legacy_dlc"},
+	}}}
+	preview, err := Build(root, filepath.Join(root, "state"), selection)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if preview.Status != "not_ready" || preview.Targets[0].ReadyArtifactCount != 0 {
+		t.Fatalf("stale module selection was accepted: %+v", preview)
+	}
+}
+
+func TestQuartetSevenCombinationPreviewMatrix(t *testing.T) {
+	root, game := syntheticProject(t, quartetTargetID, map[string][]byte{})
+	writeSyntheticTranslationLegacyComposition(t, root, game)
+	cases := []struct {
+		name      string
+		modules   []string
+		status    string
+		artifacts int
+		pending   int
+	}{
+		{"translation", []string{"blue_reflection_translation"}, "ready", 9, 0},
+		{"restoration", []string{"quartet_restoration"}, "not_ready", 0, 1},
+		{"legacy_dlc", []string{"quartet_legacy_dlc"}, "ready", 2, 0},
+		{"translation_restoration", []string{"blue_reflection_translation", "quartet_restoration"}, "not_ready", 0, 2},
+		{"translation_legacy_dlc", []string{"blue_reflection_translation", "quartet_legacy_dlc"}, "ready", 10, 0},
+		{"restoration_legacy_dlc", []string{"quartet_restoration", "quartet_legacy_dlc"}, "not_ready", 0, 2},
+		{"all_three", []string{"blue_reflection_translation", "quartet_restoration", "quartet_legacy_dlc"}, "not_ready", 0, 3},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			selection := model.SelectionResult{Targets: []model.TargetSelection{{
+				TargetID: quartetTargetID, Root: game, SelectedModuleIDs: tc.modules,
+			}}}
+			preview, err := Build(root, filepath.Join(root, "state"), selection)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if preview.CommitEnabled || preview.Status != tc.status || len(preview.Targets) != 1 {
+				t.Fatalf("unexpected matrix preview: %+v", preview)
+			}
+			target := preview.Targets[0]
+			if target.ReadyArtifactCount != tc.artifacts || target.PendingModuleCount != tc.pending {
+				t.Fatalf("unexpected matrix target: %+v", target)
+			}
+		})
 	}
 }

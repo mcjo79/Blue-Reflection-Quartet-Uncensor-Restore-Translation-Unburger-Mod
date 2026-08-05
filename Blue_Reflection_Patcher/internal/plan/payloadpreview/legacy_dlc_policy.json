@@ -1,0 +1,39 @@
+{
+  "type": "br_quartet_legacy_dlc_manifest_policy",
+  "format_version": 1,
+  "manifest_relative_path": ".local/reports/quartet_legacy_dlc/validated_payloads/ACTIVE.json",
+  "source_kind": "validated_quartet_legacy_dlc_handoff",
+  "target_id": "blue_reflection_quartet",
+  "candidate_root": ".local/build/quartet_legacy_dlc",
+  "evidence_root": ".local/reports/quartet_legacy_dlc",
+  "families": [
+    {
+      "family_id": "bkn_dry",
+      "transaction_group": "quartet_legacy_dlc_bkn_dry",
+      "member_id_pattern": "^costume_(pc[0-9]{2})_bkn$",
+      "minimum_members": 1,
+      "maximum_members": 32,
+      "artifacts": [
+        {
+          "target_path": "Data/PACK10_02.PAK",
+          "operation": "replace",
+          "added_member_templates": [
+            "data/b1/x64/character/{member_key}/{member_key}_dlc_bkn.elixir.gz",
+            "data/b1/x64/character/{member_key}/{member_key}_dlc_bkn.g1t"
+          ],
+          "changed_members": [],
+          "removed_members": []
+        },
+        {
+          "target_path": "Data/PACK12.PAK",
+          "operation": "replace",
+          "added_member_templates": [],
+          "changed_members": [
+            "saves/b1/chara/charabase.xml"
+          ],
+          "removed_members": []
+        }
+      ]
+    }
+  ]
+}

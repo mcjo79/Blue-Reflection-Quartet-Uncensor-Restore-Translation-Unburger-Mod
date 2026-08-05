@@ -18,11 +18,26 @@ import (
 
 const (
 	quartetCompositionPreviewType    = "br_quartet_translation_restoration_composition_preflight"
-	quartetCompositionPreviewVersion = 1
+	quartetCompositionPreviewVersion = 3
 	quartetTargetID                  = "blue_reflection_quartet"
 	translationLooseReportRelative   = ".local/reports/translation/BR_TRANSLATION_LOOSE_BUILD_REPORT.json"
 	translationRepackReportRelative  = ".local/reports/translation/BR_TRANSLATION_PAK_REPACK_REPORT.json"
 )
+
+var quartetTranslationArchives = []struct {
+	TargetID string
+	Path     string
+}{
+	{"blue_reflection_quartet", "Data/PACK11.PAK"},
+	{"blue_reflection_quartet", "Data/PACK12.PAK"},
+	{"blue_reflection_ray_quartet", "Data/PACK01_01.PAK"},
+	{"blue_reflection_ray_quartet", "Data/PACK02_01.PAK"},
+	{"blue_reflection_sun_quartet", "Data/PACK01_02.PAK"},
+	{"blue_reflection_sun_quartet", "Data/PACK02_02.PAK"},
+	{"second_light_quartet", "Data/PACK01_03.PAK"},
+	{"second_light_quartet", "Data/PACK02_03.PAK"},
+	{"blue_reflection_quartet", "Data/PACK00_04_01.PAK"},
+}
 
 type compositionLooseFile struct {
 	ArchiveRelativePath string `json:"archive_relative_path"`
@@ -35,8 +50,13 @@ type compositionLooseTarget struct {
 }
 
 type compositionLooseReport struct {
-	Status  string                            `json:"status"`
-	Targets map[string]compositionLooseTarget `json:"targets"`
+	Type                      string                            `json:"type"`
+	FormatVersion             int                               `json:"format_version"`
+	Status                    string                            `json:"status"`
+	TranslationVersion        string                            `json:"translation_version"`
+	TranslationToolingVersion string                            `json:"translation_tooling_version"`
+	CanonicalInputFingerprint string                            `json:"canonical_input_fingerprint"`
+	Targets                   map[string]compositionLooseTarget `json:"targets"`
 }
 
 type compositionRepackArchive struct {
@@ -49,8 +69,13 @@ type compositionRepackArchive struct {
 }
 
 type compositionRepackReport struct {
-	Status   string                     `json:"status"`
-	Archives []compositionRepackArchive `json:"archives"`
+	Type                      string                     `json:"type"`
+	FormatVersion             int                        `json:"format_version"`
+	Status                    string                     `json:"status"`
+	TranslationVersion        string                     `json:"translation_version"`
+	TranslationToolingVersion string                     `json:"translation_tooling_version"`
+	CanonicalInputFingerprint string                     `json:"canonical_input_fingerprint"`
+	Archives                  []compositionRepackArchive `json:"archives"`
 }
 
 type compositionTranslationBase struct {
@@ -95,6 +120,31 @@ type compositionArchivePreview struct {
 	Warnings               []string `json:"warnings"`
 }
 
+type compositionLegacyDLCInput struct {
+	ManifestPath           string   `json:"manifest_path"`
+	ManifestSHA256         string   `json:"manifest_sha256"`
+	ManifestBytes          int64    `json:"manifest_bytes"`
+	FamilyID               string   `json:"family_id"`
+	Generation             int      `json:"generation"`
+	Members                []string `json:"members"`
+	TransactionGroup       string   `json:"transaction_group"`
+	WorkstreamVersion      string   `json:"workstream_version"`
+	ProvenanceEvidencePath string   `json:"provenance_evidence_path"`
+	ProvenanceEvidenceHash string   `json:"provenance_evidence_sha256"`
+	ArchiveRelativePath    string   `json:"archive_relative_path"`
+	CandidatePath          string   `json:"candidate_path"`
+	CandidateSHA256        string   `json:"candidate_sha256"`
+	CandidateBytes         int64    `json:"candidate_bytes"`
+	BaselinePath           string   `json:"baseline_path"`
+	BaselineSHA256         string   `json:"baseline_sha256"`
+	BaselineBytes          int64    `json:"baseline_bytes"`
+	AddedMembers           []string `json:"added_members"`
+	ChangedMembers         []string `json:"changed_members"`
+	RemovedMembers         []string `json:"removed_members"`
+	Verified               bool     `json:"verified"`
+	Error                  string   `json:"error,omitempty"`
+}
+
 type quartetCompositionPreview struct {
 	Type                         string                       `json:"type"`
 	FormatVersion                int                          `json:"format_version"`
@@ -105,6 +155,7 @@ type quartetCompositionPreview struct {
 	TargetID                     string                       `json:"target_id"`
 	CommitEnabled                bool                         `json:"commit_enabled"`
 	CompositionPolicy            string                       `json:"composition_policy"`
+	SelectedModules              []string                     `json:"selected_modules"`
 	TranslationLooseReport       string                       `json:"translation_loose_report"`
 	TranslationRepackReport      string                       `json:"translation_repack_report"`
 	ProfileManifestRoot          string                       `json:"profile_manifest_root"`
@@ -113,6 +164,7 @@ type quartetCompositionPreview struct {
 	RuntimeValidatedProfileCount int                          `json:"runtime_validated_profile_count"`
 	ProductionEligibleCount      int                          `json:"production_eligible_count"`
 	TranslationBases             []compositionTranslationBase `json:"translation_bases"`
+	LegacyDLCInputs              []compositionLegacyDLCInput  `json:"legacy_dlc_inputs"`
 	Profiles                     []compositionProfilePreview  `json:"profiles"`
 	Archives                     []compositionArchivePreview  `json:"archives"`
 	RegistryIssues               []localProfileIssue          `json:"registry_issues"`
@@ -122,11 +174,12 @@ type quartetCompositionPreview struct {
 func commandQuartetCompositionPreview(args []string) error {
 	flags := flag.NewFlagSet("quartet-composition-preview", flag.ContinueOnError)
 	var roots rootsFlag
-	var output, projectRoot string
+	var output, projectRoot, moduleList string
 	flags.Var(&roots, "game-dir", "BLUE REFLECTION Quartet game directory")
 	flags.Var(&roots, "root", "alias for --game-dir")
 	flags.StringVar(&projectRoot, "project-root", "", "project root containing verified translation and restoration builds")
 	flags.StringVar(&output, "json", "", "write composition preflight JSON to this file")
+	flags.StringVar(&moduleList, "modules", "blue_reflection_translation,quartet_restoration", "comma-separated Quartet modules to compose")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
@@ -147,7 +200,11 @@ func commandQuartetCompositionPreview(args []string) error {
 	if len(quartet) != 1 {
 		return fmt.Errorf("expected exactly one detected BLUE REFLECTION Quartet installation, found %d", len(quartet))
 	}
-	preview, err := buildQuartetCompositionPreview(projectRoot, quartet[0].Root)
+	modules, err := normalizeQuartetCompositionModules([]string{moduleList})
+	if err != nil {
+		return err
+	}
+	preview, err := buildQuartetModuleCompositionPreview(projectRoot, quartet[0].Root, modules)
 	if err != nil {
 		return err
 	}
@@ -174,11 +231,11 @@ func buildQuartetCompositionPreview(rawProjectRoot, gameRoot string) (quartetCom
 	if err != nil {
 		return quartetCompositionPreview{}, err
 	}
-	loose, err := loadCompositionLooseReport(filepath.Join(projectRoot, filepath.FromSlash(translationLooseReportRelative)))
+	loose, err := loadCompositionLooseReport(filepath.Join(projectRoot, filepath.FromSlash(translationLooseReportRelative)), projectRoot)
 	if err != nil {
 		return quartetCompositionPreview{}, err
 	}
-	repack, err := loadCompositionRepackReport(filepath.Join(projectRoot, filepath.FromSlash(translationRepackReportRelative)))
+	repack, err := loadCompositionRepackReport(filepath.Join(projectRoot, filepath.FromSlash(translationRepackReportRelative)), projectRoot)
 	if err != nil {
 		return quartetCompositionPreview{}, err
 	}
@@ -318,7 +375,7 @@ func buildQuartetCompositionPreview(rawProjectRoot, gameRoot string) (quartetCom
 	return preview, nil
 }
 
-func loadCompositionLooseReport(path string) (compositionLooseReport, error) {
+func loadCompositionLooseReport(path, projectRoot string) (compositionLooseReport, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return compositionLooseReport{}, fmt.Errorf("read translation loose build report: %w", err)
@@ -327,16 +384,27 @@ func loadCompositionLooseReport(path string) (compositionLooseReport, error) {
 	if err := json.Unmarshal(data, &report); err != nil {
 		return compositionLooseReport{}, fmt.Errorf("decode translation loose build report: %w", err)
 	}
+	if report.Type != "br_translation_loose_build_report" || report.FormatVersion != 2 {
+		return compositionLooseReport{}, fmt.Errorf("unsupported translation loose build report type/version")
+	}
 	if report.Status != "ok" {
 		return compositionLooseReport{}, fmt.Errorf("translation loose build report status is %q, expected ok", report.Status)
 	}
-	if _, ok := report.Targets[quartetTargetID]; !ok {
-		return compositionLooseReport{}, fmt.Errorf("translation loose build report has no %s target", quartetTargetID)
+	if err := validateCompositionTranslationVersions(projectRoot, report.TranslationVersion, report.TranslationToolingVersion); err != nil {
+		return compositionLooseReport{}, err
+	}
+	if strings.TrimSpace(report.CanonicalInputFingerprint) == "" {
+		return compositionLooseReport{}, fmt.Errorf("translation loose build report has no canonical input fingerprint")
+	}
+	for _, targetID := range []string{"blue_reflection_quartet", "blue_reflection_ray_quartet", "blue_reflection_sun_quartet", "second_light_quartet"} {
+		if _, ok := report.Targets[targetID]; !ok {
+			return compositionLooseReport{}, fmt.Errorf("translation loose build report has no %s target", targetID)
+		}
 	}
 	return report, nil
 }
 
-func loadCompositionRepackReport(path string) (compositionRepackReport, error) {
+func loadCompositionRepackReport(path, projectRoot string) (compositionRepackReport, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return compositionRepackReport{}, fmt.Errorf("read translation repack report: %w", err)
@@ -345,31 +413,72 @@ func loadCompositionRepackReport(path string) (compositionRepackReport, error) {
 	if err := json.Unmarshal(data, &report); err != nil {
 		return compositionRepackReport{}, fmt.Errorf("decode translation repack report: %w", err)
 	}
+	if report.Type != "br_translation_pak_repack_report" || report.FormatVersion != 2 {
+		return compositionRepackReport{}, fmt.Errorf("unsupported translation repack report type/version")
+	}
 	if report.Status != "ok" {
 		return compositionRepackReport{}, fmt.Errorf("translation repack report status is %q, expected ok", report.Status)
+	}
+	if err := validateCompositionTranslationVersions(projectRoot, report.TranslationVersion, report.TranslationToolingVersion); err != nil {
+		return compositionRepackReport{}, err
+	}
+	if strings.TrimSpace(report.CanonicalInputFingerprint) == "" {
+		return compositionRepackReport{}, fmt.Errorf("translation repack report has no canonical input fingerprint")
 	}
 	return report, nil
 }
 
+func validateCompositionTranslationVersions(projectRoot, translationVersion, toolingVersion string) error {
+	read := func(relative string) (string, error) {
+		path, err := secureJoin(projectRoot, relative)
+		if err != nil {
+			return "", err
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return "", err
+		}
+		return strings.TrimSpace(string(data)), nil
+	}
+	currentTranslation, err := read("workstreams/translation/VERSION")
+	if err != nil {
+		return err
+	}
+	currentTooling, err := read("workstreams/translation_tooling/VERSION")
+	if err != nil {
+		return err
+	}
+	if translationVersion != currentTranslation || toolingVersion != currentTooling {
+		return fmt.Errorf("translation report is stale: report=%s/%s current=%s/%s", translationVersion, toolingVersion, currentTranslation, currentTooling)
+	}
+	var major, minor, patch int
+	if _, err := fmt.Sscanf(translationVersion, "%d.%d.%d", &major, &minor, &patch); err != nil || major != 0 || minor != 0 || patch < 113 {
+		return fmt.Errorf("translation report predates corrected Quartet routing: %s", translationVersion)
+	}
+	return nil
+}
+
 func changedTranslationMembers(report compositionLooseReport) map[string]map[string]bool {
 	result := map[string]map[string]bool{}
-	for _, file := range report.Targets[quartetTargetID].Files {
-		if !file.Changed || strings.TrimSpace(file.ArchiveRelativePath) == "" || strings.TrimSpace(file.InternalPath) == "" {
-			continue
+	for _, targetID := range []string{"blue_reflection_quartet", "blue_reflection_ray_quartet", "blue_reflection_sun_quartet", "second_light_quartet"} {
+		for _, file := range report.Targets[targetID].Files {
+			if !file.Changed || strings.TrimSpace(file.ArchiveRelativePath) == "" || strings.TrimSpace(file.InternalPath) == "" {
+				continue
+			}
+			archive := foldCompositionPath(file.ArchiveRelativePath)
+			if result[archive] == nil {
+				result[archive] = map[string]bool{}
+			}
+			result[archive][foldCompositionPath(file.InternalPath)] = true
 		}
-		archive := foldCompositionPath(file.ArchiveRelativePath)
-		if result[archive] == nil {
-			result[archive] = map[string]bool{}
-		}
-		result[archive][foldCompositionPath(file.InternalPath)] = true
 	}
 	return result
 }
 
 func verifyQuartetTranslationBases(projectRoot string, report compositionRepackReport, members map[string]map[string]bool) []compositionTranslationBase {
-	wanted := []string{"Data/PACK11.PAK", "Data/PACK12.PAK", "Data/PACK00_04_01.PAK"}
-	result := make([]compositionTranslationBase, 0, len(wanted))
-	for _, relative := range wanted {
+	result := make([]compositionTranslationBase, 0, len(quartetTranslationArchives))
+	for _, wanted := range quartetTranslationArchives {
+		relative := wanted.Path
 		base := compositionTranslationBase{ArchiveRelativePath: relative, ChangedMembers: []string{}}
 		for member := range members[foldCompositionPath(relative)] {
 			base.ChangedMembers = append(base.ChangedMembers, member)
@@ -379,7 +488,7 @@ func verifyQuartetTranslationBases(projectRoot string, report compositionRepackR
 		var entry *compositionRepackArchive
 		for index := range report.Archives {
 			candidate := &report.Archives[index]
-			if candidate.TargetID == quartetTargetID && foldCompositionPath(candidate.ArchiveRelativePath) == foldCompositionPath(relative) {
+			if candidate.TargetID == wanted.TargetID && foldCompositionPath(candidate.ArchiveRelativePath) == foldCompositionPath(relative) {
 				entry = candidate
 				break
 			}
@@ -420,7 +529,13 @@ func verifyQuartetTranslationBases(projectRoot string, report compositionRepackR
 }
 
 func buildCompositionArchivePreviews(projectRoot, gameRoot string, profiles []compositionProfilePreview, registry localProfileRegistry, translationBases map[string]compositionTranslationBase) []compositionArchivePreview {
-	targets := []string{"Data/PACK11.PAK", "Data/PACK10_01.PAK", "Data/PACK10_03.PAK"}
+	targets := []string{
+		"Data/PACK11.PAK", "Data/PACK12.PAK",
+		"Data/PACK01_01.PAK", "Data/PACK02_01.PAK",
+		"Data/PACK01_02.PAK", "Data/PACK02_02.PAK",
+		"Data/PACK01_03.PAK", "Data/PACK02_03.PAK",
+		"Data/PACK00_04_01.PAK", "Data/PACK10_01.PAK", "Data/PACK10_03.PAK",
+	}
 	result := make([]compositionArchivePreview, 0, len(targets))
 	for _, target := range targets {
 		archive := compositionArchivePreview{
@@ -544,9 +659,24 @@ func foldCompositionPath(value string) string {
 }
 
 func printHumanQuartetCompositionPreview(out io.Writer, preview quartetCompositionPreview) {
-	fmt.Fprintf(out, "\n%s%sQuartet translation + restoration composition preflight%s\n", ansiBold, ansiCyan, ansiReset)
+	fmt.Fprintf(out, "\n%s%sQuartet module composition preflight%s\n", ansiBold, ansiCyan, ansiReset)
 	fmt.Fprintf(out, "%sStatus:%s %s\n", ansiBold, ansiReset, preview.Status)
-	fmt.Fprintf(out, "Profiles: %d valid, %d runtime validated, %d production eligible\n", preview.ValidProfileCount, preview.RuntimeValidatedProfileCount, preview.ProductionEligibleCount)
+	selected := map[string]bool{}
+	for _, moduleID := range preview.SelectedModules {
+		selected[moduleID] = true
+	}
+	if selected[quartetRestorationModule] {
+		fmt.Fprintf(out, "Restoration profiles: %d valid, %d runtime validated, %d production eligible\n", preview.ValidProfileCount, preview.RuntimeValidatedProfileCount, preview.ProductionEligibleCount)
+	}
+	if selected[quartetLegacyDLCModule] {
+		verified := 0
+		for _, input := range preview.LegacyDLCInputs {
+			if input.Verified {
+				verified++
+			}
+		}
+		fmt.Fprintf(out, "Legacy DLC inputs: %d verified of %d\n", verified, len(preview.LegacyDLCInputs))
+	}
 	for _, archive := range preview.Archives {
 		style := ansiGreen
 		if strings.HasPrefix(archive.Status, "blocked") {
@@ -562,19 +692,21 @@ func printHumanQuartetCompositionPreview(out io.Writer, preview quartetCompositi
 			fmt.Fprintf(out, "      %s%s%s\n", ansiYellow, warning, ansiReset)
 		}
 	}
-	candidateCount := 0
-	for _, profile := range preview.Profiles {
-		if profile.Status == "candidate_awaiting_runtime_validation" {
-			candidateCount++
+	if selected[quartetRestorationModule] {
+		candidateCount := 0
+		for _, profile := range preview.Profiles {
+			if profile.Status == "candidate_awaiting_runtime_validation" {
+				candidateCount++
+			}
 		}
-	}
-	if candidateCount > 0 {
-		fmt.Fprintf(out, "%s%d valid profile(s) remain candidates and are not included until runtime validation.%s\n", ansiDim, candidateCount, ansiReset)
+		if candidateCount > 0 {
+			fmt.Fprintf(out, "%s%d valid profile(s) remain candidates and are not included until runtime validation.%s\n", ansiDim, candidateCount, ansiReset)
+		}
 	}
 	fmt.Fprintf(out, "%sPreview only:%s no archive was composed and no game file was modified.\n", ansiBold, ansiReset)
 }
 
-func selectionRequestsQuartetComposition(selection model.SelectionResult) (string, bool) {
+func selectionRequestsQuartetComposition(selection model.SelectionResult) (string, []string, bool) {
 	for _, target := range selection.Targets {
 		if target.TargetID != quartetTargetID {
 			continue
@@ -583,9 +715,14 @@ func selectionRequestsQuartetComposition(selection model.SelectionResult) (strin
 		for _, id := range target.SelectedModuleIDs {
 			set[id] = true
 		}
-		if set["blue_reflection_translation"] && set["quartet_restoration"] {
-			return target.Root, true
+		if !quartetSelectionNeedsComposition(set) {
+			continue
 		}
+		modules, err := normalizeQuartetCompositionModules(target.SelectedModuleIDs)
+		if err != nil {
+			return target.Root, append([]string(nil), target.SelectedModuleIDs...), true
+		}
+		return target.Root, modules, true
 	}
-	return "", false
+	return "", nil, false
 }

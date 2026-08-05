@@ -11,7 +11,15 @@ import (
 	"local/blue-reflection-patcher/internal/plan/transaction"
 )
 
+func useSyntheticGuidedPrepare(t *testing.T) {
+	t.Helper()
+	original := prepareGuidedPayloadTransaction
+	prepareGuidedPayloadTransaction = preparePayloadTransaction
+	t.Cleanup(func() { prepareGuidedPayloadTransaction = original })
+}
+
 func TestExecuteGuidedInstallPreparesCommitsAndPublishesActiveState(t *testing.T) {
+	useSyntheticGuidedPrepare(t)
 	root := t.TempDir()
 	game := filepath.Join(root, "game")
 	state := filepath.Join(root, "state")
@@ -54,6 +62,7 @@ func TestExecuteGuidedInstallPreparesCommitsAndPublishesActiveState(t *testing.T
 }
 
 func TestExecuteGuidedPrepareLeavesGameUnchanged(t *testing.T) {
+	useSyntheticGuidedPrepare(t)
 	root := t.TempDir()
 	game := filepath.Join(root, "game")
 	state := filepath.Join(root, "state")

@@ -12,7 +12,8 @@ import (
 var rawCatalog []byte
 
 type ArtifactSpec struct {
-	RelativePath string `json:"relative_path"`
+	RelativePath  string `json:"relative_path"`
+	BuildTargetID string `json:"build_target_id"`
 }
 
 type ModuleTargetSpec struct {
@@ -56,6 +57,9 @@ func LoadCatalog() ([]ModuleTargetSpec, error) {
 				return nil, fmt.Errorf("duplicate artifact path for %s/%s: %s", spec.ModuleID, spec.TargetID, artifact.RelativePath)
 			}
 			paths[folded] = true
+			if spec.SourceKind != legacyDLCSourceKind && strings.TrimSpace(artifact.BuildTargetID) == "" {
+				return nil, fmt.Errorf("artifact build target is missing for %s/%s: %s", spec.ModuleID, spec.TargetID, artifact.RelativePath)
+			}
 		}
 		if spec.ConnectionStatus == "connected_preview_only" && len(spec.Artifacts) == 0 {
 			return nil, fmt.Errorf("connected mapping has no artifacts: %s/%s", spec.ModuleID, spec.TargetID)

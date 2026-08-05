@@ -25,7 +25,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable, Optional
 
-TOOL_VERSION = "translation-0.0.15"
+TOOL_VERSION = "translation-0.0.16"
 FORMAT_VERSION = 1
 MAX_STRING_SIZE = 2048
 DURATION1_LENGTHS = (0, 2)
@@ -1650,7 +1650,9 @@ def cmd_export(args: argparse.Namespace) -> int:
 # Translation import and development PAK build
 # ---------------------------------------------------------------------------
 
-BUILD_FORMAT_VERSION = 1
+BUILD_FORMAT_VERSION = 2
+MINIMUM_TRANSLATION_BUILD_VERSION = "0.0.113"
+TARGET_ROUTE_CONFIG = "config/translation_target_routes.json"
 MAX_OUTPUT_STRING_BYTES = 1024 * 1024
 
 
@@ -1683,6 +1685,7 @@ def load_target_workspace_overrides(
     if data.get("type") != "br_target_workspace_map" or data.get("format_version") != 1:
         raise ToolError(f"Unsupported target workspace map: {path}")
     result: dict[tuple[str, str], TargetWorkspaceOverride] = {}
+    load_translation_target_routes(project_root)
     for row in data.get("archives", []):
         if not isinstance(row, dict):
             raise ToolError(f"Invalid target workspace map row: {path}")
@@ -1692,6 +1695,17 @@ def load_target_workspace_overrides(
         manifest_value = str(row.get("source_manifest", ""))
         if not target_id or not archive_stem or not root_value or not manifest_value:
             raise ToolError(f"Incomplete target workspace map row: {row!r}")
+        expected_relative = target_archive_relative(project_root, target_id, archive_stem)
+        source_relative = str(row.get("source_archive_relative", ""))
+        if source_relative.replace("\\", "/").casefold() != expected_relative.replace("\\", "/").casefold():
+            raise ToolError(
+                f"Target workspace source route mismatch for {target_id}/{archive_stem}: "
+                f"map={source_relative!r} registry={expected_relative!r}"
+            )
+        source_hash = str(row.get("source_archive_sha256", ""))
+        source_bytes = int(row.get("source_archive_bytes", -1))
+        if not re.fullmatch(r"[0-9a-f]{64}", source_hash) or source_bytes < 0:
+            raise ToolError(f"Target workspace source fingerprint is invalid: {target_id}/{archive_stem}")
         root = (project_root / root_value).resolve()
         manifest = (project_root / manifest_value).resolve()
         try:
@@ -1709,9 +1723,9 @@ def load_target_workspace_overrides(
             archive_stem=archive_stem,
             workspace_archive_root=root,
             source_manifest=manifest,
-            source_archive_relative=str(row.get("source_archive_relative", "")),
-            source_archive_sha256=str(row.get("source_archive_sha256", "")),
-            source_archive_bytes=int(row.get("source_archive_bytes", -1)),
+            source_archive_relative=source_relative,
+            source_archive_sha256=source_hash,
+            source_archive_bytes=source_bytes,
         )
     return result
 
@@ -1840,22 +1854,67 @@ def parse_workspace_template(
     return project, workspace, archive_stem, internal, absolute
 
 
-def target_archive_relative(target_id: str, archive_stem: str) -> str:
-    mapping = {
-        ("blue_reflection_original", "PACK01"): "DATA/PACK01.PAK",
-        ("blue_reflection_original", "PACK02_1"): "DATA/PACK02_1.PAK",
-        ("blue_reflection_original", "PACK02_3"): "DATA/PACK02_3.PAK",
-        ("blue_reflection_quartet", "PACK11"): "Data/PACK11.PAK",
-        ("blue_reflection_quartet", "PACK12"): "Data/PACK12.PAK",
-        ("second_light_original", "PACK01"): "Data/PACK01.PAK",
-        ("second_light_original", "PACK02"): "Data/PACK02.PAK",
-    }
+def _version_tuple(value: str) -> tuple[int, int, int]:
+    match = re.fullmatch(r"(\d+)\.(\d+)\.(\d+)", value.strip())
+    if match is None:
+        raise ToolError(f"Invalid semantic workstream version: {value!r}")
+    return tuple(int(part) for part in match.groups())
+
+
+def read_workstream_version(project_root: Path, workstream_id: str) -> str:
+    path = project_root / "workstreams" / workstream_id / "VERSION"
     try:
-        return mapping[(target_id, archive_stem)]
-    except KeyError as exc:
+        value = path.read_text(encoding="utf-8").strip()
+    except FileNotFoundError as exc:
+        raise ToolError(f"Workstream VERSION is missing: {path}") from exc
+    _version_tuple(value)
+    return value
+
+
+def load_translation_target_routes(project_root: Path) -> dict[str, Any]:
+    path = project_root / TARGET_ROUTE_CONFIG
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError as exc:
+        raise ToolError(f"Translation target route registry is missing: {path}") from exc
+    except json.JSONDecodeError as exc:
+        raise ToolError(f"Invalid translation target route registry {path}: {exc}") from exc
+    if data.get("type") != "br_translation_target_routes" or data.get("format_version") != 1:
+        raise ToolError(f"Unsupported translation target route registry: {path}")
+    content = data.get("content_targets")
+    installations = data.get("installation_targets")
+    if not isinstance(content, dict) or not isinstance(installations, dict):
+        raise ToolError(f"Incomplete translation target route registry: {path}")
+    minimum = str(data.get("minimum_translation_version", ""))
+    if _version_tuple(minimum) < _version_tuple(MINIMUM_TRANSLATION_BUILD_VERSION):
         raise ToolError(
-            f"No development archive mapping for {target_id}/{archive_stem}"
-        ) from exc
+            f"Route registry minimum Translation version {minimum} is older than "
+            f"the required correction boundary {MINIMUM_TRANSLATION_BUILD_VERSION}"
+        )
+    return data
+
+
+def development_targets(project_root: Path) -> dict[str, str]:
+    routes = load_translation_target_routes(project_root)
+    result: dict[str, str] = {}
+    for target_id, spec in routes["content_targets"].items():
+        if not isinstance(spec, dict) or not isinstance(spec.get("project"), str):
+            raise ToolError(f"Invalid content target route: {target_id}")
+        result[str(target_id)] = spec["project"]
+    return result
+
+
+def target_archive_relative(project_root: Path, target_id: str, archive_stem: str) -> str:
+    routes = load_translation_target_routes(project_root)
+    target = routes["content_targets"].get(target_id)
+    if not isinstance(target, dict):
+        raise ToolError(f"Unknown translation content target: {target_id}")
+    for archive in target.get("archives", []):
+        if isinstance(archive, dict) and archive.get("archive_stem") == archive_stem:
+            relative = archive.get("relative_path")
+            if isinstance(relative, str) and relative:
+                return relative
+    raise ToolError(f"No development archive mapping for {target_id}/{archive_stem}")
 
 
 def validate_record_text(record: dict[str, Any], unit_path: Path) -> str:
@@ -2177,14 +2236,6 @@ def apply_system_unit(
     }
 
 
-def development_targets() -> dict[str, str]:
-    return {
-        "blue_reflection_original": "blue_reflection",
-        "blue_reflection_quartet": "blue_reflection",
-        "second_light_original": "second_light",
-    }
-
-
 
 TITLE_MARKER_MAX_LENGTH = 48
 
@@ -2441,7 +2492,7 @@ def ensure_archive_plan(
             "workspace": workspace,
             "archive_stem": archive_stem,
             "archive_relative_path": target_archive_relative(
-                target_id, archive_stem
+                project_root, target_id, archive_stem
             ),
             "workspace_archive_root": workspace_root,
             "source_manifest": source_manifest,
@@ -2505,7 +2556,7 @@ def add_title_marker_outputs(
             "logical_path": internal_path,
             "archive_stem": archive_stem,
             "archive_relative_path": target_archive_relative(
-                target_id, archive_stem
+                project_root, target_id, archive_stem
             ),
             "internal_path": internal_path,
             "template_path": rel_posix(template_path, project_root),
@@ -2656,7 +2707,7 @@ def add_active_runtime_canary_output(
                 "unit_type": "br_quick_runtime_canary",
                 "logical_path": internal_path,
                 "archive_stem": archive_stem,
-                "archive_relative_path": target_archive_relative(target_id, archive_stem),
+                "archive_relative_path": target_archive_relative(project_root, target_id, archive_stem),
                 "internal_path": internal_path,
                 "template_path": rel_posix(template_path, project_root),
                 "template_sha256": template_sha,
@@ -2721,8 +2772,18 @@ def cmd_build_loose(args: argparse.Namespace) -> int:
         shutil.rmtree(loose_root)
     loose_root.mkdir(parents=True)
 
-    target_filter = set(args.target or development_targets())
-    unknown = target_filter - set(development_targets())
+    routes = load_translation_target_routes(project_root)
+    available_targets = development_targets(project_root)
+    target_filter = set(args.target or available_targets)
+    unknown = target_filter - set(available_targets)
+    translation_version = read_workstream_version(project_root, "translation")
+    translation_tooling_version = read_workstream_version(project_root, "translation_tooling")
+    minimum_translation_version = str(routes["minimum_translation_version"])
+    if _version_tuple(translation_version) < _version_tuple(minimum_translation_version):
+        raise ToolError(
+            f"Translation {translation_version} is older than the corrected routing boundary "
+            f"{minimum_translation_version}; stale pre-correction payloads are blocked"
+        )
     workspace_overrides = load_target_workspace_overrides(
         project_root, getattr(args, "target_workspace_map", None)
     )
@@ -2740,6 +2801,10 @@ def cmd_build_loose(args: argparse.Namespace) -> int:
         "type": "br_translation_loose_build_report",
         "format_version": BUILD_FORMAT_VERSION,
         "tool_version": TOOL_VERSION,
+        "translation_version": translation_version,
+        "translation_tooling_version": translation_tooling_version,
+        "minimum_translation_version": minimum_translation_version,
+        "selected_targets": sorted(target_filter),
         "project_root": "<PROJECT_ROOT>",
         "status": "ok",
         "runtime_target_adapter": "active_english",
@@ -2765,12 +2830,15 @@ def cmd_build_loose(args: argparse.Namespace) -> int:
     }
     archive_plans: dict[tuple[str, str], dict[str, Any]] = {}
 
-    for target_id, project in development_targets().items():
+    for target_id, project in available_targets.items():
         if target_id not in target_filter:
             continue
         translation_root, manifest = load_translation_manifest(project_root, project)
+        manifest_path = translation_root / "translation_manifest.json"
         target_report = {
             "project": project,
+            "translation_manifest_path": rel_posix(manifest_path, project_root),
+            "translation_manifest_sha256": sha256_file(manifest_path),
             "units": 0,
             "output_files": 0,
             "changed_files": 0,
@@ -2831,12 +2899,14 @@ def cmd_build_loose(args: argparse.Namespace) -> int:
             output_sha = hashlib.sha256(output).hexdigest()
             changed = output_sha != template_sha
 
+            unit_sha = sha256_file(unit_path)
             file_entry = {
                 "unit_path": rel_posix(unit_path, project_root),
+                "unit_sha256": unit_sha,
                 "unit_type": unit["type"],
                 "logical_path": unit.get("logical_path"),
                 "archive_stem": archive_stem,
-                "archive_relative_path": target_archive_relative(target_id, archive_stem),
+                "archive_relative_path": target_archive_relative(project_root, target_id, archive_stem),
                 "internal_path": internal_path,
                 "template_path": rel_posix(template_path, project_root),
                 "template_sha256": template_sha,
@@ -2933,10 +3003,37 @@ def cmd_build_loose(args: argparse.Namespace) -> int:
             if action not in {"shared_exact", "redacted_target_import_allowed"}
         )
 
+    target_fingerprints: list[str] = []
+    for target_id, target_report in sorted(report["targets"].items()):
+        material = [
+            f"manifest:{target_report['translation_manifest_sha256']}",
+        ]
+        for file_entry in sorted(
+            (entry for entry in target_report["files"] if entry.get("unit_path")),
+            key=lambda entry: entry["unit_path"],
+        ):
+            material.append(f"{file_entry['unit_path']}:{file_entry['unit_sha256']}")
+        fingerprint = hashlib.sha256("\n".join(material).encode("utf-8")).hexdigest()
+        target_report["canonical_input_fingerprint"] = fingerprint
+        target_fingerprints.append(f"{target_id}:{fingerprint}")
+    report["canonical_input_fingerprint"] = hashlib.sha256(
+        (translation_version + "\n" + translation_tooling_version + "\n" + "\n".join(target_fingerprints)).encode("utf-8")
+    ).hexdigest()
+
+    loose_report_path = reports_root / "BR_TRANSLATION_LOOSE_BUILD_REPORT.json"
+    atomic_json(loose_report_path, report)
     plan = {
         "type": "br_translation_repack_plan",
         "format_version": BUILD_FORMAT_VERSION,
         "tool_version": TOOL_VERSION,
+        "translation_version": translation_version,
+        "translation_tooling_version": translation_tooling_version,
+        "minimum_translation_version": minimum_translation_version,
+        "canonical_input_fingerprint": report["canonical_input_fingerprint"],
+        "selected_targets": sorted(target_filter),
+        "loose_report_path": rel_posix(loose_report_path, project_root),
+        "loose_report_sha256": sha256_file(loose_report_path),
+        "loose_report_bytes": loose_report_path.stat().st_size,
         "generated_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "title_marker": title_marker,
         "runtime_canary": runtime_canary,
@@ -2946,7 +3043,6 @@ def cmd_build_loose(args: argparse.Namespace) -> int:
         ),
     }
     atomic_json(build_root / "TRANSLATION_REPACK_PLAN.json", plan)
-    atomic_json(reports_root / "BR_TRANSLATION_LOOSE_BUILD_REPORT.json", report)
 
     print("Translation loose-file build completed.")
     print(f"Units: {report['summary']['units']}")
@@ -3113,8 +3209,29 @@ def cmd_repack(args: argparse.Namespace) -> int:
     if not plan_path.is_file():
         raise ToolError("Loose build plan is missing. Run build-loose first.")
     plan = json.loads(plan_path.read_text(encoding="utf-8"))
-    if plan.get("type") != "br_translation_repack_plan":
-        raise ToolError(f"Invalid repack plan: {plan_path}")
+    if plan.get("type") != "br_translation_repack_plan" or plan.get("format_version") != BUILD_FORMAT_VERSION:
+        raise ToolError(f"Invalid or stale repack plan: {plan_path}")
+    translation_version = read_workstream_version(project_root, "translation")
+    translation_tooling_version = read_workstream_version(project_root, "translation_tooling")
+    if plan.get("translation_version") != translation_version:
+        raise ToolError(
+            f"Translation changed after loose build: plan={plan.get('translation_version')} current={translation_version}"
+        )
+    if plan.get("translation_tooling_version") != translation_tooling_version:
+        raise ToolError(
+            "Translation tooling changed after loose build: "
+            f"plan={plan.get('translation_tooling_version')} current={translation_tooling_version}"
+        )
+    minimum_translation_version = str(plan.get("minimum_translation_version", ""))
+    if _version_tuple(translation_version) < _version_tuple(minimum_translation_version):
+        raise ToolError(f"Translation {translation_version} is older than required {minimum_translation_version}")
+    loose_report_path = project_root / str(plan.get("loose_report_path", ""))
+    if not loose_report_path.is_file():
+        raise ToolError("Loose build report referenced by the repack plan is missing")
+    loose_report_sha256 = sha256_file(loose_report_path)
+    loose_report_bytes = loose_report_path.stat().st_size
+    if loose_report_sha256 != plan.get("loose_report_sha256") or loose_report_bytes != plan.get("loose_report_bytes"):
+        raise ToolError("Loose build report changed after the repack plan was created")
 
     repack_root = build_root / "repack"
     archive_output_root = build_root / "archives"
@@ -3131,6 +3248,14 @@ def cmd_repack(args: argparse.Namespace) -> int:
         "type": "br_translation_pak_repack_report",
         "format_version": BUILD_FORMAT_VERSION,
         "tool_version": TOOL_VERSION,
+        "translation_version": translation_version,
+        "translation_tooling_version": translation_tooling_version,
+        "minimum_translation_version": minimum_translation_version,
+        "canonical_input_fingerprint": plan.get("canonical_input_fingerprint"),
+        "selected_targets": plan.get("selected_targets", []),
+        "loose_report_path": rel_posix(loose_report_path, project_root),
+        "loose_report_sha256": loose_report_sha256,
+        "loose_report_bytes": loose_report_bytes,
         "project_root": "<PROJECT_ROOT>",
         "status": "ok",
         "gust_pak_sha256": sha256_file(gust_pak),
@@ -3229,16 +3354,25 @@ def cmd_repack(args: argparse.Namespace) -> int:
         finally:
             shutil.rmtree(verify_root, ignore_errors=True)
 
+        changed_members = sorted(
+            str(file_entry["internal_path"]).replace("\\", "/")
+            for file_entry in archive.get("files", [])
+        )
         entry = {
             "target_id": target_id,
             "archive_stem": archive_stem,
             "archive_relative_path": archive["archive_relative_path"],
+            "source_policy": archive.get("source_policy", ""),
+            "source_archive_sha256": archive.get("source_archive_sha256", ""),
+            "source_archive_bytes": archive.get("source_archive_bytes", -1),
+            "changed_members": changed_members,
             "output_path": rel_posix(final_pak, project_root),
             "output_sha256": sha256_file(final_pak),
             "output_bytes": final_pak.stat().st_size,
             "changed_files": len(archive.get("files", [])),
             "listed_entries": len(entry_names),
             "entries_checked": checked,
+            "full_reextract_verified": not failures and checked == len(entry_names),
             "failures": failures,
             "repack_stdout_tail": process.stdout.splitlines()[-10:],
             "listing_stdout_tail": listing_tail,
@@ -3302,8 +3436,7 @@ def build_parser() -> argparse.ArgumentParser:
     build.add_argument(
         "--target",
         action="append",
-        choices=sorted(development_targets()),
-        help="limit build to one or more targets",
+        help="limit build to one or more content targets from config/translation_target_routes.json",
     )
     build.add_argument(
         "--title-marker",

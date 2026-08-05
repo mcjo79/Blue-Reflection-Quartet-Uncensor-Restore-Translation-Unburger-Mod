@@ -21,7 +21,7 @@ from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Any, Iterable
 
-TOOL_VERSION = "0.0.7"
+TOOL_VERSION = "0.0.8"
 FORMAT_VERSION = 1
 SAMPLE_BLOCK_SIZE = 65536
 SAMPLE_BLOCKS = 32
@@ -199,6 +199,34 @@ def validate_restoration_registry(data: dict[str, Any]) -> list[str]:
     return errors
 
 
+DLC_OPERATIONAL_STATUSES = {
+    "not_mapped",
+    "assets_identified",
+    "conversion_required",
+    "integrated",
+    "in_game_tested",
+    "blocked",
+    "unsupported",
+}
+
+DLC_METADATA_STATUS_CONTENT_TYPES = {
+    "metadata_inventory_only": {"generated_metadata_catalog"},
+    "not_synthesized": {"generated_dependency_catalog"},
+    "nested_inventory_metadata_only": {"generated_metadata_catalog"},
+}
+
+DLC_TECHNICAL_CATALOG_TYPES = {
+    "costume_or_outfit",
+    "accessory",
+    "item_or_reward",
+    "recipe_or_system_bonus",
+    "theme_or_ui_content",
+    "unlock_or_entitlement",
+    "shared_asset_dependency",
+    "unknown_legacy_dlc_candidate",
+}
+
+
 def validate_dlc_registry(data: dict[str, Any]) -> list[str]:
     errors: list[str] = []
     if data.get("type") != "br_dlc_content_registry" or data.get("format_version") != 1:
@@ -206,28 +234,98 @@ def validate_dlc_registry(data: dict[str, Any]) -> list[str]:
     items = data.get("items")
     if not isinstance(items, list):
         return ["items must be an array"]
+
+    generated_registry = data.get("generated_registry")
+    declared_technical_types: set[str] = set()
+    if generated_registry is not None:
+        if not isinstance(generated_registry, dict):
+            errors.append("generated_registry must be an object")
+        else:
+            raw_types = generated_registry.get("technical_types")
+            if not isinstance(raw_types, list) or not raw_types:
+                errors.append("generated_registry.technical_types must be a non-empty array")
+            elif not all(isinstance(value, str) and value for value in raw_types):
+                errors.append("generated_registry.technical_types must contain non-empty strings")
+            else:
+                declared_technical_types = set(raw_types)
+                if len(declared_technical_types) != len(raw_types):
+                    errors.append("generated_registry.technical_types contains duplicates")
+                unsupported_types = declared_technical_types - DLC_TECHNICAL_CATALOG_TYPES
+                if unsupported_types:
+                    errors.append(
+                        "generated_registry.technical_types contains unsupported values: "
+                        + ", ".join(sorted(unsupported_types))
+                    )
+            if generated_registry.get("status") != "metadata_only_not_buildable":
+                errors.append("generated_registry.status must be metadata_only_not_buildable")
+            if generated_registry.get("default_enabled") is not False:
+                errors.append("generated_registry.default_enabled must be false")
+            if generated_registry.get("raw_assets_embedded") is not False:
+                errors.append("generated_registry.raw_assets_embedded must be false")
+
     seen: set[str] = set()
-    allowed_statuses = {
-        "not_mapped", "assets_identified", "conversion_required",
-        "integrated", "in_game_tested", "blocked", "unsupported",
-    }
     for index, item in enumerate(items):
         if not isinstance(item, dict):
             errors.append(f"item {index} is not an object")
             continue
         item_id = item.get("content_id")
+        label = item_id or index
         if not item_id:
             errors.append(f"item {index} has no content_id")
         elif item_id in seen:
             errors.append(f"duplicate content_id: {item_id}")
         else:
             seen.add(item_id)
-        if item.get("quartet_status") not in allowed_statuses:
-            errors.append(f"{item_id or index}: unsupported quartet_status")
-        if item.get("source_ownership") != "requires_original_dlc":
-            errors.append(f"{item_id or index}: source_ownership must require original DLC")
+
+        content_type = item.get("content_type")
+        status = item.get("quartet_status")
+        ownership = item.get("source_ownership")
+
+        if status in DLC_OPERATIONAL_STATUSES:
+            if ownership != "requires_original_dlc":
+                errors.append(f"{label}: operational content must require original DLC")
+        elif status in DLC_METADATA_STATUS_CONTENT_TYPES:
+            allowed_types = DLC_METADATA_STATUS_CONTENT_TYPES[status]
+            if content_type not in allowed_types:
+                errors.append(
+                    f"{label}: quartet_status {status} is not allowed for content_type {content_type}"
+                )
+            if ownership != "requires_original_dlc":
+                errors.append(f"{label}: metadata inventory must require original DLC")
+        elif status == "generated_metadata_registry_only":
+            if content_type not in DLC_TECHNICAL_CATALOG_TYPES:
+                errors.append(
+                    f"{label}: generated metadata registry has unsupported content_type {content_type}"
+                )
+            if declared_technical_types and content_type not in declared_technical_types:
+                errors.append(
+                    f"{label}: content_type is missing from generated_registry.technical_types"
+                )
+            if ownership != "requires_original_dlc_when_applicable":
+                errors.append(
+                    f"{label}: generated technical metadata must use "
+                    "requires_original_dlc_when_applicable"
+                )
+        else:
+            errors.append(f"{label}: unsupported quartet_status")
+
         if not isinstance(item.get("dependencies"), list):
-            errors.append(f"{item_id or index}: dependencies must be an array")
+            errors.append(f"{label}: dependencies must be an array")
+
+    if declared_technical_types:
+        represented_types = {
+            item.get("content_type")
+            for item in items
+            if isinstance(item, dict)
+            and item.get("quartet_status") == "generated_metadata_registry_only"
+        }
+        missing_items = declared_technical_types - represented_types
+        if missing_items:
+            errors.append(
+                "generated_registry.technical_types has no registry item for: "
+                + ", ".join(sorted(missing_items))
+            )
+
     return errors
 
 

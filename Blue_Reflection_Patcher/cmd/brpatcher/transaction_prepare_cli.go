@@ -26,7 +26,7 @@ import (
 
 const (
 	transactionPrepareReportType    = "br_transaction_prepare_report"
-	transactionPrepareFormatVersion = 4
+	transactionPrepareFormatVersion = 5
 	transactionStatusReportType     = "br_transaction_status_report"
 	transactionStatusFormatVersion  = 1
 	transactionDiscardReportType    = "br_transaction_discard_report"
@@ -48,38 +48,41 @@ type transactionPrepareFile struct {
 }
 
 type transactionPrepareReport struct {
-	Type                   string                   `json:"type"`
-	FormatVersion          int                      `json:"format_version"`
-	Status                 string                   `json:"status"`
-	GeneratedUTC           time.Time                `json:"generated_utc"`
-	CommitEnabled          bool                     `json:"commit_enabled"`
-	ProjectRoot            string                   `json:"project_root"`
-	TargetID               string                   `json:"target_id"`
-	DisplayName            string                   `json:"display_name"`
-	GameRoot               string                   `json:"game_root"`
-	StateDirectory         string                   `json:"state_directory"`
-	SelectedModules        []string                 `json:"selected_modules"`
-	PreviewType            string                   `json:"preview_type"`
-	PreviewFormatVersion   int                      `json:"preview_format_version"`
-	PreviewSHA256          string                   `json:"preview_sha256"`
-	TransactionID          string                   `json:"transaction_id,omitempty"`
-	JournalPath            string                   `json:"journal_path,omitempty"`
-	PreparedChangeCount    int                      `json:"prepared_change_count"`
-	NoopCount              int                      `json:"noop_count"`
-	BackupCount            int                      `json:"backup_count"`
-	StagedCount            int                      `json:"staged_count"`
-	Files                  []transactionPrepareFile `json:"files"`
-	BaselineID             string                   `json:"baseline_id,omitempty"`
-	BaselineFingerprint    string                   `json:"baseline_fingerprint,omitempty"`
-	BaselineManifestPath   string                   `json:"baseline_manifest_path,omitempty"`
-	BaselineAction         string                   `json:"baseline_action,omitempty"`
-	BaselineClassification string                   `json:"baseline_classification,omitempty"`
-	BaselineFileCount      int                      `json:"baseline_file_count"`
-	BaselineSource         string                   `json:"baseline_source"`
-	ActiveStateStatus      string                   `json:"active_state_status"`
-	ActiveTransactionID    string                   `json:"active_transaction_id,omitempty"`
-	Warnings               []string                 `json:"warnings"`
-	Policy                 string                   `json:"policy"`
+	Type                       string                   `json:"type"`
+	FormatVersion              int                      `json:"format_version"`
+	Status                     string                   `json:"status"`
+	GeneratedUTC               time.Time                `json:"generated_utc"`
+	CommitEnabled              bool                     `json:"commit_enabled"`
+	ProjectRoot                string                   `json:"project_root"`
+	TargetID                   string                   `json:"target_id"`
+	DisplayName                string                   `json:"display_name"`
+	GameRoot                   string                   `json:"game_root"`
+	StateDirectory             string                   `json:"state_directory"`
+	SelectedModules            []string                 `json:"selected_modules"`
+	PreviewType                string                   `json:"preview_type"`
+	PreviewFormatVersion       int                      `json:"preview_format_version"`
+	PreviewSHA256              string                   `json:"preview_sha256"`
+	PreviewPlanSHA256          string                   `json:"preview_plan_sha256"`
+	PreviewRevalidated         bool                     `json:"preview_revalidated"`
+	ConfirmedPreviewPlanSHA256 string                   `json:"confirmed_preview_plan_sha256,omitempty"`
+	TransactionID              string                   `json:"transaction_id,omitempty"`
+	JournalPath                string                   `json:"journal_path,omitempty"`
+	PreparedChangeCount        int                      `json:"prepared_change_count"`
+	NoopCount                  int                      `json:"noop_count"`
+	BackupCount                int                      `json:"backup_count"`
+	StagedCount                int                      `json:"staged_count"`
+	Files                      []transactionPrepareFile `json:"files"`
+	BaselineID                 string                   `json:"baseline_id,omitempty"`
+	BaselineFingerprint        string                   `json:"baseline_fingerprint,omitempty"`
+	BaselineManifestPath       string                   `json:"baseline_manifest_path,omitempty"`
+	BaselineAction             string                   `json:"baseline_action,omitempty"`
+	BaselineClassification     string                   `json:"baseline_classification,omitempty"`
+	BaselineFileCount          int                      `json:"baseline_file_count"`
+	BaselineSource             string                   `json:"baseline_source"`
+	ActiveStateStatus          string                   `json:"active_state_status"`
+	ActiveTransactionID        string                   `json:"active_transaction_id,omitempty"`
+	Warnings                   []string                 `json:"warnings"`
+	Policy                     string                   `json:"policy"`
 }
 
 type transactionSummary struct {
@@ -159,7 +162,7 @@ func commandTransactionPrepare(args []string) error {
 	if err != nil {
 		return err
 	}
-	report, err := preparePayloadTransaction(preview)
+	report, err := prepareRevalidatedPayloadTransaction(preview)
 	if err != nil {
 		return err
 	}
@@ -205,6 +208,10 @@ func describePayloadPreviewReadiness(preview payloadpreview.Preview) string {
 }
 
 func preparePayloadTransaction(preview payloadpreview.Preview) (transactionPrepareReport, error) {
+	return preparePayloadTransactionWithRevalidation(preview, payloadPreviewRevalidation{})
+}
+
+func preparePayloadTransactionWithRevalidation(preview payloadpreview.Preview, revalidation payloadPreviewRevalidation) (transactionPrepareReport, error) {
 	if preview.Type != payloadpreview.PreviewType || preview.FormatVersion != payloadpreview.PreviewFormatVersion {
 		return transactionPrepareReport{}, fmt.Errorf("unsupported payload preview type/version")
 	}
@@ -225,6 +232,13 @@ func preparePayloadTransaction(preview payloadpreview.Preview) (transactionPrepa
 	if err != nil {
 		return transactionPrepareReport{}, err
 	}
+	previewPlanHash, err := payloadPreviewPlanSHA256(preview)
+	if err != nil {
+		return transactionPrepareReport{}, err
+	}
+	if revalidation.Performed && (revalidation.ConfirmedPreviewPlanSHA256 == "" || revalidation.RebuiltPreviewPlanSHA256 != previewPlanHash) {
+		return transactionPrepareReport{}, fmt.Errorf("invalid payload preview revalidation context")
+	}
 	report := transactionPrepareReport{
 		Type: transactionPrepareReportType, FormatVersion: transactionPrepareFormatVersion,
 		Status: "validating", GeneratedUTC: time.Now().UTC(), CommitEnabled: true,
@@ -232,7 +246,9 @@ func preparePayloadTransaction(preview payloadpreview.Preview) (transactionPrepa
 		GameRoot: target.GameRoot, StateDirectory: target.StateDirectory,
 		SelectedModules: append([]string(nil), target.SelectedModules...), PreviewType: preview.Type,
 		PreviewFormatVersion: preview.FormatVersion, PreviewSHA256: previewHash,
-		Warnings: []string{}, Policy: "verify preview freshness, preserve an immutable versioned pre-install baseline, stage payloads and verified transaction backups, write journal, and require an explicit transaction-commit --yes before modifying game files",
+		PreviewPlanSHA256: previewPlanHash, PreviewRevalidated: revalidation.Performed,
+		ConfirmedPreviewPlanSHA256: revalidation.ConfirmedPreviewPlanSHA256,
+		Warnings:                   []string{}, Policy: "verify preview freshness, preserve an immutable versioned pre-install baseline, stage payloads and verified transaction backups, write journal, and require an explicit transaction-commit --yes before modifying game files",
 	}
 	active, activeExists, err := installstate.Load(target.StateDirectory, target.TargetID, target.GameRoot)
 	if err != nil {
@@ -347,6 +363,9 @@ func preparePayloadTransaction(preview payloadpreview.Preview) (transactionPrepa
 		"payload_preview_type":           preview.Type,
 		"payload_preview_format_version": strconv.Itoa(preview.FormatVersion),
 		"payload_preview_sha256":         previewHash,
+		"payload_preview_plan_sha256":    previewPlanHash,
+		"payload_preview_revalidated":    strconv.FormatBool(revalidation.Performed),
+		"confirmed_preview_plan_sha256":  revalidation.ConfirmedPreviewPlanSHA256,
 		"payload_preview_generated_utc":  preview.GeneratedUTC.Format(time.RFC3339Nano),
 		"source_policy":                  "verified local translation or content-aware composition payloads only",
 		"baseline_id":                    baselineResult.Manifest.BaselineID,

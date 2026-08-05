@@ -26,6 +26,8 @@ const (
 	compositionEmbeddedReportRelative = ".local/build/composition/blue_reflection_quartet/BR_QUARTET_COMPOSITION_BUILD_REPORT.json"
 	compositionReportType             = "br_quartet_translation_restoration_composition_build"
 	quartetTargetID                   = "blue_reflection_quartet"
+	translationRepackReportType       = "br_translation_pak_repack_report"
+	minimumTranslationVersion         = "0.0.113"
 )
 
 type ArtifactPreview struct {
@@ -88,44 +90,84 @@ type Preview struct {
 }
 
 type repackReport struct {
-	Status   string               `json:"status"`
-	Archives []repackArchiveEntry `json:"archives"`
+	Type                      string               `json:"type"`
+	FormatVersion             int                  `json:"format_version"`
+	Status                    string               `json:"status"`
+	TranslationVersion        string               `json:"translation_version"`
+	TranslationToolingVersion string               `json:"translation_tooling_version"`
+	MinimumTranslationVersion string               `json:"minimum_translation_version"`
+	CanonicalInputFingerprint string               `json:"canonical_input_fingerprint"`
+	LooseReportPath           string               `json:"loose_report_path"`
+	LooseReportSHA256         string               `json:"loose_report_sha256"`
+	LooseReportBytes          int64                `json:"loose_report_bytes"`
+	SelectedTargets           []string             `json:"selected_targets"`
+	Archives                  []repackArchiveEntry `json:"archives"`
 }
 
 type repackArchiveEntry struct {
-	TargetID            string   `json:"target_id"`
-	ArchiveRelativePath string   `json:"archive_relative_path"`
-	OutputPath          string   `json:"output_path"`
-	OutputSHA256        string   `json:"output_sha256"`
-	OutputBytes         int64    `json:"output_bytes"`
-	Failures            []string `json:"failures"`
+	TargetID              string   `json:"target_id"`
+	ArchiveRelativePath   string   `json:"archive_relative_path"`
+	OutputPath            string   `json:"output_path"`
+	OutputSHA256          string   `json:"output_sha256"`
+	OutputBytes           int64    `json:"output_bytes"`
+	SourcePolicy          string   `json:"source_policy"`
+	SourceArchiveSHA256   string   `json:"source_archive_sha256"`
+	SourceArchiveBytes    int64    `json:"source_archive_bytes"`
+	ChangedMembers        []string `json:"changed_members"`
+	FullReextractVerified bool     `json:"full_reextract_verified"`
+	Failures              []string `json:"failures"`
 }
 
 type compositionBuildReport struct {
-	Type                          string                         `json:"type"`
-	FormatVersion                 int                            `json:"format_version"`
-	Status                        string                         `json:"status"`
-	ProjectRoot                   string                         `json:"project_root"`
-	GameRoot                      string                         `json:"game_root"`
-	TargetID                      string                         `json:"target_id"`
-	CommitEnabled                 bool                           `json:"commit_enabled"`
-	PreflightStatus               string                         `json:"preflight_status"`
-	OutputRoot                    string                         `json:"output_root"`
-	EmbeddedReportPath            string                         `json:"embedded_report_path"`
-	TranslationLooseReportPath    string                         `json:"translation_loose_report_path"`
-	TranslationLooseReportSHA256  string                         `json:"translation_loose_report_sha256"`
-	TranslationLooseReportBytes   int64                          `json:"translation_loose_report_bytes"`
-	TranslationRepackReportPath   string                         `json:"translation_repack_report_path"`
-	TranslationRepackReportSHA256 string                         `json:"translation_repack_report_sha256"`
-	TranslationRepackReportBytes  int64                          `json:"translation_repack_report_bytes"`
-	ProductionProfileIDs          []string                       `json:"production_profile_ids"`
-	ProfileInputs                 []compositionBuildProfileInput `json:"profile_inputs"`
-	Archives                      []compositionBuildArchive      `json:"archives"`
-	PublishedArchiveCount         int                            `json:"published_archive_count"`
-	ComposedArchiveCount          int                            `json:"composed_archive_count"`
-	PassthroughArchiveCount       int                            `json:"passthrough_archive_count"`
-	FullReextractCount            int                            `json:"full_reextract_count"`
-	Errors                        []string                       `json:"errors"`
+	Type                          string                           `json:"type"`
+	FormatVersion                 int                              `json:"format_version"`
+	Status                        string                           `json:"status"`
+	ProjectRoot                   string                           `json:"project_root"`
+	GameRoot                      string                           `json:"game_root"`
+	TargetID                      string                           `json:"target_id"`
+	CommitEnabled                 bool                             `json:"commit_enabled"`
+	SelectedModules               []string                         `json:"selected_modules"`
+	PreflightStatus               string                           `json:"preflight_status"`
+	OutputRoot                    string                           `json:"output_root"`
+	EmbeddedReportPath            string                           `json:"embedded_report_path"`
+	TranslationLooseReportPath    string                           `json:"translation_loose_report_path"`
+	TranslationLooseReportSHA256  string                           `json:"translation_loose_report_sha256"`
+	TranslationLooseReportBytes   int64                            `json:"translation_loose_report_bytes"`
+	TranslationRepackReportPath   string                           `json:"translation_repack_report_path"`
+	TranslationRepackReportSHA256 string                           `json:"translation_repack_report_sha256"`
+	TranslationRepackReportBytes  int64                            `json:"translation_repack_report_bytes"`
+	ProductionProfileIDs          []string                         `json:"production_profile_ids"`
+	ProfileInputs                 []compositionBuildProfileInput   `json:"profile_inputs"`
+	LegacyDLCInputs               []compositionBuildLegacyDLCInput `json:"legacy_dlc_inputs"`
+	Archives                      []compositionBuildArchive        `json:"archives"`
+	PublishedArchiveCount         int                              `json:"published_archive_count"`
+	ComposedArchiveCount          int                              `json:"composed_archive_count"`
+	PassthroughArchiveCount       int                              `json:"passthrough_archive_count"`
+	FullReextractCount            int                              `json:"full_reextract_count"`
+	Errors                        []string                         `json:"errors"`
+}
+
+type compositionBuildLegacyDLCInput struct {
+	ManifestPath           string   `json:"manifest_path"`
+	ManifestSHA256         string   `json:"manifest_sha256"`
+	ManifestBytes          int64    `json:"manifest_bytes"`
+	FamilyID               string   `json:"family_id"`
+	Generation             int      `json:"generation"`
+	Members                []string `json:"members"`
+	TransactionGroup       string   `json:"transaction_group"`
+	WorkstreamVersion      string   `json:"workstream_version"`
+	ProvenanceEvidencePath string   `json:"provenance_evidence_path"`
+	ProvenanceEvidenceHash string   `json:"provenance_evidence_sha256"`
+	ArchiveRelativePath    string   `json:"archive_relative_path"`
+	CandidatePath          string   `json:"candidate_path"`
+	CandidateSHA256        string   `json:"candidate_sha256"`
+	CandidateBytes         int64    `json:"candidate_bytes"`
+	BaselinePath           string   `json:"baseline_path"`
+	BaselineSHA256         string   `json:"baseline_sha256"`
+	BaselineBytes          int64    `json:"baseline_bytes"`
+	AddedMembers           []string `json:"added_members"`
+	ChangedMembers         []string `json:"changed_members"`
+	RemovedMembers         []string `json:"removed_members"`
 }
 
 type compositionBuildProfileInput struct {
@@ -234,11 +276,6 @@ func Build(projectRoot, stateBase string, selection model.SelectionResult) (Prev
 	if err != nil {
 		return Preview{}, err
 	}
-	reportPath := filepath.Join(projectRoot, filepath.FromSlash(repackReportRelative))
-	report, err := loadRepackReport(reportPath)
-	if err != nil {
-		return Preview{}, err
-	}
 	catalog, err := LoadCatalog()
 	if err != nil {
 		return Preview{}, err
@@ -247,12 +284,29 @@ func Build(projectRoot, stateBase string, selection model.SelectionResult) (Prev
 	for _, spec := range catalog {
 		mapping[spec.TargetID+"\x00"+spec.ModuleID] = spec
 	}
+	needsTranslationReport := false
+	for _, selectedTarget := range selection.Targets {
+		for _, moduleID := range selectedTarget.SelectedModuleIDs {
+			_, ok := mapping[selectedTarget.TargetID+"\x00"+moduleID]
+			if ok && (moduleID == "blue_reflection_translation" || moduleID == "second_light_translation") {
+				needsTranslationReport = true
+			}
+		}
+	}
+	var report repackReport
+	if needsTranslationReport {
+		reportPath := filepath.Join(projectRoot, filepath.FromSlash(repackReportRelative))
+		report, err = loadRepackReport(reportPath, projectRoot)
+		if err != nil {
+			return Preview{}, err
+		}
+	}
 	preview := Preview{
 		Type: PreviewType, FormatVersion: PreviewFormatVersion, Status: "ready",
 		GeneratedUTC: time.Now().UTC(), ProjectRoot: projectRoot,
 		RepackReport: filepath.ToSlash(repackReportRelative), CompositionReport: filepath.ToSlash(compositionReportRelative), CommitEnabled: false,
 		TransactionPolicy:  "preview verified local artifacts only; no transaction is prepared or committed",
-		DistributionPolicy: "translation-only uses verified translation archives; Quartet translation+restoration requires the fully verified content-aware composition set",
+		DistributionPolicy: "single modules use their verified payload contracts; overlapping Quartet module selections require the fully verified content-aware composition set",
 		Warnings:           []string{},
 	}
 	for _, selectedTarget := range selection.Targets {
@@ -267,10 +321,10 @@ func Build(projectRoot, stateBase string, selection model.SelectionResult) (Prev
 		for _, moduleID := range selectedTarget.SelectedModuleIDs {
 			selectedSet[moduleID] = true
 		}
-		compositionPair := selectedTarget.TargetID == quartetTargetID && selectedSet["blue_reflection_translation"] && selectedSet["quartet_restoration"]
+		compositionPair := selectedTarget.TargetID == quartetTargetID && quartetModulesNeedComposition(selectedSet)
 		compositionModules := map[string]ModulePreview{}
 		if compositionPair {
-			compositionModules, target.Warnings = buildQuartetCompositionModulePreview(projectRoot, selectedTarget.Root, report)
+			compositionModules, target.Warnings = buildQuartetCompositionModulePreview(projectRoot, selectedTarget.Root, report, selectedTarget.SelectedModuleIDs)
 		}
 		for _, moduleID := range selectedTarget.SelectedModuleIDs {
 			if module, ok := compositionModules[moduleID]; ok {
@@ -298,12 +352,26 @@ func Build(projectRoot, stateBase string, selection model.SelectionResult) (Prev
 				ConnectionStatus: spec.ConnectionStatus, Reason: spec.Reason,
 				Ready: spec.ConnectionStatus == "connected_preview_only",
 			}
+			if spec.SourceKind == legacyDLCSourceKind && module.Ready {
+				module.Artifacts, module.Ready, module.Reason = inspectLegacyDLCModule(projectRoot, selectedTarget.Root, moduleID)
+				for _, artifact := range module.Artifacts {
+					if artifact.TransactionReady {
+						target.ReadyArtifactCount++
+					}
+				}
+				if !module.Ready {
+					target.PendingModuleCount++
+					target.Warnings = append(target.Warnings, fmt.Sprintf("%s: %s", moduleID, module.Reason))
+				}
+				target.Modules = append(target.Modules, module)
+				continue
+			}
 			if !module.Ready {
 				target.PendingModuleCount++
 				target.Warnings = append(target.Warnings, fmt.Sprintf("%s: %s", moduleID, spec.Reason))
 			} else {
 				for _, artifactSpec := range spec.Artifacts {
-					artifact := inspectArtifact(projectRoot, selectedTarget.Root, selectedTarget.TargetID, moduleID, artifactSpec.RelativePath, report)
+					artifact := inspectArtifact(projectRoot, selectedTarget.Root, artifactSpec.BuildTargetID, moduleID, artifactSpec.RelativePath, report)
 					module.Artifacts = append(module.Artifacts, artifact)
 					if artifact.TransactionReady {
 						target.ReadyArtifactCount++
@@ -348,53 +416,116 @@ func Build(projectRoot, stateBase string, selection model.SelectionResult) (Prev
 	return preview, nil
 }
 
-func buildQuartetCompositionModulePreview(projectRoot, gameRoot string, repack repackReport) (map[string]ModulePreview, []string) {
-	translation := ModulePreview{
-		ModuleID: "blue_reflection_translation", SourceKind: "verified_content_aware_composition",
-		ConnectionStatus: "composition_build_required", Ready: false,
-		Reason:    "Quartet translation and restoration were selected together; a matching verified composition build is required before transaction preview.",
-		Artifacts: []ArtifactPreview{},
+func buildQuartetCompositionModulePreview(projectRoot, gameRoot string, repack repackReport, selectedModules []string) (map[string]ModulePreview, []string) {
+	normalized, err := normalizeQuartetCompositionSelection(selectedModules)
+	if err != nil {
+		message := fmt.Sprintf("Quartet composition selection is invalid: %v", err)
+		return pendingCompositionModules(selectedModules, message), []string{message}
 	}
-	restoration := ModulePreview{
-		ModuleID: "quartet_restoration", SourceKind: "verified_content_aware_composition",
-		ConnectionStatus: "composition_build_required", Ready: false,
-		Reason:    "Quartet translation and restoration were selected together; a matching verified composition build is required before transaction preview.",
-		Artifacts: []ArtifactPreview{},
-	}
-	result := map[string]ModulePreview{
-		translation.ModuleID: translation,
-		restoration.ModuleID: restoration,
-	}
-	archives, err := loadVerifiedCompositionArtifacts(projectRoot, gameRoot, repack)
+	result := pendingCompositionModules(normalized, "A matching verified shared Quartet composition build is required before transaction preview.")
+	owner := compositionArtifactOwner(normalized)
+	archives, err := loadVerifiedCompositionArtifacts(projectRoot, gameRoot, repack, normalized, owner)
 	if err != nil {
 		message := fmt.Sprintf("Quartet composition payloads are unavailable: %v", err)
-		translation.Reason = message
-		restoration.Reason = message
-		result[translation.ModuleID] = translation
-		result[restoration.ModuleID] = restoration
-		return result, []string{message}
+		return pendingCompositionModules(normalized, message), []string{message}
 	}
-	translation.ConnectionStatus = "connected_composition_preview_only"
-	translation.Ready = true
-	translation.Reason = "Artifacts come from the verified content-aware Quartet translation+restoration composition set."
-	translation.Artifacts = archives
+	ready := true
 	for _, artifact := range archives {
 		if !artifact.TransactionReady {
-			translation.Ready = false
+			ready = false
 		}
 	}
-	restoration.ConnectionStatus = "connected_composition_preview_only"
-	restoration.Ready = translation.Ready
-	restoration.Reason = "Included in the shared verified composition set; artifacts are listed once under Translation to prevent duplicate transaction paths."
-	result[translation.ModuleID] = translation
-	result[restoration.ModuleID] = restoration
-	if !translation.Ready {
+	for _, moduleID := range normalized {
+		module := result[moduleID]
+		module.ConnectionStatus = "connected_composition_preview_only"
+		module.Ready = ready
+		if moduleID == owner {
+			module.Reason = "Artifacts come from the verified shared Quartet composition set and are listed once under this module to prevent duplicate transaction paths."
+			module.Artifacts = archives
+		} else {
+			module.Reason = fmt.Sprintf("Included in the shared verified composition set; artifacts are listed once under %s to prevent duplicate transaction paths.", owner)
+			module.Artifacts = []ArtifactPreview{}
+		}
+		result[moduleID] = module
+	}
+	if !ready {
 		return result, []string{"one or more verified composition artifacts could not enter the transaction preview"}
 	}
 	return result, []string{}
 }
 
-func loadVerifiedCompositionArtifacts(projectRoot, gameRoot string, repack repackReport) ([]ArtifactPreview, error) {
+func pendingCompositionModules(selectedModules []string, reason string) map[string]ModulePreview {
+	result := map[string]ModulePreview{}
+	for _, moduleID := range selectedModules {
+		if strings.TrimSpace(moduleID) == "" {
+			continue
+		}
+		result[moduleID] = ModulePreview{
+			ModuleID: moduleID, SourceKind: "verified_content_aware_composition",
+			ConnectionStatus: "composition_build_required", Ready: false,
+			Reason: reason, Artifacts: []ArtifactPreview{},
+		}
+	}
+	return result
+}
+
+func normalizeQuartetCompositionSelection(selectedModules []string) ([]string, error) {
+	allowed := map[string]bool{
+		"blue_reflection_translation": true,
+		"quartet_restoration":         true,
+		"quartet_legacy_dlc":          true,
+	}
+	seen := map[string]bool{}
+	for _, moduleID := range selectedModules {
+		moduleID = strings.TrimSpace(moduleID)
+		if !allowed[moduleID] {
+			return nil, fmt.Errorf("unsupported module %q", moduleID)
+		}
+		if seen[moduleID] {
+			return nil, fmt.Errorf("duplicate module %q", moduleID)
+		}
+		seen[moduleID] = true
+	}
+	order := []string{"blue_reflection_translation", "quartet_restoration", "quartet_legacy_dlc"}
+	result := []string{}
+	for _, moduleID := range order {
+		if seen[moduleID] {
+			result = append(result, moduleID)
+		}
+	}
+	if len(result) < 2 {
+		return nil, fmt.Errorf("shared composition requires at least two selected modules")
+	}
+	if !seen["quartet_restoration"] && !(seen["blue_reflection_translation"] && seen["quartet_legacy_dlc"]) {
+		return nil, fmt.Errorf("selected modules do not require shared composition")
+	}
+	return result, nil
+}
+
+func compositionArtifactOwner(selectedModules []string) string {
+	for _, candidate := range []string{"blue_reflection_translation", "quartet_restoration", "quartet_legacy_dlc"} {
+		for _, moduleID := range selectedModules {
+			if moduleID == candidate {
+				return candidate
+			}
+		}
+	}
+	return "blue_reflection_translation"
+}
+
+func sameCompositionSelection(left, right []string) bool {
+	a, err := normalizeQuartetCompositionSelection(left)
+	if err != nil {
+		return false
+	}
+	b, err := normalizeQuartetCompositionSelection(right)
+	if err != nil {
+		return false
+	}
+	return reflect.DeepEqual(a, b)
+}
+
+func loadVerifiedCompositionArtifacts(projectRoot, gameRoot string, repack repackReport, selectedModules []string, ownerModuleID string) ([]ArtifactPreview, error) {
 	reportPath := filepath.Join(projectRoot, filepath.FromSlash(compositionReportRelative))
 	canonicalBytes, err := os.ReadFile(reportPath)
 	if err != nil {
@@ -404,8 +535,15 @@ func loadVerifiedCompositionArtifacts(projectRoot, gameRoot string, repack repac
 	if err := json.Unmarshal(canonicalBytes, &report); err != nil {
 		return nil, fmt.Errorf("decode composition build report: %w", err)
 	}
-	if report.Type != compositionReportType || report.FormatVersion != 2 {
+	if report.Type != compositionReportType || report.FormatVersion != 4 {
 		return nil, fmt.Errorf("unsupported composition report type/version")
+	}
+	if !sameCompositionSelection(report.SelectedModules, selectedModules) {
+		return nil, fmt.Errorf("composition report module selection is stale: report=%v current=%v", report.SelectedModules, selectedModules)
+	}
+	selected := map[string]bool{}
+	for _, moduleID := range selectedModules {
+		selected[moduleID] = true
 	}
 	if report.Status != "ok" || report.CommitEnabled {
 		return nil, fmt.Errorf("composition report is not a completed preview-only build")
@@ -413,20 +551,8 @@ func loadVerifiedCompositionArtifacts(projectRoot, gameRoot string, repack repac
 	if report.TargetID != quartetTargetID || report.PreflightStatus != "ready_for_composition_build" {
 		return nil, fmt.Errorf("composition report target/preflight mismatch")
 	}
-	if len(report.ProductionProfileIDs) == 0 {
-		return nil, fmt.Errorf("composition report contains no production-eligible restoration profiles")
-	}
 	if len(report.Errors) != 0 {
 		return nil, fmt.Errorf("composition report contains errors")
-	}
-	if err := verifyProjectFileFingerprint(projectRoot, report.TranslationLooseReportPath, report.TranslationLooseReportSHA256, report.TranslationLooseReportBytes); err != nil {
-		return nil, fmt.Errorf("stale composition input: %w", err)
-	}
-	if err := verifyProjectFileFingerprint(projectRoot, report.TranslationRepackReportPath, report.TranslationRepackReportSHA256, report.TranslationRepackReportBytes); err != nil {
-		return nil, fmt.Errorf("stale composition input: %w", err)
-	}
-	if err := verifyCurrentProfileInputs(projectRoot, report); err != nil {
-		return nil, fmt.Errorf("stale composition profile inputs: %w", err)
 	}
 	if !sameFilesystemPath(report.ProjectRoot, projectRoot) {
 		return nil, fmt.Errorf("composition report belongs to a different project root")
@@ -440,6 +566,42 @@ func loadVerifiedCompositionArtifacts(projectRoot, gameRoot string, repack repac
 	if filepath.ToSlash(filepath.Clean(filepath.FromSlash(report.EmbeddedReportPath))) != compositionEmbeddedReportRelative {
 		return nil, fmt.Errorf("unexpected embedded composition report path: %s", report.EmbeddedReportPath)
 	}
+
+	if selected["blue_reflection_translation"] {
+		if err := verifyProjectFileFingerprint(projectRoot, report.TranslationLooseReportPath, report.TranslationLooseReportSHA256, report.TranslationLooseReportBytes); err != nil {
+			return nil, fmt.Errorf("stale composition translation input: %w", err)
+		}
+		if err := verifyProjectFileFingerprint(projectRoot, report.TranslationRepackReportPath, report.TranslationRepackReportSHA256, report.TranslationRepackReportBytes); err != nil {
+			return nil, fmt.Errorf("stale composition translation input: %w", err)
+		}
+	} else if report.TranslationLooseReportPath != "" || report.TranslationLooseReportSHA256 != "" || report.TranslationLooseReportBytes != 0 || report.TranslationRepackReportPath != "" || report.TranslationRepackReportSHA256 != "" || report.TranslationRepackReportBytes != 0 {
+		return nil, fmt.Errorf("composition report contains Translation inputs although Translation was not selected")
+	}
+
+	if selected["quartet_restoration"] {
+		if len(report.ProductionProfileIDs) == 0 {
+			return nil, fmt.Errorf("composition report contains no production-eligible restoration profiles")
+		}
+		if err := verifyCurrentProfileInputs(projectRoot, report); err != nil {
+			return nil, fmt.Errorf("stale composition profile inputs: %w", err)
+		}
+	} else if len(report.ProductionProfileIDs) != 0 || len(report.ProfileInputs) != 0 {
+		return nil, fmt.Errorf("composition report contains Restoration inputs although Restoration was not selected")
+	}
+
+	var legacyContract LegacyDLCCompositionContract
+	if selected["quartet_legacy_dlc"] {
+		legacyContract, err = LoadLegacyDLCCompositionContract(projectRoot, gameRoot)
+		if err != nil {
+			return nil, fmt.Errorf("stale composition Legacy DLC inputs: %w", err)
+		}
+		if err := verifyLegacyDLCCompositionInputs(projectRoot, report.LegacyDLCInputs, legacyContract); err != nil {
+			return nil, fmt.Errorf("stale composition Legacy DLC inputs: %w", err)
+		}
+	} else if len(report.LegacyDLCInputs) != 0 {
+		return nil, fmt.Errorf("composition report contains Legacy DLC inputs although Legacy DLC was not selected")
+	}
+
 	if report.PublishedArchiveCount != len(report.Archives) || report.ComposedArchiveCount+report.PassthroughArchiveCount != len(report.Archives) || report.FullReextractCount != report.ComposedArchiveCount {
 		return nil, fmt.Errorf("composition report archive counters are inconsistent")
 	}
@@ -461,10 +623,27 @@ func loadVerifiedCompositionArtifacts(projectRoot, gameRoot string, repack repac
 	if !reflect.DeepEqual(canonicalJSON, embeddedJSON) {
 		return nil, fmt.Errorf("embedded composition report differs from the canonical report")
 	}
-	required := map[string]bool{
-		strings.ToLower("Data/PACK11.PAK"):       false,
-		strings.ToLower("Data/PACK12.PAK"):       false,
-		strings.ToLower("Data/PACK00_04_01.PAK"): false,
+
+	required := map[string]bool{}
+	if selected["blue_reflection_translation"] {
+		for _, relative := range quartetTranslationArchives() {
+			required[strings.ToLower(relative)] = false
+		}
+	}
+	if selected["quartet_legacy_dlc"] {
+		for _, item := range legacyContract.Artifacts {
+			required[strings.ToLower(filepath.ToSlash(item.RelativePath))] = false
+		}
+	}
+	if selected["quartet_restoration"] {
+		for _, input := range report.ProfileInputs {
+			required[strings.ToLower(filepath.ToSlash(input.TargetRelativePath))] = false
+		}
+	}
+
+	legacyByArchive := map[string]LegacyDLCCompositionArtifact{}
+	for _, item := range legacyContract.Artifacts {
+		legacyByArchive[strings.ToLower(filepath.ToSlash(item.RelativePath))] = item
 	}
 	seen := map[string]bool{}
 	artifacts := make([]ArtifactPreview, 0, len(report.Archives))
@@ -478,27 +657,61 @@ func loadVerifiedCompositionArtifacts(projectRoot, gameRoot string, repack repac
 			return nil, fmt.Errorf("duplicate composition archive: %s", archive.ArchiveRelativePath)
 		}
 		seen[key] = true
-		if _, ok := required[key]; ok {
-			required[key] = true
+		if _, ok := required[key]; !ok {
+			return nil, fmt.Errorf("composition set contains undeclared archive: %s", relative)
 		}
+		required[key] = true
 		expectedOutput := filepath.ToSlash(filepath.Join(compositionOutputRelative, filepath.FromSlash(relative)))
 		actualOutput := filepath.ToSlash(filepath.Clean(filepath.FromSlash(archive.OutputPath)))
 		if actualOutput != expectedOutput {
 			return nil, fmt.Errorf("composition archive output path mismatch for %s", relative)
 		}
-		if archive.BaseSourceKind == "verified_translation_archive" || archive.Mode == "verified_translation_passthrough" {
-			entry, ok := findReportEntry(repack, quartetTargetID, relative)
+
+		switch archive.BaseSourceKind {
+		case "verified_translation_archive":
+			if !selected["blue_reflection_translation"] {
+				return nil, fmt.Errorf("Translation base used while Translation is not selected: %s", relative)
+			}
+			entry, ok := findReportEntry(repack, quartetTranslationBuildTarget(relative), relative)
 			if !ok || len(entry.Failures) != 0 || entry.OutputSHA256 != archive.BaseSHA256 || entry.OutputBytes != archive.BaseBytes {
 				return nil, fmt.Errorf("composition translation base is stale for %s", relative)
 			}
 			if err := verifyProjectFileFingerprint(projectRoot, entry.OutputPath, entry.OutputSHA256, entry.OutputBytes); err != nil {
 				return nil, fmt.Errorf("composition translation base is stale for %s: %w", relative, err)
 			}
+		case "verified_legacy_dlc_candidate":
+			item, ok := legacyByArchive[key]
+			if !ok || archive.BaseSHA256 != item.CandidateSHA256 || archive.BaseBytes != item.CandidateSize {
+				return nil, fmt.Errorf("composition Legacy DLC base is stale for %s", relative)
+			}
+		case "installed_game_baseline", "installed_baseline_archive":
+			if archive.BaseSHA256 == "" || archive.BaseBytes <= 0 {
+				return nil, fmt.Errorf("composition installed baseline metadata is missing for %s", relative)
+			}
+			target, exists, err := resolveTargetPath(gameRoot, relative)
+			if err != nil || !exists {
+				return nil, fmt.Errorf("composition installed baseline disappeared for %s", relative)
+			}
+			hash, err := hashFile(target)
+			if err != nil {
+				return nil, err
+			}
+			info, err := os.Lstat(target)
+			if err != nil || info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() || hash != archive.BaseSHA256 || info.Size() != archive.BaseBytes {
+				return nil, fmt.Errorf("composition installed baseline is stale for %s", relative)
+			}
+		default:
+			return nil, fmt.Errorf("unsupported composition base source %q for %s", archive.BaseSourceKind, relative)
 		}
+
 		switch archive.Mode {
 		case "verified_translation_passthrough":
-			if archive.Status != "published_verified_translation_passthrough" || !archive.ManifestDeclarationChecked {
+			if archive.Status != "published_verified_translation_passthrough" || !archive.ManifestDeclarationChecked || archive.FullReextractVerified {
 				return nil, fmt.Errorf("unverified translation passthrough archive: %s", relative)
+			}
+		case "verified_legacy_dlc_passthrough":
+			if archive.Status != "published_verified_legacy_dlc_passthrough" || !archive.ManifestDeclarationChecked || archive.FullReextractVerified {
+				return nil, fmt.Errorf("unverified Legacy DLC passthrough archive: %s", relative)
 			}
 		case "member_overlay":
 			if archive.Status != "published_member_overlay_verified" || !archive.ManifestDeclarationChecked || !archive.FullReextractVerified {
@@ -507,21 +720,114 @@ func loadVerifiedCompositionArtifacts(projectRoot, gameRoot string, repack repac
 		default:
 			return nil, fmt.Errorf("unsupported composition archive mode %q for %s", archive.Mode, relative)
 		}
-		artifact := inspectCompositionArtifact(projectRoot, gameRoot, relative, archive)
+		artifact := inspectCompositionArtifact(projectRoot, gameRoot, relative, archive, ownerModuleID)
 		artifacts = append(artifacts, artifact)
 	}
 	for relative, present := range required {
 		if !present {
-			return nil, fmt.Errorf("composition set is missing required translation archive: %s", relative)
+			return nil, fmt.Errorf("composition set is missing required archive: %s", relative)
 		}
 	}
 	sort.Slice(artifacts, func(i, j int) bool { return artifacts[i].RelativePath < artifacts[j].RelativePath })
 	return artifacts, nil
 }
 
-func inspectCompositionArtifact(projectRoot, gameRoot, relative string, archive compositionBuildArchive) ArtifactPreview {
+func quartetTranslationArchives() []string {
+	return []string{
+		"Data/PACK11.PAK", "Data/PACK12.PAK",
+		"Data/PACK01_01.PAK", "Data/PACK02_01.PAK",
+		"Data/PACK01_02.PAK", "Data/PACK02_02.PAK",
+		"Data/PACK01_03.PAK", "Data/PACK02_03.PAK",
+		"Data/PACK00_04_01.PAK",
+	}
+}
+
+func verifyLegacyDLCCompositionInputs(projectRoot string, inputs []compositionBuildLegacyDLCInput, contract LegacyDLCCompositionContract) error {
+	if len(inputs) != len(contract.Artifacts) {
+		return fmt.Errorf("Legacy DLC input count mismatch")
+	}
+	expected := map[string]LegacyDLCCompositionArtifact{}
+	for _, item := range contract.Artifacts {
+		expected[strings.ToLower(filepath.ToSlash(item.RelativePath))] = item
+	}
+	seen := map[string]bool{}
+	for _, input := range inputs {
+		key := strings.ToLower(filepath.ToSlash(input.ArchiveRelativePath))
+		item, ok := expected[key]
+		if !ok || seen[key] {
+			return fmt.Errorf("unexpected or duplicate Legacy DLC input: %s", input.ArchiveRelativePath)
+		}
+		seen[key] = true
+		manifestPath, err := resolveCompositionInputPath(projectRoot, input.ManifestPath)
+		if err != nil {
+			return err
+		}
+		evidencePath, err := resolveCompositionInputPath(projectRoot, input.ProvenanceEvidencePath)
+		if err != nil {
+			return err
+		}
+		candidatePath, err := resolveCompositionInputPath(projectRoot, input.CandidatePath)
+		if err != nil {
+			return err
+		}
+		baselinePath, err := resolveCompositionInputPath(projectRoot, input.BaselinePath)
+		if err != nil {
+			return err
+		}
+		if !sameFilesystemPath(manifestPath, contract.ManifestPath) || !strings.EqualFold(input.ManifestSHA256, contract.ManifestSHA256) || input.ManifestBytes != contract.ManifestBytes ||
+			input.FamilyID != contract.FamilyID || input.Generation != contract.Generation || !reflect.DeepEqual(input.Members, contract.Members) || input.TransactionGroup != contract.TransactionGroup ||
+			input.WorkstreamVersion != contract.WorkstreamVersion || !sameFilesystemPath(evidencePath, contract.ProvenanceEvidencePath) || !strings.EqualFold(input.ProvenanceEvidenceHash, contract.ProvenanceEvidenceHash) ||
+			!sameFilesystemPath(candidatePath, item.CandidatePath) || !sameFilesystemPath(baselinePath, item.BaselinePath) ||
+			!strings.EqualFold(input.CandidateSHA256, item.CandidateSHA256) || input.CandidateBytes != item.CandidateSize ||
+			!strings.EqualFold(input.BaselineSHA256, item.BaselineSHA256) || input.BaselineBytes != item.BaselineSize ||
+			!sameFoldedStringSet(input.AddedMembers, item.AddedMembers) || !sameFoldedStringSet(input.ChangedMembers, item.ChangedMembers) || !sameFoldedStringSet(input.RemovedMembers, item.RemovedMembers) {
+			return fmt.Errorf("Legacy DLC input no longer matches the validated manifest: %s", input.ArchiveRelativePath)
+		}
+	}
+	return nil
+}
+
+func resolveCompositionInputPath(projectRoot, value string) (string, error) {
+	if strings.TrimSpace(value) == "" {
+		return "", fmt.Errorf("empty composition input path")
+	}
+	if filepath.IsAbs(value) {
+		return filepath.Clean(value), nil
+	}
+	return secureProjectPath(projectRoot, value)
+}
+
+func sameFoldedStringSet(left, right []string) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	normalize := func(values []string) []string {
+		result := make([]string, len(values))
+		for index, value := range values {
+			result[index] = strings.ToLower(filepath.ToSlash(filepath.Clean(filepath.FromSlash(value))))
+		}
+		sort.Strings(result)
+		return result
+	}
+	return reflect.DeepEqual(normalize(left), normalize(right))
+}
+
+func quartetTranslationBuildTarget(relative string) string {
+	switch strings.ToLower(filepath.ToSlash(filepath.Clean(filepath.FromSlash(relative)))) {
+	case strings.ToLower("Data/PACK01_01.PAK"), strings.ToLower("Data/PACK02_01.PAK"):
+		return "blue_reflection_ray_quartet"
+	case strings.ToLower("Data/PACK01_02.PAK"), strings.ToLower("Data/PACK02_02.PAK"):
+		return "blue_reflection_sun_quartet"
+	case strings.ToLower("Data/PACK01_03.PAK"), strings.ToLower("Data/PACK02_03.PAK"):
+		return "second_light_quartet"
+	default:
+		return quartetTargetID
+	}
+}
+
+func inspectCompositionArtifact(projectRoot, gameRoot, relative string, archive compositionBuildArchive, ownerModuleID string) ArtifactPreview {
 	result := ArtifactPreview{
-		ModuleID: "blue_reflection_translation", RelativePath: filepath.ToSlash(relative),
+		ModuleID: ownerModuleID, RelativePath: filepath.ToSlash(relative),
 		Status: "invalid", DesiredAction: "blocked", SourceReport: filepath.ToSlash(compositionReportRelative),
 		ReportSHA256: archive.OutputSHA256, ReportBytes: archive.OutputBytes,
 	}
@@ -714,7 +1020,7 @@ func sameFilesystemPath(left, right string) bool {
 	return left == right
 }
 
-func loadRepackReport(path string) (repackReport, error) {
+func loadRepackReport(path, projectRoot string) (repackReport, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return repackReport{}, fmt.Errorf("read translation repack report: %w", err)
@@ -723,10 +1029,68 @@ func loadRepackReport(path string) (repackReport, error) {
 	if err := json.Unmarshal(data, &report); err != nil {
 		return repackReport{}, fmt.Errorf("decode translation repack report: %w", err)
 	}
+	if report.Type != translationRepackReportType || report.FormatVersion != 2 {
+		return repackReport{}, fmt.Errorf("unsupported translation repack report type/version")
+	}
 	if report.Status != "ok" {
 		return repackReport{}, fmt.Errorf("translation repack report status is %q, expected ok", report.Status)
 	}
+	currentTranslation, err := readTrimmedProjectFile(projectRoot, "workstreams/translation/VERSION")
+	if err != nil {
+		return repackReport{}, err
+	}
+	currentTooling, err := readTrimmedProjectFile(projectRoot, "workstreams/translation_tooling/VERSION")
+	if err != nil {
+		return repackReport{}, err
+	}
+	if report.TranslationVersion != currentTranslation || report.TranslationToolingVersion != currentTooling {
+		return repackReport{}, fmt.Errorf(
+			"translation build is stale: report=%s/%s current=%s/%s",
+			report.TranslationVersion, report.TranslationToolingVersion, currentTranslation, currentTooling,
+		)
+	}
+	if versionLess(report.TranslationVersion, minimumTranslationVersion) || versionLess(report.TranslationVersion, report.MinimumTranslationVersion) {
+		return repackReport{}, fmt.Errorf("translation build predates corrected Quartet routing: %s", report.TranslationVersion)
+	}
+	if strings.TrimSpace(report.CanonicalInputFingerprint) == "" {
+		return repackReport{}, fmt.Errorf("translation repack report has no canonical input fingerprint")
+	}
+	if err := verifyProjectFileFingerprint(projectRoot, report.LooseReportPath, report.LooseReportSHA256, report.LooseReportBytes); err != nil {
+		return repackReport{}, fmt.Errorf("loose build report: %w", err)
+	}
 	return report, nil
+}
+
+func readTrimmedProjectFile(projectRoot, relative string) (string, error) {
+	path, err := secureProjectPath(projectRoot, relative)
+	if err != nil {
+		return "", err
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", err
+	}
+	value := strings.TrimSpace(string(data))
+	if value == "" {
+		return "", fmt.Errorf("empty project file: %s", relative)
+	}
+	return value, nil
+}
+
+func versionLess(left, right string) bool {
+	var a, b [3]int
+	if _, err := fmt.Sscanf(strings.TrimSpace(left), "%d.%d.%d", &a[0], &a[1], &a[2]); err != nil {
+		return true
+	}
+	if _, err := fmt.Sscanf(strings.TrimSpace(right), "%d.%d.%d", &b[0], &b[1], &b[2]); err != nil {
+		return true
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return a[i] < b[i]
+		}
+	}
+	return false
 }
 
 func inspectArtifact(projectRoot, gameRoot, targetID, moduleID, relative string, report repackReport) ArtifactPreview {
@@ -738,6 +1102,16 @@ func inspectArtifact(projectRoot, gameRoot, targetID, moduleID, relative string,
 	}
 	if len(entry.Failures) != 0 {
 		result.Error = "archive verification report contains failures"
+		return result
+	}
+	sourcePolicyOK := entry.SourcePolicy == "current_installation_baseline_extraction" ||
+		entry.SourcePolicy == "current_installation_baseline_extraction_plus_verified_marker_overlay"
+	if !sourcePolicyOK || entry.SourceArchiveBytes < 0 || len(entry.SourceArchiveSHA256) != 64 {
+		result.Error = "archive was not structurally rebased from a fingerprinted current installation baseline"
+		return result
+	}
+	if !entry.FullReextractVerified {
+		result.Error = "archive did not pass full re-extraction verification"
 		return result
 	}
 	source, err := secureProjectPath(projectRoot, entry.OutputPath)

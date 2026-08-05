@@ -54,6 +54,8 @@ func main() {
 		err = commandQuartetCompositionPreview(os.Args[2:])
 	case "quartet-composition-build":
 		err = commandQuartetCompositionBuild(os.Args[2:])
+	case "quartet-composition-lock-status":
+		err = commandQuartetCompositionLockStatus(os.Args[2:])
 	case "transaction-prepare":
 		err = commandTransactionPrepare(os.Args[2:])
 	case "baseline-status":
@@ -216,7 +218,7 @@ func commandStart(args []string) error {
 	previewNeedsBuild := previewErr != nil || !previewReadyForGuidedAction(preview)
 	buildRequested := buildLocal
 	if buildRequested && !selectionSupportsLocalTranslationBuild(chosen) {
-		return fmt.Errorf("--build-local supports Translation and optional Quartet Restoration only")
+		return fmt.Errorf("--build-local supports Translation with optional Quartet Restoration and/or Legacy DLC")
 	}
 	if !buildRequested && previewNeedsBuild && prompt && localTranslationBuildAvailable(projectRoot, chosen) {
 		buildRequested, err = chooseLocalTranslationBuild(os.Stdin, os.Stdout)
@@ -243,8 +245,8 @@ func commandStart(args []string) error {
 		}
 	}
 
-	if quartetRoot, requested := selectionRequestsQuartetComposition(chosen); requested {
-		if composition, compositionErr := buildQuartetCompositionPreview(projectRoot, quartetRoot); compositionErr != nil {
+	if quartetRoot, compositionModules, requested := selectionRequestsQuartetComposition(chosen); requested {
+		if composition, compositionErr := buildQuartetModuleCompositionPreview(projectRoot, quartetRoot, compositionModules); compositionErr != nil {
 			fmt.Fprintf(os.Stdout, "\nQuartet composition preflight unavailable: %v\n", compositionErr)
 		} else {
 			printHumanQuartetCompositionPreview(os.Stdout, composition)
@@ -427,8 +429,9 @@ Commands:
   plan --bundle FILE [--modules ID,ID] [--root PATH] [--json FILE]
   state-path [--app-id ID]
   payload-preview [--game-dir PATH] [--modules ID,ID|none] [--project-root PATH] [--json FILE]
-  quartet-composition-preview [--game-dir PATH] [--project-root PATH] [--json FILE]
-  quartet-composition-build [--game-dir PATH] [--project-root PATH] [--gust-pak PATH] [--timeout DURATION] [--json FILE]
+  quartet-composition-preview [--game-dir PATH] [--project-root PATH] [--modules LIST] [--json FILE]
+  quartet-composition-build [--game-dir PATH] [--project-root PATH] [--modules LIST] [--gust-pak PATH] [--timeout DURATION] [--json FILE]
+  quartet-composition-lock-status [--project-root PATH] [--json FILE]
   transaction-prepare [--game-dir PATH] [--modules ID,ID|none] [--project-root PATH] [--json FILE]
   baseline-status [--game-dir PATH] [--json FILE]
   installation-status [--game-dir PATH] [--json FILE]

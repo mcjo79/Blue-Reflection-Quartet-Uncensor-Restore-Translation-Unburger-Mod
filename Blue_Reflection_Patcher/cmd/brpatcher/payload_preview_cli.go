@@ -107,5 +107,5 @@ func printHumanPayloadPreview(out io.Writer, preview payloadpreview.Preview) {
 	if preview.Status == "ready" {
 		fmt.Fprintf(out, "%sA fully ready single-installation preview may be installed through the guided start workflow or staged separately with transaction-prepare.%s\n", ansiDim, ansiReset)
 	}
-	fmt.Fprintf(out, "%sQuartet Translation+Restoration uses only a matching verified content-aware composition set; preview itself never writes game files, and every installation requires an explicit guided or command-line confirmation.%s\n", ansiDim, ansiReset)
+	fmt.Fprintf(out, "%sQuartet multi-module selections use only a matching verified content-aware composition set; preview itself never writes game files, and every installation requires an explicit guided or command-line confirmation.%s\n", ansiDim, ansiReset)
 }

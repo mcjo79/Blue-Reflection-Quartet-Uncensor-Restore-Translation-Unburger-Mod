@@ -9,6 +9,7 @@ import (
 )
 
 func TestRemoveManagedInstallationRollsBackEntireUpdateChain(t *testing.T) {
+	useSyntheticGuidedPrepare(t)
 	root := t.TempDir()
 	game := filepath.Join(root, "game")
 	state := filepath.Join(root, "state")
@@ -51,6 +52,7 @@ func TestRemoveManagedInstallationRollsBackEntireUpdateChain(t *testing.T) {
 }
 
 func TestRemoveManagedInstallationClearsDisplacedStateWithoutRewritingGame(t *testing.T) {
+	useSyntheticGuidedPrepare(t)
 	root := t.TempDir()
 	game := filepath.Join(root, "game")
 	state := filepath.Join(root, "state")
@@ -88,6 +90,7 @@ func TestRemoveManagedInstallationClearsDisplacedStateWithoutRewritingGame(t *te
 }
 
 func TestRemoveManagedInstallationRejectsExternalChanges(t *testing.T) {
+	useSyntheticGuidedPrepare(t)
 	root := t.TempDir()
 	game := filepath.Join(root, "game")
 	state := filepath.Join(root, "state")

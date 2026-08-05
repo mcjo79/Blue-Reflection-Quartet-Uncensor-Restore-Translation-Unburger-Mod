@@ -1,0 +1,190 @@
+{
+  "type": "br_translation_target_routes",
+  "format_version": 1,
+  "minimum_translation_version": "0.0.113",
+  "installation_targets": {
+    "blue_reflection_original": {
+      "module_id": "blue_reflection_translation",
+      "content_targets": [
+        "blue_reflection_original"
+      ],
+      "marker_archive": "DATA/PACK00_04_1.PAK"
+    },
+    "second_light_original": {
+      "module_id": "second_light_translation",
+      "content_targets": [
+        "second_light_original"
+      ],
+      "marker_archive": "Data/PACK00_04_01.PAK"
+    },
+    "blue_reflection_quartet": {
+      "module_id": "blue_reflection_translation",
+      "content_targets": [
+        "blue_reflection_quartet",
+        "blue_reflection_ray_quartet",
+        "blue_reflection_sun_quartet",
+        "second_light_quartet"
+      ],
+      "marker_archive": "Data/PACK00_04_01.PAK"
+    }
+  },
+  "content_targets": {
+    "blue_reflection_original": {
+      "installation_target_id": "blue_reflection_original",
+      "project": "blue_reflection",
+      "archives": [
+        {
+          "archive_stem": "PACK01",
+          "relative_path": "DATA/PACK01.PAK",
+          "purpose": "events_english",
+          "production_text": true,
+          "member_scope": "event/event_en/**/*.ebm",
+          "write_source": "records[*].en",
+          "preserve_policy": "preserve_jp_unknown_records_and_all_unrelated_members"
+        },
+        {
+          "archive_stem": "PACK02_1",
+          "relative_path": "DATA/PACK02_1.PAK",
+          "purpose": "system_english",
+          "production_text": true,
+          "member_scope": "saves_en/text/**/*.xml",
+          "write_source": "records[*].en",
+          "preserve_policy": "preserve_jp_unknown_records_and_all_unrelated_members"
+        },
+        {
+          "archive_stem": "PACK02_3",
+          "relative_path": "DATA/PACK02_3.PAK",
+          "purpose": "japanese_reference_and_legacy_marker",
+          "production_text": false,
+          "member_scope": "event/event_jp/** and saves_jp/** (reference only)",
+          "write_source": "none_reference_only",
+          "preserve_policy": "preserve_jp_unknown_records_and_all_unrelated_members"
+        }
+      ]
+    },
+    "second_light_original": {
+      "installation_target_id": "second_light_original",
+      "project": "second_light",
+      "archives": [
+        {
+          "archive_stem": "PACK01",
+          "relative_path": "Data/PACK01.PAK",
+          "purpose": "events_english",
+          "production_text": true,
+          "member_scope": "event/event_en/**/*.ebm",
+          "write_source": "records[*].en",
+          "preserve_policy": "preserve_jp_unknown_records_and_all_unrelated_members"
+        },
+        {
+          "archive_stem": "PACK02",
+          "relative_path": "Data/PACK02.PAK",
+          "purpose": "system_english",
+          "production_text": true,
+          "member_scope": "saves/text_en/**/*.xml",
+          "write_source": "records[*].en",
+          "preserve_policy": "preserve_jp_unknown_records_and_all_unrelated_members"
+        }
+      ]
+    },
+    "blue_reflection_quartet": {
+      "installation_target_id": "blue_reflection_quartet",
+      "project": "blue_reflection",
+      "partition": "b1",
+      "archives": [
+        {
+          "archive_stem": "PACK11",
+          "relative_path": "Data/PACK11.PAK",
+          "purpose": "events_b1_english",
+          "production_text": true,
+          "member_scope": "event/b1/event_en/**/*.ebm",
+          "write_source": "records[*].en",
+          "preserve_policy": "preserve_jp_unknown_records_and_all_unrelated_members"
+        },
+        {
+          "archive_stem": "PACK12",
+          "relative_path": "Data/PACK12.PAK",
+          "purpose": "system_b1_english",
+          "production_text": true,
+          "member_scope": "saves/b1/text_en/**/*.xml",
+          "write_source": "records[*].en",
+          "preserve_policy": "preserve_jp_unknown_records_and_all_unrelated_members"
+        }
+      ]
+    },
+    "blue_reflection_ray_quartet": {
+      "installation_target_id": "blue_reflection_quartet",
+      "project": "blue_reflection_ray",
+      "partition": "b2",
+      "archives": [
+        {
+          "archive_stem": "PACK01_01",
+          "relative_path": "Data/PACK01_01.PAK",
+          "purpose": "events_b2_english",
+          "production_text": true,
+          "member_scope": "event/b2/event_en/**/*.ebm",
+          "write_source": "records[*].en",
+          "preserve_policy": "preserve_jp_unknown_records_and_all_unrelated_members"
+        },
+        {
+          "archive_stem": "PACK02_01",
+          "relative_path": "Data/PACK02_01.PAK",
+          "purpose": "system_b2_english",
+          "production_text": true,
+          "member_scope": "saves/b2/text_en/**/*.xml",
+          "write_source": "records[*].en",
+          "preserve_policy": "preserve_jp_unknown_records_and_all_unrelated_members"
+        }
+      ]
+    },
+    "blue_reflection_sun_quartet": {
+      "installation_target_id": "blue_reflection_quartet",
+      "project": "blue_reflection_sun",
+      "partition": "b3",
+      "archives": [
+        {
+          "archive_stem": "PACK01_02",
+          "relative_path": "Data/PACK01_02.PAK",
+          "purpose": "events_b3_english",
+          "production_text": true,
+          "member_scope": "event/b3/event_en/**/*.ebm",
+          "write_source": "records[*].en",
+          "preserve_policy": "preserve_jp_unknown_records_and_all_unrelated_members"
+        },
+        {
+          "archive_stem": "PACK02_02",
+          "relative_path": "Data/PACK02_02.PAK",
+          "purpose": "system_b3_english",
+          "production_text": true,
+          "member_scope": "saves/b3/text_en/**/*.xml",
+          "write_source": "records[*].en",
+          "preserve_policy": "preserve_jp_unknown_records_and_all_unrelated_members"
+        }
+      ]
+    },
+    "second_light_quartet": {
+      "installation_target_id": "blue_reflection_quartet",
+      "project": "second_light",
+      "partition": "b4",
+      "archives": [
+        {
+          "archive_stem": "PACK01_03",
+          "relative_path": "Data/PACK01_03.PAK",
+          "purpose": "events_b4_english",
+          "production_text": true,
+          "member_scope": "event/b4/event_en/**/*.ebm",
+          "write_source": "records[*].en",
+          "preserve_policy": "preserve_jp_unknown_records_and_all_unrelated_members"
+        },
+        {
+          "archive_stem": "PACK02_03",
+          "relative_path": "Data/PACK02_03.PAK",
+          "purpose": "system_b4_english",
+          "production_text": true,
+          "member_scope": "saves/b4/text_en/**/*.xml",
+          "write_source": "records[*].en",
+          "preserve_policy": "preserve_jp_unknown_records_and_all_unrelated_members"
+        }
+      ]
+    }
+  }
+}

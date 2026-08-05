@@ -18,10 +18,12 @@ const localTranslationWorkflowRelative = "workstreams/core/07_prepare_local_tran
 
 type localTranslationBuildReport struct {
 	Type              string `json:"type"`
+	FormatVersion     int    `json:"format_version"`
 	Status            string `json:"status"`
 	TargetID          string `json:"target_id"`
 	GameRoot          string `json:"game_root"`
 	GameFilesModified bool   `json:"game_files_modified"`
+	CommitEnabled     bool   `json:"commit_enabled"`
 }
 
 func selectionSupportsLocalTranslationBuild(selection model.SelectionResult) bool {
@@ -37,7 +39,7 @@ func selectionSupportsLocalTranslationBuild(selection model.SelectionResult) boo
 		switch moduleID {
 		case "blue_reflection_translation":
 			translation = true
-		case "quartet_restoration":
+		case "quartet_restoration", "quartet_legacy_dlc":
 			if target.TargetID != "blue_reflection_quartet" {
 				return false
 			}
@@ -149,11 +151,14 @@ func runLocalTranslationPreviewBuild(projectRoot string, selection model.Selecti
 	if err := json.Unmarshal(payload, &report); err != nil {
 		return reportPath, fmt.Errorf("decode local Translation build report: %w", err)
 	}
-	if report.Type != "br_local_translation_workflow_report" || report.Status != "ready_preview_only" {
-		return reportPath, fmt.Errorf("local Translation build did not publish a ready preview: type=%s status=%s", report.Type, report.Status)
+	if report.Type != "br_local_translation_workflow_report" || report.FormatVersion != 5 || report.Status != "ready_preview_only" {
+		return reportPath, fmt.Errorf("local Translation build did not publish a supported ready preview: type=%s format=%d status=%s", report.Type, report.FormatVersion, report.Status)
 	}
 	if report.GameFilesModified {
 		return reportPath, fmt.Errorf("local Translation preview workflow unexpectedly reported modified game files")
+	}
+	if report.CommitEnabled {
+		return reportPath, fmt.Errorf("local Translation preview workflow unexpectedly enabled commit")
 	}
 	if report.TargetID != target.TargetID || !sameLocalFilesystemPath(report.GameRoot, target.Root) {
 		return reportPath, fmt.Errorf("local Translation build report target mismatch")
@@ -238,7 +243,7 @@ func renderLocalTranslationBuildMenu(out io.Writer, cursor int) {
 	fmt.Fprint(out, ansiClear)
 	fmt.Fprintf(out, "%s%sBLUE REFLECTION unified patcher%s\n", ansiBold, ansiCyan, ansiReset)
 	fmt.Fprintf(out, "%sLocal Translation payloads are not ready%s\n", ansiBold, ansiReset)
-	fmt.Fprintf(out, "%sThe development workflow can rebuild the selected target from current canonical records, repack it, add the correct title marker and verify it without modifying the game.%s\n\n", ansiDim, ansiReset)
+	fmt.Fprintf(out, "%sThe development workflow can rebuild the selected target from current canonical records, compose the exact selected Quartet modules when needed, and verify one deduplicated payload set without modifying the game.%s\n\n", ansiDim, ansiReset)
 	fmt.Fprintf(out, "%sChoose action%s\n", ansiBold, ansiReset)
 	fmt.Fprintf(out, "%s↑/↓ move   Enter confirms   Q cancels%s\n\n", ansiDim, ansiReset)
 	labels := []string{"Build current payloads and continue", "Cancel"}

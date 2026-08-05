@@ -77,7 +77,7 @@ done
 [ "$preview" = yes ]
 [ "$modules" = blue_reflection_translation ]
 mkdir -p "$(dirname "$report")"
-printf '{"type":"br_local_translation_workflow_report","status":"ready_preview_only","target_id":"blue_reflection_original","game_root":"%s","game_files_modified":false}\n' "$game" > "$report"
+printf '{"type":"br_local_translation_workflow_report","format_version":5,"status":"ready_preview_only","target_id":"blue_reflection_original","game_root":"%s","game_files_modified":false,"commit_enabled":false}\n' "$game" > "$report"
 printf 'fixture build ok\n'
 `
 	mustWriteTestFile(t, workflow, []byte(script))
@@ -97,11 +97,57 @@ printf 'fixture build ok\n'
 	}
 }
 
+func TestRunLocalTranslationPreviewBuildRejectsCommitEnabledReport(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell fixture is Unix-only")
+	}
+	root := t.TempDir()
+	game := filepath.Join(root, "game")
+	if err := os.MkdirAll(game, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	makeLocalBuildProject(t, root)
+	workflow := filepath.Join(root, filepath.FromSlash(localTranslationWorkflowRelative))
+	script := `#!/bin/sh
+set -eu
+report=""
+game=""
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --json) report="$2"; shift 2 ;;
+    --game-dir) game="$2"; shift 2 ;;
+    --modules) shift 2 ;;
+    --preview-only) shift ;;
+    *) exit 91 ;;
+  esac
+done
+mkdir -p "$(dirname "$report")"
+printf '{"type":"br_local_translation_workflow_report","format_version":5,"status":"ready_preview_only","target_id":"blue_reflection_original","game_root":"%s","game_files_modified":false,"commit_enabled":true}\n' "$game" > "$report"
+`
+	mustWriteTestFile(t, workflow, []byte(script))
+	if err := os.Chmod(workflow, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := runLocalTranslationPreviewBuild(root, syntheticLocalBuildSelection(game), &bytes.Buffer{}); err == nil || !strings.Contains(err.Error(), "enabled commit") {
+		t.Fatalf("commit-enabled preview report was not rejected: %v", err)
+	}
+}
+
 func TestLocalTranslationBuildSelectionRejectsDLC(t *testing.T) {
 	selection := syntheticLocalBuildSelection(t.TempDir())
 	selection.Targets[0].SelectedModuleIDs = append(selection.Targets[0].SelectedModuleIDs, "quartet_legacy_dlc")
 	if selectionSupportsLocalTranslationBuild(selection) {
 		t.Fatal("local Translation builder accepted unsupported DLC selection")
+	}
+}
+
+func TestLocalTranslationBuildSelectionAcceptsQuartetTranslationPlusDLC(t *testing.T) {
+	selection := model.SelectionResult{Targets: []model.TargetSelection{{
+		TargetID: "blue_reflection_quartet", Root: t.TempDir(),
+		SelectedModuleIDs: []string{"blue_reflection_translation", "quartet_legacy_dlc"},
+	}}}
+	if !selectionSupportsLocalTranslationBuild(selection) {
+		t.Fatal("local Translation builder rejected supported Quartet Translation+Legacy DLC selection")
 	}
 }
 

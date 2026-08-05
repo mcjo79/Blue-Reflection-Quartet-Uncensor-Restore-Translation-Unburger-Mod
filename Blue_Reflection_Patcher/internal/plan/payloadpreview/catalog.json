@@ -9,13 +9,16 @@
       "connection_status": "connected_preview_only",
       "artifacts": [
         {
-          "relative_path": "DATA/PACK01.PAK"
+          "relative_path": "DATA/PACK01.PAK",
+          "build_target_id": "blue_reflection_original"
         },
         {
-          "relative_path": "DATA/PACK02_1.PAK"
+          "relative_path": "DATA/PACK02_1.PAK",
+          "build_target_id": "blue_reflection_original"
         },
         {
-          "relative_path": "DATA/PACK00_04_1.PAK"
+          "relative_path": "DATA/PACK00_04_1.PAK",
+          "build_target_id": "blue_reflection_original"
         }
       ]
     },
@@ -26,13 +29,40 @@
       "connection_status": "connected_preview_only",
       "artifacts": [
         {
-          "relative_path": "Data/PACK11.PAK"
+          "relative_path": "Data/PACK11.PAK",
+          "build_target_id": "blue_reflection_quartet"
         },
         {
-          "relative_path": "Data/PACK12.PAK"
+          "relative_path": "Data/PACK12.PAK",
+          "build_target_id": "blue_reflection_quartet"
         },
         {
-          "relative_path": "Data/PACK00_04_01.PAK"
+          "relative_path": "Data/PACK01_01.PAK",
+          "build_target_id": "blue_reflection_ray_quartet"
+        },
+        {
+          "relative_path": "Data/PACK02_01.PAK",
+          "build_target_id": "blue_reflection_ray_quartet"
+        },
+        {
+          "relative_path": "Data/PACK01_02.PAK",
+          "build_target_id": "blue_reflection_sun_quartet"
+        },
+        {
+          "relative_path": "Data/PACK02_02.PAK",
+          "build_target_id": "blue_reflection_sun_quartet"
+        },
+        {
+          "relative_path": "Data/PACK01_03.PAK",
+          "build_target_id": "second_light_quartet"
+        },
+        {
+          "relative_path": "Data/PACK02_03.PAK",
+          "build_target_id": "second_light_quartet"
+        },
+        {
+          "relative_path": "Data/PACK00_04_01.PAK",
+          "build_target_id": "blue_reflection_quartet"
         }
       ]
     },
@@ -43,13 +73,16 @@
       "connection_status": "connected_preview_only",
       "artifacts": [
         {
-          "relative_path": "Data/PACK01.PAK"
+          "relative_path": "Data/PACK01.PAK",
+          "build_target_id": "second_light_original"
         },
         {
-          "relative_path": "Data/PACK02.PAK"
+          "relative_path": "Data/PACK02.PAK",
+          "build_target_id": "second_light_original"
         },
         {
-          "relative_path": "Data/PACK00_04_01.PAK"
+          "relative_path": "Data/PACK00_04_01.PAK",
+          "build_target_id": "second_light_original"
         }
       ]
     },
@@ -58,16 +91,23 @@
       "target_id": "blue_reflection_quartet",
       "source_kind": "verified_local_restoration_profiles",
       "connection_status": "composition_build_available",
-      "reason": "When Translation and Restoration are selected together, transaction preview requires and verifies the content-aware composition build; commit remains disabled.",
+      "reason": "Runtime-validated local profiles are required. Any multi-module selection is published only through one matching content-aware composition set.",
       "artifacts": []
     },
     {
       "module_id": "quartet_legacy_dlc",
       "target_id": "blue_reflection_quartet",
-      "source_kind": "future_selected_game_transfer",
-      "connection_status": "pending_adapter",
-      "reason": "The local DLC transfer adapter is planned after the general translation/restoration composition path.",
-      "artifacts": []
+      "source_kind": "validated_quartet_legacy_dlc_handoff",
+      "connection_status": "connected_preview_only",
+      "reason": "Validated manifest-driven dry BKN family payload. Preview requires the policy-bounded artifact group together; overlapping selections are published through one deduplicated content-aware composition set.",
+      "artifacts": [
+        {
+          "relative_path": "Data/PACK10_02.PAK"
+        },
+        {
+          "relative_path": "Data/PACK12.PAK"
+        }
+      ]
     }
   ]
 }
