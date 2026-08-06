@@ -1,0 +1,29 @@
+{
+  "type": "br_runtime_wardrobe_capability_contract",
+  "format_version": 2,
+  "capability": "wardrobe_registry_append_v2",
+  "supersedes": "wardrobe_registry_append_v1",
+  "semantics": {
+    "memory_only": true,
+    "registry_virtualization": true,
+    "external_shadow_cache": true,
+    "preserve_existing_registry_records_0_55": true,
+    "preserve_existing_embedded_cache_0_55": true,
+    "embedded_cache_in_place_extension": false,
+    "object_writes_past_original_cache": false,
+    "global_show_all": false,
+    "save_mutation": false,
+    "on_disk_game_binary_patch": false,
+    "max_append_records": 8,
+    "record_input_v1_compatible": true,
+    "disable_semantics": "process exit/restart restores the original module and embedded object cache behavior"
+  },
+  "safety": {
+    "all_patch_sites_allowlisted": true,
+    "all_original_bytes_verified_before_mutation": true,
+    "all_target_threads_must_suspend": true,
+    "initializer_count_guard_remains_56": true,
+    "synthetic_cache_records_live_outside_game_objects": true,
+    "partial_apply_rolls_back": true
+  }
+}

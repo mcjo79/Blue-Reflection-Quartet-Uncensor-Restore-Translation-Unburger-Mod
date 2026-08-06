@@ -1,0 +1,36 @@
+{
+  "type": "br_quartet_restoration_gamma_runtime_observation",
+  "format_version": 1,
+  "workstream_version": "0.1.63",
+  "recorded_utc": "2026-08-07T04:48:56Z",
+  "source": "reviewed_handoff_user_runtime_observation",
+  "profile_id": "fast_test_kps_posteffectgamma_target_dword_3c4565adce04",
+  "target_relative_path": "Data/PACK10_01.PAK",
+  "profile_sha256": "3356e32f1660ab9f301c74d1d105a032a8f55566deeb4ec30394d3afe43f3b14",
+  "activation_evidence_sha256": "dc8fc9f1244721ca31e19b35f58835725fcd927964fb6310937dc65d218bde5b",
+  "rollback_evidence_sha256": "9c0faf212bdb3df9e54fcbe71b30d4f844f9cae8f7cf28d7758225fc58f7378f",
+  "runtime_stability_user_reported": true,
+  "visible_effect_confirmed": false,
+  "runtime_status": "runtime_stable_visual_effect_unconfirmed",
+  "user_observation": "Any visible difference was uncertain and at most subtle; the user could not reliably distinguish it.",
+  "test_context": {
+    "bathroom_water_profile_id": "candidate_bathroom_river_containing_pak_static_inverse_062e39915e7d",
+    "bathroom_water_target_relative_path": "Data/PACK10_03.PAK",
+    "bathroom_water_profile_was_active": true,
+    "bathroom_water_semantics": "water_visibility_transparency_restoration"
+  },
+  "runtime_validated": false,
+  "production_eligible": false,
+  "confirmed_visual_semantics": null,
+  "exact_pack10_01_baseline_restored": true,
+  "pack10_01_baseline_sha256": "cc44e01cca2b1f68714dbe6a3c51b3e3894e612add1e440285e77fd4da5a00b1",
+  "gamma_retest_required": false,
+  "policy": {
+    "stability_does_not_imply_visual_validation": true,
+    "visual_effect_is_not_inferred": true,
+    "runtime_validated_remains_false": true,
+    "production_promotion_authorized": false,
+    "repeat_gamma_only_to_strengthen_visual_claim": false,
+    "pack10_03_profile_is_independent_and_must_not_be_rolled_back_by_gamma_workflow": true
+  }
+}

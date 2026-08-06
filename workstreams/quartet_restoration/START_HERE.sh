@@ -5,6 +5,9 @@ VERSION="$(tr -d '[:space:]' < "$PROJECT_ROOT/workstreams/quartet_restoration/VE
 printf 'Blue Reflection Quartet restoration workstream\n'
 printf 'Version: %s\n' "$VERSION"
 printf 'Project root: %s\n\n' "$PROJECT_ROOT"
+printf '[DONE] Stage 145: Gamma canonical runtime-stable / visual-effect-unconfirmed; runtime_validated remains false\n'
+printf '[READY/BLOCKED] Stage 146: GlowLight-only Fast Test Lab harness prepared; activation requires separate explicit user authorization\n'
+printf '[RULE] Stage 146 must guard PACK10_03 byte-for-byte and exactly restore PACK10_01 after the test\n\n'
 printf '[DONE] Stage 139: 261 exact sections parsed in 235/288 G1E members; 0 whole members resolved\n'
 printf '[DONE] Stage 139: 16 KPS programs retain exact interfaces and opcode inventories\n'
 printf '[CURRENT] Stage 140: parse section table triplets/opaque bodies and classify no-write KPS minimal-patch feasibility\n'
@@ -1719,3 +1722,140 @@ printf '[READY] Stage 141: plan 227 preconditioned target-side KPS dword edits a
 # After exiting the game completely, rollback:
 #   bash workstreams/quartet_restoration/144_gamma_fast_test_lab.sh rollback
 printf '[READY] Stage 144: activate Gamma only through the verified core transaction route; exact rollback required before GlowLight\n'
+
+# Update 0.1.63 / stage 145 — canonical Gamma result and GlowLight readiness.
+# Gamma was runtime-stable but its visual effect remained unconfirmed. The exact
+# PACK10_01 baseline was restored. Gamma stays runtime-unvalidated and
+# nonproduction; do not repeat it merely to strengthen the visual claim.
+#
+# Run metadata-only verification:
+#   bash workstreams/quartet_restoration/145_collect_gamma_runtime_observation_glowlight_readiness_evidence.sh
+#
+# GlowLight remains untested and cannot be activated by this update. A later
+# GlowLight-only runtime stage requires separate user authorization, exact
+# PACK10_01 baseline preflight and exact rollback. PACK10_03 must remain untouched.
+printf '[DONE] Stage 144: Gamma runtime-stable, visual effect unconfirmed, exact PACK10_01 rollback verified; no promotion\n'
+printf '[READY] Stage 145: verify canonical Gamma record and assess GlowLight as a separate unauthorized Fast Test Lab candidate\n'
+
+# Update 0.1.64 / stage 146 — GlowLight-only Fast Test Lab harness.
+# The harness is prepared but the user has deferred the GlowLight test until a
+# suitable save/route exists. Do not activate it in the meantime.
+printf '[DEFERRED] Stage 146: GlowLight harness ready but intentionally parked until a suitable save is available\n'
+
+# Update 0.1.65 / stage 147 — Hinako wet-school-uniform local Fast Test profile.
+# Builds only a local PACK10_02 candidate from the current dynamic baseline,
+# replacing exactly PC00_Scl_W_P_School_Wet.g1m inside pc00_scl_w. The stage
+# performs a full re-extract but does not modify or activate the installed game.
+#
+# Run:
+#   bash workstreams/quartet_restoration/147_prepare_hinako_wet_school_uniform_fast_test_profile.sh
+#
+# Upload:
+#   .local/reports/quartet_restoration/BR_quartet_restoration_hinako_wet_school_uniform_fast_test_profile_evidence.tar.zst
+printf '[READY] Stage 147: build and fully verify one local Hinako wet-school-uniform Fast Test profile; no activation\n'
+
+# Update 0.1.66 / stage 148 — isolated Hinako wet-school-uniform Fast Test Lab.
+# Stage 147 is locally verified at:
+# 5e15a3b5c7fa4f37e3d1a8aedeb40a7cf40ceb6f0b5d9490fe94de287141e8d5
+#
+# The user reports current game files are baseline, but activation still requires
+# the exact stage-147 PACK10_02 baseline hash. Only PACK10_02 is targeted;
+# PACK10_01, PACK10_03 and PACK11 are byte guards. GlowLight stays deferred.
+#
+# Authorized activation:
+#   bash workstreams/quartet_restoration/148_hinako_wet_school_uniform_fast_test_lab.sh activate --user-authorized-wet-school-test
+#
+# Exact rollback after fully exiting the game:
+#   bash workstreams/quartet_restoration/148_hinako_wet_school_uniform_fast_test_lab.sh rollback
+printf '[READY] Stage 148: isolated wet-school-uniform PACK10_02 Fast Test activation with exact rollback; GlowLight deferred\n'
+
+# Stage 150 note (0.1.68): the stage-149 Hinako wet-school composite G1MM profile
+# has a dedicated reversible Fast Test Lab harness at:
+#   workstreams/quartet_restoration/150_hinako_wet_school_composite_g1mm_fast_test_lab.sh
+# Do not activate it implicitly. Wet blouse transparency, the canonical school-uniform
+# collar geometry, and the missing wet-skin/water-droplet layer are separate targets.
+# GlowLight remains deferred.
+
+# Update 0.1.69 / stage 151 — failed G1MM canonicalization + G1MG differential.
+# Stage 150 is runtime-failed: no process crash, but severe model/mesh corruption.
+# Exact PACK10_02 rollback was verified. Never reuse the whole G1MM splice.
+# Stage 151 is read-only and compares Original/Quartet dry/wet G1MG bindings.
+#
+# Run:
+#   bash workstreams/quartet_restoration/151_collect_hinako_wet_school_g1mg_binding_differential_evidence.sh
+#
+# Upload:
+#   .local/reports/quartet_restoration/BR_quartet_restoration_hinako_wet_school_g1mg_binding_differential_evidence.tar.zst
+printf '[FAILED+ROLLED-BACK] Stage 150: composite whole-G1MM probe caused severe model corruption; exact PACK10_02 baseline restored\n'
+printf '[READY] Stage 151: read-only four-way G1MG binding/parameter differential; no game write or complete-chunk transplant\n'
+
+# Update 0.1.70 / stage 152 — Hinako wet P_ACCESSORY 80-byte G1MM exact-field audit.
+# Stage 151 yielded zero exact-base-control G1MG rows. This stage reads only
+# pc00 nkd/scl/swm dry/wet controls and compares the P_ACCESSORY G1MM/MM1G at
+# aligned 4-byte field granularity. No profile, PAK or installed-game write.
+#
+# Run:
+#   bash workstreams/quartet_restoration/152_collect_hinako_wet_accessory_g1mm_exact_field_evidence.sh
+#
+# Upload:
+#   .local/reports/quartet_restoration/BR_quartet_restoration_hinako_wet_accessory_g1mm_exact_field_evidence.tar.zst
+printf '[DONE] Stage 151: local four-way G1MG audit verified; zero exact-base-control parsed binding rows\n'
+printf '[READY] Stage 152: read-only 80-byte P_ACCESSORY G1MM exact-field audit with nkd/scl/swm controls\n'
+
+# Update 0.1.71 / stage 153 — Hinako wet-school material/submesh remap audit.
+# Local stage-152 evidence has zero exact 4-byte candidates, so P_ACCESSORY
+# G1MM is closed as a write target. This stage instead aligns Scl_W_default wet
+# materials/shader blocks by exact content fingerprints and submeshes by
+# binding-independent geometry plus MESH_LOD support. No game write or repack.
+#
+# Run:
+#   bash workstreams/quartet_restoration/153_collect_hinako_wet_school_material_submesh_remap_evidence.sh
+#
+# Upload:
+#   .local/reports/quartet_restoration/BR_quartet_restoration_hinako_wet_school_material_submesh_remap_evidence.tar.zst
+printf '[DONE] Stage 152: local 80-byte P_ACCESSORY audit verified; 0 exact-field candidates, no write\n'
+printf '[READY] Stage 153: content-based wet material/shader fingerprint + strong submesh remap audit; no game write\n'
+
+# Update 0.1.72 / stage 154 — wet-school shader-schema/material-usage audit.
+# Stage 153 is locally verified with 10/10 preserved wet material fingerprints,
+# source material 3 -> target material 4, but 0 strong/topology submesh mappings,
+# 0 whole shader-block fingerprint matches and 0 bounded binding candidates.
+# Do not patch material/submesh indices. Stage 154 aligns only shader schemas
+# used by preserved wet materials and checks individual values with dry controls.
+# No game write or repack.
+#
+# Run:
+#   bash workstreams/quartet_restoration/154_collect_hinako_wet_school_shader_schema_material_usage_evidence.sh
+#
+# Upload:
+#   .local/reports/quartet_restoration/BR_quartet_restoration_hinako_wet_school_shader_schema_material_usage_evidence.tar.zst
+printf '[DONE] Stage 153: all wet material fingerprints preserved, but 0 safe submesh/binding candidates; no write\n'
+printf '[READY] Stage 154: material-scoped shader-schema/value audit with dry controls; no game write\n'
+
+# Update 0.1.73 / stage 155 — Hinako wet G1T texture-entry differential.
+# Stage 154 is locally verified at caf47bbe9d7485f9545e089a01c6a159bdea9ce715dc6ec5720329c2c99a63c8:
+# all preserved wet materials are used, but there are 0 unique target shader
+# schema matches, 0 parameter comparisons and 0 bounded scalar candidates.
+# Stage 155 is read-only and audits pc00 nkd/scl/swm dry/wet G1T entries plus
+# scl_wh, including grounded school transitions 24->21, 26->23, 30->27 and
+# exact payload families shared across wet packs. No G1T/PAK write.
+printf '[DONE] Stage 154: preserved wet materials used, but 0 safe shader-schema/value candidates; no write\n'
+printf '[READY] Stage 155: read-only G1T texture-entry/shared-wet-payload differential; no game write\n'
+
+# Stage 156 hotfix (0.1.75): 0.1.74 report assembly had a local-variable shadowing defect;
+# rerun the same read-only contract with the corrected collector.
+# Stage 156 (0.1.74): read-only Hinako wet-texture content/alpha and one-entry
+# target-native G1T rebuild feasibility. Requires the verified stage-155 report.
+# bash workstreams/quartet_restoration/156_collect_hinako_wet_texture_content_alpha_rebuild_feasibility_evidence.sh
+
+# Update 0.1.76 / stage 157 — no-install Hinako wet-school entry-23 Fast Test profile.
+# Stage 156 is locally verified at:
+# 78e975823454ca5416528d6e7f05b522d9b9b7599aab73c99d05b5a25f80367a
+# It confirmed a target-native one-entry G1T rebuild is feasible. Stage 157
+# retains the runtime-stable School_Wet G1M component and changes only G1T entry
+# 23 in addition, then fully re-extracts the local PACK10_02 profile. No game write.
+#
+# Run:
+#   bash workstreams/quartet_restoration/157_prepare_hinako_wet_school_entry23_fast_test_profile.sh
+printf '[DONE] Stage 156: exact missing wet-texture transition grounded; one-entry target-native scl_w.g1t rebuild verified, no write\n'
+printf '[READY] Stage 157: build fully verified local PACK10_02 profile with School_Wet + only G1T entry 23; no activation\n'

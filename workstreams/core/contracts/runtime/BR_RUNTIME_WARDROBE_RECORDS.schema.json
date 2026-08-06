@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "BR_RUNTIME_WARDROBE_RECORDS.schema.json",
+  "title": "Blue Reflection runtime wardrobe append record set",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["type", "format_version", "capability", "records"],
+  "properties": {
+    "type": {"const": "br_runtime_wardrobe_records"},
+    "format_version": {"const": 1},
+    "capability": {"const": "wardrobe_registry_append_v1"},
+    "records": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 8,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["label_id", "character", "field08", "field0c", "field10", "field14", "field18", "field1c", "field20", "field24", "field28", "field2c", "visible"],
+        "properties": {
+          "label_id": {"type": "integer", "minimum": 0, "maximum": 4294967295},
+          "character": {"type": "integer", "minimum": 0, "maximum": 4294967295},
+          "field08": {"type": "integer", "minimum": 0, "maximum": 4294967295},
+          "field0c": {"type": "integer", "minimum": 0, "maximum": 4294967295},
+          "field10": {"type": "integer", "minimum": 0, "maximum": 4294967295},
+          "field14": {"type": "integer", "minimum": 0, "maximum": 4294967295},
+          "field18": {"type": "integer", "minimum": 0, "maximum": 4294967295},
+          "field1c": {"type": "integer", "minimum": 0, "maximum": 4294967295},
+          "field20": {"type": "integer", "minimum": 0, "maximum": 4294967295},
+          "field24": {"type": "integer", "minimum": 0, "maximum": 4294967295},
+          "field28": {"type": "integer", "minimum": 0, "maximum": 4294967295},
+          "field2c": {"type": "integer", "minimum": 0, "maximum": 4294967295},
+          "visible": {"type": "boolean"}
+        }
+      }
+    }
+  }
+}

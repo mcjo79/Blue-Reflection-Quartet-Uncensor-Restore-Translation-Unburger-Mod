@@ -228,7 +228,7 @@
     "stage-97 concludes the missing Dressing Room route is not explained by the selected XML/string tables and requires save or platform entitlement surface analysis",
     "generation 8 remains fully rolled back to baseline; PC08 and all new payload generations remain blocked"
   ],
-  "current_stage": "stage103_bkn_generation9_append_only_label_preview",
+  "current_stage": "stage105_generation10_controlled_runtime_test",
   "format_version": 1,
   "must_not_modify": [
     "translation JSONs",
@@ -236,7 +236,7 @@
     "installed game files",
     "Git state"
   ],
-  "next_stage": "Run stage 103 against the clean Quartet root. Reuse generation-8 PACK10_02 byte-for-byte and rebuild only a local generation-9 PACK12 candidate by appending String_No 393339-393346 to the four locale-specific str_costume.xml members. Preserve every existing row, especially Quartet-only 393335-393338, then publish generation 9 through the existing generic manifest adapter and run read-only canonical preview. Do not install, Prepare, Commit, perform runtime validation, replace an existing costume, enable global show-all, build PC08, include wet BKN, modify core/Translation/Restoration, edit saves, or manage Git. If preview fails, restore generation-8 ACTIVE.json.",
+  "next_stage": "Run stage 105 controlled Generation 10 runtime test using setup -> attach -> finish. Setup revalidates and commits the exact Generation 9 two-PAK DLC payload; attach adds only logical wardrobe indices 56..63 in process memory through wardrobe_registry_append_v1; finish requires the game closed and performs mandatory full transaction rollback. PC08 and wet BKN remain blocked. Return to core only if capability discovery or B1 module signature validation fails.",
   "outputs": [
     "DLC_CONTENT_INVENTORY.tsv",
     "DLC_MEMBER_BINDINGS.tsv",
@@ -921,8 +921,8 @@
     "wet_parameter_record_semantics_proven": false,
     "wet_variant_included_in_dry_candidate": false
   },
-  "status": "generation8_rolled_back_stage102_accepted_generation9_append_only_label_preview_ready",
+  "status": "generation10_stage104_plan_pass_controlled_runtime_test_ready",
   "type": "br_workstream_status",
-  "version": "0.0.65",
+  "version": "0.0.67",
   "workstream_id": "quartet_legacy_dlc"
 }

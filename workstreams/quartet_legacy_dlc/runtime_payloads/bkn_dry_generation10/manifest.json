@@ -1,0 +1,58 @@
+{
+  "type": "br_quartet_legacy_dlc_runtime_payload",
+  "format_version": 1,
+  "payload_id": "bkn_dry_generation10",
+  "generation": 10,
+  "family": "bkn_dry",
+  "members": [
+    "costume_pc00_bkn",
+    "costume_pc01_bkn",
+    "costume_pc02_bkn",
+    "costume_pc03_bkn",
+    "costume_pc04_bkn",
+    "costume_pc05_bkn",
+    "costume_pc06_bkn",
+    "costume_pc07_bkn"
+  ],
+  "requires": {
+    "core_capability": "wardrobe_registry_append_v1",
+    "target_profile": "blue_reflection_quartet_wardrobe_registry_v1",
+    "pak_payload_generation": 9,
+    "runtime_module": "B1.dll"
+  },
+  "wardrobe_records": "wardrobe_records.json",
+  "runtime_semantics": {
+    "append_only": true,
+    "logical_indices": [
+      56,
+      57,
+      58,
+      59,
+      60,
+      61,
+      62,
+      63
+    ],
+    "visible_indices": [
+      56,
+      57,
+      58,
+      59,
+      60,
+      61,
+      62,
+      63
+    ],
+    "preserve_existing_indices": "0..55",
+    "global_show_all": false,
+    "memory_only": true,
+    "save_mutation": false,
+    "on_disk_b1_patch": false,
+    "disable_path": "exit/restart game process"
+  },
+  "scope": {
+    "dry_bkn_pc00_pc07": true,
+    "pc08": false,
+    "wet_bkn": false
+  }
+}

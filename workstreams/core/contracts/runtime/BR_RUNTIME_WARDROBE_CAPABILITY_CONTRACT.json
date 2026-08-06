@@ -1,0 +1,28 @@
+{
+  "type": "br_core_runtime_capability_contract",
+  "format_version": 1,
+  "capability": "wardrobe_registry_append_v1",
+  "owner": "core",
+  "semantics": {
+    "memory_only": true,
+    "on_disk_game_binary_patch": false,
+    "save_mutation_by_core": false,
+    "preserve_baseline_records_exactly": true,
+    "append_only": true,
+    "global_show_all": false,
+    "existing_record_replacement": false,
+    "max_append_records": 8,
+    "visibility_scope": "only appended records whose external input explicitly sets visible=true",
+    "disable_path": "exit/restart target game process",
+    "fail_closed": true
+  },
+  "inputs": {
+    "target_profile": "core-owned, target-specific signatures/RVAs and bounded patch sites",
+    "logical_records": "external DLC-owned JSON validated by BR_RUNTIME_WARDROBE_RECORDS.schema.json"
+  },
+  "semantic_gate": {
+    "companion_command": "br_wardrobe_runtime capabilities",
+    "required_capability_id": "wardrobe_registry_append_v1",
+    "exact_core_version_required": false
+  }
+}

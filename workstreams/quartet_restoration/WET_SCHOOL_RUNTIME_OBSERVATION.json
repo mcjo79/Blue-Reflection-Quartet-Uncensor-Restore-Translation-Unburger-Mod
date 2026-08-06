@@ -1,0 +1,65 @@
+{
+  "activation_evidence_sha256": "9c6e9431e23a6fd0e96aa5ff08dc897ac003584bfaf4fdd4e20babd08f4f3e49",
+  "canonical_uniform_shape_observation": {
+    "component": "blue neck/collar uniform component",
+    "finding": "The smaller Original-style blue component restored by the School_Wet member is part of the canonical uniform design generally, so final restoration must not treat it as a wet-only visual change.",
+    "future_action": "Audit the corresponding normal school-uniform geometry/attachments for all heroines and restore the canonical smaller shape independently from wet-material restoration.",
+    "independently_archived_original_reference": false,
+    "scope_reported_by_user": "canonical school-uniform shape across scenes and heroines, not limited to wet state",
+    "user_observation": true
+  },
+  "comparison_screenshots": {
+    "baseline_sha256": "010d760e3ea7486530f3e53244e3949656c3172dc7827ca6a31fdb1204a3a5a9",
+    "images_embedded_in_project": false,
+    "mod_sha256": "de27c0b0c6cea77f9d7c711348c05c1927849c2419fa08c761a24ee68c5814d8",
+    "note": "Screenshots support a visible uniform-shape difference, but are not used as proprietary project payloads."
+  },
+  "composite_g1mm_followup": {
+    "exact_pack10_02_baseline_restored": true,
+    "profile_id": "fast_test_pc00_scl_w_school_partial_plus_default_g1mm_c74bc813e41",
+    "runtime_observation_path": "workstreams/quartet_restoration/WET_SCHOOL_COMPOSITE_G1MM_RUNTIME_OBSERVATION.json",
+    "runtime_result": "runtime_failed_severe_model_corruption_without_crash",
+    "whole_g1mm_transplant_reuse_forbidden": true
+  },
+  "crash_observed": false,
+  "exact_pack10_02_baseline_restored": true,
+  "format_version": 1,
+  "glowlight_deferred": true,
+  "interpretation": "The whole-member PC00_Scl_W_P_School_Wet.g1m transplant is runtime-stable and provides a confirmed partial visual restoration, but it is insufficient for wet-blouse transparency. Keep the School_Wet member as a retained component of future candidates, while probing the material/render path separately.",
+  "next_probe": "Do not repeat the failed whole-G1MM composite. Run stage 151 read-only four-way G1MG binding/parameter differential analysis and select at most one target-native minimal probe after dependency/index validation.",
+  "observation": "The scene loads and runs without a crash. The wet blouse remains effectively opaque like Quartet baseline, so the intended wet-clothing transparency is not restored. The School_Wet transplant does produce a small but repeatable change in the blue neck/collar component; the user verified against Original gameplay that this smaller shape is part of the Original appearance and should be retained.",
+  "pack10_02_baseline_sha256": "e798f39c3bcdbb11381197bddf9bd3ad8de6ccf5d7c0c78b22613046d47f5302",
+  "partial_visual_restoration": {
+    "component": "blue neck/collar uniform component",
+    "independently_archived_original_reference": false,
+    "must_be_retained_in_future_candidate": true,
+    "observed_change": "The modded School_Wet member makes this blue component smaller than Quartet baseline.",
+    "original_reference_basis": "User compared the same scene against Original-game gameplay footage and reports that the smaller modded shape matches Original."
+  },
+  "partial_visual_restoration_confirmed": true,
+  "production_eligible": false,
+  "profile_id": "fast_test_pc00_scl_w_school_wet_original_member_b98a68625fe3",
+  "protected_pack10_01_unchanged": true,
+  "protected_pack10_03_unchanged": true,
+  "protected_pack11_unchanged": true,
+  "recorded_utc": "2026-08-07T12:59:00Z",
+  "retest_previous_profile_alone_required": false,
+  "rollback_evidence_sha256": "113d6527cda4c787013d9af070927a52f1bf89735835600a76ae22644677aaed",
+  "runtime_stable": true,
+  "runtime_tested": true,
+  "runtime_validated": false,
+  "target_relative_path": "Data/PACK10_02.PAK",
+  "target_transparency_restored": false,
+  "tool_version": "0.1.68",
+  "type": "br_quartet_restoration_hinako_wet_school_uniform_runtime_observation",
+  "updated_utc": "2026-08-07T13:48:00Z",
+  "visual_change_observed": true,
+  "wet_skin_droplet_observation": {
+    "future_action": "Track wet-skin/droplet restoration separately from blouse transparency and uniform geometry; compare dry/wet state pairs before selecting another payload transplant.",
+    "original": "skin is visibly wet and shows water droplets",
+    "quartet": "the visible wet-skin/water-droplet effect is absent",
+    "scene": "first other-world sequence after Hinako is damaged and falls into water while wearing the school uniform",
+    "semantics_confirmed_by_asset_binding": false,
+    "user_observation": true
+  }
+}

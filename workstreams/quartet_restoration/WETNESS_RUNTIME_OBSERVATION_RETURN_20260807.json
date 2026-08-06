@@ -1,0 +1,38 @@
+{
+  "format_version": 1,
+  "type": "br_quartet_restoration_focused_wetness_runtime_observation_return",
+  "source_archive_sha256": "1b13b955d9e06463956c1947c3485fed8c69bd57d802b3e5a7df621dfd843e59",
+  "external_sha256_verified": true,
+  "inner_sha256s_verified": true,
+  "source_scope": "observation_only",
+  "observation": "During a controlled wardrobe-runtime failure, dry selections could resolve to missing/invalid outfits, unrelated geometry, or the wrong character. Activating Change Wetness restored the correct selected character model while wet state was active; this was observed for Hinako and other girls.",
+  "supported": [
+    "the wetness transition is a separate and useful runtime state transition worth tracing",
+    "character identity can be recovered correctly during wet state despite a broken dry wardrobe state",
+    "before/after wetness tracing may reveal wet-specific model, costume, material, shader, coverage, or asset routing"
+  ],
+  "not_proven": [
+    "that the wetness handler directly controls alpha or transparency",
+    "that wet and dry necessarily use separate model or mesh files",
+    "that the buggy wardrobe-runtime cache behavior belongs in normal Restoration",
+    "that synthetic Generation 10 v2 BKN records are required",
+    "that any current shader, material, texture, or entry-23 candidate is correct"
+  ],
+  "suggested_read_only_trace": [
+    "active character identity",
+    "current costume/index or resolved costume state",
+    "model/object pointers",
+    "material or material-set pointers",
+    "shader/program selection",
+    "wetness flag/state",
+    "coverage/clothing-state fields",
+    "resolved asset IDs or paths"
+  ],
+  "preferred_comparison": "normal native costume dry->wet versus the same character/state under a Restoration-only wet-clothing candidate",
+  "generation10_v2_dependency_forbidden": true,
+  "rollback_verified": true,
+  "baseline_files": {
+    "Data/PACK10_02.PAK": "e798f39c3bcdbb11381197bddf9bd3ad8de6ccf5d7c0c78b22613046d47f5302",
+    "Data/PACK12.PAK": "a108a22dd59116e79cf0fabcffd5d0427f72e13de267318869431d28717404f4"
+  }
+}
