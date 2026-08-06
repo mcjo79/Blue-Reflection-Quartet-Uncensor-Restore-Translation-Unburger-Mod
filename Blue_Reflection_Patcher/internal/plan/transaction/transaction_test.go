@@ -50,12 +50,33 @@ func TestPrepareCommitRollbackExistingAndNewFiles(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(game, "Data", "B.PAK")); !os.IsNotExist(err) {
 		t.Fatal("prepare created a new game file")
 	}
+	if len(prepared.Journal.Files) != 2 {
+		t.Fatalf("unexpected prepared journal: %+v", prepared.Journal)
+	}
+	for _, record := range prepared.Journal.Files {
+		if record.StagedStorageMethod != "reflink" && record.StagedStorageMethod != "copy" {
+			t.Fatalf("unexpected staged storage method for %s: %q", record.RelativePath, record.StagedStorageMethod)
+		}
+		if record.OriginalExisted && record.BackupStorageMethod != "hardlink" && record.BackupStorageMethod != "reflink" && record.BackupStorageMethod != "copy" {
+			t.Fatalf("unexpected backup storage method for %s: %q", record.RelativePath, record.BackupStorageMethod)
+		}
+	}
+	write(t, filepath.Join(staged, "A.PAK"), "source-mutated-after-prepare")
+	stagedPrivate := filepath.Join(prepared.Journal.TransactionRoot, filepath.FromSlash(prepared.Journal.Files[0].StagedPath))
+	if read(t, stagedPrivate) != "patched-a" {
+		t.Fatal("private staged payload changed after its source was modified")
+	}
 	journal, err := Commit(prepared.JournalPath)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if journal.Status != StatusCommitted || read(t, filepath.Join(game, "Data", "A.PAK")) != "patched-a" || read(t, filepath.Join(game, "Data", "B.PAK")) != "new-b" {
 		t.Fatalf("commit result is invalid: %+v", journal)
+	}
+	for _, record := range journal.Files {
+		if record.InstalledStorageMethod != "reflink" && record.InstalledStorageMethod != "copy" && record.InstalledStorageMethod != "already_present" {
+			t.Fatalf("unexpected installed storage method for %s: %q", record.RelativePath, record.InstalledStorageMethod)
+		}
 	}
 	journal, err = Rollback(prepared.JournalPath)
 	if err != nil {
@@ -262,5 +283,83 @@ func TestPrepareRejectsAnalyticalPAKSibling(t *testing.T) {
 		RelativePath: "DATA/PACK00_02.PAK_", StagedPath: payload,
 	}}, nil, nil); err == nil {
 		t.Fatal("transaction accepted preserved analytical .PAK_ target")
+	}
+}
+
+func TestCopyRegularFileVerifiedRejectsWrongHashAndRemovesDestination(t *testing.T) {
+	root := t.TempDir()
+	source := filepath.Join(root, "source")
+	destination := filepath.Join(root, "destination")
+	write(t, source, "payload")
+	if err := copyRegularFileVerified(source, destination, 0o644, "0000000000000000000000000000000000000000000000000000000000000000"); err == nil {
+		t.Fatal("expected verified copy hash mismatch")
+	}
+	if _, err := os.Stat(destination); !os.IsNotExist(err) {
+		t.Fatal("failed verified copy retained destination")
+	}
+}
+
+func TestCommitAndRollbackReportByteProgress(t *testing.T) {
+	root := t.TempDir()
+	game := filepath.Join(root, "game")
+	state := filepath.Join(root, "state")
+	payload := filepath.Join(root, "payload")
+	if err := os.MkdirAll(game, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	target := filepath.Join(game, "Data", "A.PAK")
+	write(t, target, "original-progress-data")
+	write(t, payload, "patched-progress-data-with-more-bytes")
+	prepared, err := Prepare(game, state, []ChangeSpec{{RelativePath: "Data/A.PAK", StagedPath: payload}}, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var commitEvents []ProgressEvent
+	if _, err := CommitWithProgress(prepared.JournalPath, func(event ProgressEvent) {
+		commitEvents = append(commitEvents, event)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	assertProgressComplete(t, commitEvents, "commit", "Data/A.PAK")
+
+	var rollbackEvents []ProgressEvent
+	if _, err := RollbackWithProgress(prepared.JournalPath, func(event ProgressEvent) {
+		rollbackEvents = append(rollbackEvents, event)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	assertProgressComplete(t, rollbackEvents, "rollback", "Data/A.PAK")
+	if got := read(t, target); got != "original-progress-data" {
+		t.Fatalf("rollback restored %q", got)
+	}
+}
+
+func assertProgressComplete(t *testing.T, events []ProgressEvent, operation, relativePath string) {
+	t.Helper()
+	if len(events) == 0 {
+		t.Fatalf("%s did not emit progress", operation)
+	}
+	seenPath := false
+	seenPositiveTotal := false
+	for _, event := range events {
+		if event.Operation != operation {
+			t.Fatalf("unexpected progress operation %q", event.Operation)
+		}
+		if event.RelativePath == relativePath {
+			seenPath = true
+		}
+		if event.OverallBytesTotal > 0 {
+			seenPositiveTotal = true
+		}
+		if event.OverallBytesDone > event.OverallBytesTotal && event.OverallBytesTotal > 0 {
+			t.Fatalf("progress exceeded total: %+v", event)
+		}
+	}
+	last := events[len(events)-1]
+	if last.Phase != "complete" || last.OverallBytesDone != last.OverallBytesTotal {
+		t.Fatalf("%s progress did not finish: %+v", operation, last)
+	}
+	if !seenPath || !seenPositiveTotal {
+		t.Fatalf("%s progress lacks path or byte totals: %+v", operation, events)
 	}
 }

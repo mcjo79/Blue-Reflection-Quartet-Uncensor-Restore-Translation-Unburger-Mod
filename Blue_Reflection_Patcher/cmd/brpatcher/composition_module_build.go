@@ -12,16 +12,28 @@ import (
 )
 
 func buildQuartetModuleComposition(projectRoot, gameRoot string, modules []string, tool compositionArchiveTool, timeout time.Duration) (quartetCompositionBuildReport, error) {
+	return buildQuartetModuleCompositionWithPolicy(projectRoot, gameRoot, modules, restorationProfilePolicyRuntimeValidated, tool, timeout)
+}
+
+func buildQuartetModuleCompositionWithPolicy(projectRoot, gameRoot string, modules []string, rawPolicy string, tool compositionArchiveTool, timeout time.Duration) (quartetCompositionBuildReport, error) {
 	normalized, err := normalizeQuartetCompositionModules(modules)
 	if err != nil {
 		return quartetCompositionBuildReport{}, err
 	}
-	if sameQuartetCompositionModules(normalized, []string{quartetTranslationModule, quartetRestorationModule}) {
-		report, err := buildQuartetComposition(projectRoot, gameRoot, tool, timeout)
-		report.FormatVersion = quartetCompositionBuildVersion
-		report.SelectedModules = append([]string{}, normalized...)
-		report.CompositionPolicy = "verify every selected-module source against one installed baseline, merge only declared member deltas, reject additions/removals or non-identical conflicts, fully re-extract rebuilt archives, and publish locally without touching the game"
-		return report, err
+	policy, err := normalizeRestorationProfilePolicy(rawPolicy)
+	if err != nil {
+		return quartetCompositionBuildReport{}, err
+	}
+	if err := validateRestorationProfilePolicyForModules(policy, normalized); err != nil {
+		return quartetCompositionBuildReport{}, err
+	}
+	runtimeTestMode := policy == restorationProfilePolicyAllCandidatesRuntimeTest
+	if !runtimeTestMode && sameQuartetCompositionModules(normalized, []string{quartetTranslationModule, quartetRestorationModule}) {
+		// The specialized Translation + Restoration builder writes an embedded
+		// report before returning. Return that exact report unchanged so the
+		// canonical report written by the CLI remains byte-for-byte equivalent
+		// after JSON decoding to the report embedded beside the payloads.
+		return buildQuartetComposition(projectRoot, gameRoot, tool, timeout)
 	}
 
 	report := quartetCompositionBuildReport{
@@ -31,8 +43,12 @@ func buildQuartetModuleComposition(projectRoot, gameRoot string, modules []strin
 		CompositionPolicy:    "verify every selected-module source against one installed baseline, merge only declared member deltas, reject additions/removals or non-identical conflicts, fully re-extract rebuilt archives, and publish locally without touching the game",
 		OutputRoot:           filepath.ToSlash(quartetCompositionOutputRelative),
 		EmbeddedReportPath:   filepath.ToSlash(filepath.Join(quartetCompositionOutputRelative, quartetCompositionEmbeddedReport)),
-		ProductionProfileIDs: []string{}, ProfileInputs: []compositionBuildProfileInput{},
+		ProductionProfileIDs: []string{}, RuntimeTestProfileIDs: []string{}, SelectedProfileIDs: []string{}, ProfileInputs: []compositionBuildProfileInput{},
+		RestorationProfilePolicy: policy, RuntimeTestOnly: runtimeTestMode,
 		LegacyDLCInputs: []compositionBuildLegacyDLCInput{}, Archives: []compositionBuildArchive{}, Errors: []string{}, Warnings: []string{},
+	}
+	if runtimeTestMode {
+		report.CompositionPolicy = "isolated Restoration-only runtime-test build: select every current valid profile, verify exact manifests/payloads/baselines, reject conflicts, fully re-extract each composed archive, and publish preview-only artifacts without changing production eligibility"
 	}
 	projectRoot, err = filepath.Abs(projectRoot)
 	if err != nil {
@@ -70,13 +86,17 @@ func buildQuartetModuleComposition(projectRoot, gameRoot string, modules []strin
 	}
 	report.GustPakPath, report.GustPakSHA256, report.GustPakBytes = toolPath, toolHash, toolSize
 
-	preflight, err := buildQuartetModuleCompositionPreview(projectRoot, gameRoot, normalized)
+	preflight, err := buildQuartetModuleCompositionPreviewWithPolicy(projectRoot, gameRoot, normalized, policy)
 	if err != nil {
 		return report, fmt.Errorf("composition preflight: %w", err)
 	}
 	report.PreflightStatus = preflight.Status
-	if preflight.Status != "ready_for_composition_build" {
-		err := fmt.Errorf("composition preflight status is %s, expected ready_for_composition_build", preflight.Status)
+	expectedPreflight := "ready_for_composition_build"
+	if runtimeTestMode {
+		expectedPreflight = "ready_for_runtime_test_composition_build"
+	}
+	if preflight.Status != expectedPreflight {
+		err := fmt.Errorf("composition preflight status is %s, expected %s", preflight.Status, expectedPreflight)
 		report.Errors = append(report.Errors, err.Error())
 		return report, err
 	}
@@ -96,14 +116,19 @@ func buildQuartetModuleComposition(projectRoot, gameRoot string, modules []strin
 			return report, err
 		}
 		for _, profile := range preflight.Profiles {
-			if !profile.ProductionEligible {
+			if !profile.SelectedForComposition {
 				continue
 			}
 			item, ok := registry.Profiles[profile.ProfileID]
 			if !ok {
 				return report, fmt.Errorf("preflight-selected profile disappeared: %s", profile.ProfileID)
 			}
-			report.ProductionProfileIDs = append(report.ProductionProfileIDs, profile.ProfileID)
+			report.SelectedProfileIDs = append(report.SelectedProfileIDs, profile.ProfileID)
+			if runtimeTestMode {
+				report.RuntimeTestProfileIDs = append(report.RuntimeTestProfileIDs, profile.ProfileID)
+			} else {
+				report.ProductionProfileIDs = append(report.ProductionProfileIDs, profile.ProfileID)
+			}
 			key := foldCompositionPath(item.Manifest.TargetRelativePath)
 			profilesByArchive[key] = append(profilesByArchive[key], item)
 			manifestPath, err := secureJoin(projectRoot, item.ManifestPath)
@@ -128,6 +153,8 @@ func buildQuartetModuleComposition(projectRoot, gameRoot string, modules []strin
 		}
 	}
 	sort.Strings(report.ProductionProfileIDs)
+	sort.Strings(report.RuntimeTestProfileIDs)
+	sort.Strings(report.SelectedProfileIDs)
 	sort.Slice(report.ProfileInputs, func(i, j int) bool { return report.ProfileInputs[i].ProfileID < report.ProfileInputs[j].ProfileID })
 	for key := range profilesByArchive {
 		sort.Slice(profilesByArchive[key], func(i, j int) bool {
@@ -214,6 +241,8 @@ func buildQuartetModuleComposition(projectRoot, gameRoot string, modules []strin
 			archive, err = publishTranslationPassthrough(projectRoot, stagingRoot, translationBase)
 		case hasLegacy && !hasTranslation && len(profiles) == 0:
 			archive, err = publishLegacyDLCPassthrough(projectRoot, stagingRoot, legacy)
+		case !hasTranslation && !hasLegacy && len(profiles) == 1 && profiles[0].Manifest.RuntimeValidated:
+			archive, err = publishRestorationProfilePassthrough(projectRoot, gameRoot, stagingRoot, profiles[0])
 		default:
 			archive, err = composeQuartetModuleArchive(projectRoot, gameRoot, stagingRoot, workRoot, relative, translationBase, hasTranslation, legacy, hasLegacy, profiles, tool, timeout)
 		}
@@ -246,6 +275,53 @@ func buildQuartetModuleComposition(projectRoot, gameRoot string, modules []strin
 	return report, nil
 }
 
+func publishRestorationProfilePassthrough(projectRoot, gameRoot, stagingRoot string, profile discoveredLocalProfile) (compositionBuildArchive, error) {
+	manifest := profile.Manifest
+	archive := compositionBuildArchive{
+		ArchiveRelativePath: manifest.TargetRelativePath, Mode: "verified_restoration_profile_passthrough",
+		BaseSourceKind: "verified_runtime_validated_restoration_profile", BaseSourcePath: relativeDisplayPath(projectRoot, profile.SourcePath),
+		BaseSHA256: manifest.ProfileSHA256, BaseBytes: manifest.ProfileSize,
+		ProfileIDs: []string{manifest.ProfileID}, TranslationChangedMembers: []string{}, OverlayMembers: []compositionBuildMember{},
+		Status: "failed", Warnings: []string{}, ManifestDeclarationChecked: true,
+	}
+	if !manifest.RuntimeValidated {
+		return archive, fmt.Errorf("Restoration passthrough requires a runtime-validated profile")
+	}
+	if err := verifyDiscoveredProfileAgain(projectRoot, profile); err != nil {
+		return archive, fmt.Errorf("reverify Restoration profile: %w", err)
+	}
+	installedPath, _, err := resolveCaseInsensitiveCompositionPath(gameRoot, manifest.TargetRelativePath)
+	if err != nil {
+		return archive, err
+	}
+	installedHash, installedSize, err := checkedFile(installedPath)
+	if err != nil {
+		return archive, err
+	}
+	archive.InstalledBaselinePath = installedPath
+	archive.InstalledBaselineSHA256 = installedHash
+	archive.InstalledBaselineBytes = installedSize
+	if installedHash != manifest.BaselineSHA256 || installedSize != manifest.BaselineSize {
+		return archive, fmt.Errorf("Restoration profile baseline differs from installed archive")
+	}
+	destination, err := secureJoin(stagingRoot, manifest.TargetRelativePath)
+	if err != nil {
+		return archive, err
+	}
+	method, err := cloneOrCopyCompositionFile(profile.SourcePath, destination, manifest.ProfileSHA256, manifest.ProfileSize, 0o600)
+	if err != nil {
+		return archive, err
+	}
+	archive.Warnings = append(archive.Warnings, "storage_method="+method)
+	archive.OutputPath = filepath.ToSlash(filepath.Join(quartetCompositionOutputRelative, filepath.FromSlash(manifest.TargetRelativePath)))
+	archive.OutputSHA256, archive.OutputBytes, err = checkedFile(destination)
+	if err != nil {
+		return archive, err
+	}
+	archive.Status = "published_verified_restoration_profile_passthrough"
+	return archive, nil
+}
+
 func publishLegacyDLCPassthrough(projectRoot, stagingRoot string, legacy payloadpreview.LegacyDLCCompositionArtifact) (compositionBuildArchive, error) {
 	archive := compositionBuildArchive{
 		ArchiveRelativePath: legacy.RelativePath, Mode: "verified_legacy_dlc_passthrough",
@@ -259,9 +335,11 @@ func publishLegacyDLCPassthrough(projectRoot, stagingRoot string, legacy payload
 	if err != nil {
 		return archive, err
 	}
-	if err := copyFileDurable(legacy.CandidatePath, destination, legacy.CandidateSHA256, legacy.CandidateSize, 0o600); err != nil {
+	method, err := cloneOrCopyCompositionFile(legacy.CandidatePath, destination, legacy.CandidateSHA256, legacy.CandidateSize, 0o600)
+	if err != nil {
 		return archive, err
 	}
+	archive.Warnings = append(archive.Warnings, "storage_method="+method)
 	archive.OutputPath = filepath.ToSlash(filepath.Join(quartetCompositionOutputRelative, filepath.FromSlash(legacy.RelativePath)))
 	archive.OutputSHA256, archive.OutputBytes, err = checkedFile(destination)
 	if err != nil {

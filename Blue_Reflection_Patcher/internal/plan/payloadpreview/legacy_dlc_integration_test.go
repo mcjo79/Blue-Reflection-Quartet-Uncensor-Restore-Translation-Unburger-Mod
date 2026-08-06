@@ -378,3 +378,123 @@ func TestLegacyDLCAdapterHasNoConcreteGenerationBindings(t *testing.T) {
 		}
 	}
 }
+
+func generationNineChangedMembers() []string {
+	return []string{
+		"saves/b1/chara/charabase.xml",
+		"saves/b1/text_en/str_costume.xml",
+		"saves/b1/text_jp/str_costume.xml",
+		"saves/b1/text_sc/str_costume.xml",
+		"saves/b1/text_tc/str_costume.xml",
+	}
+}
+
+func setPACK12ChangedMembers(t *testing.T, fixture legacyDLCFixtureData, changed []string) {
+	t.Helper()
+	rewriteLegacyDLCManifest(t, fixture, func(manifest *legacyDLCManifest) {
+		for index := range manifest.Artifacts {
+			if manifest.Artifacts[index].TargetPath == "Data/PACK12.PAK" {
+				manifest.Artifacts[index].MemberDelta.Changed = append([]string{}, changed...)
+				return
+			}
+		}
+		t.Fatal("PACK12 fixture artifact not found")
+	})
+}
+
+func TestLegacyDLCGenerationEightChangedMemberCompatibility(t *testing.T) {
+	members := []string{
+		"costume_pc00_bkn", "costume_pc01_bkn", "costume_pc02_bkn", "costume_pc03_bkn",
+		"costume_pc04_bkn", "costume_pc05_bkn", "costume_pc06_bkn", "costume_pc07_bkn",
+	}
+	fixture := legacyDLCManifestFixture(t, members, 8)
+	contract, err := LoadLegacyDLCCompositionContract(fixture.Project, fixture.Game)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(contract.Artifacts) != 2 || !sameStrings(contract.Artifacts[1].ChangedMembers, []string{"saves/b1/chara/charabase.xml"}) {
+		t.Fatalf("generation 8 compatibility changed: %+v", contract)
+	}
+}
+
+func TestLegacyDLCGenerationNineAppendOnlyLabelSetPasses(t *testing.T) {
+	members := []string{
+		"costume_pc00_bkn", "costume_pc01_bkn", "costume_pc02_bkn", "costume_pc03_bkn",
+		"costume_pc04_bkn", "costume_pc05_bkn", "costume_pc06_bkn", "costume_pc07_bkn",
+	}
+	fixture := legacyDLCManifestFixture(t, members, 9)
+	setPACK12ChangedMembers(t, fixture, generationNineChangedMembers())
+	contract, err := LoadLegacyDLCCompositionContract(fixture.Project, fixture.Game)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(contract.Artifacts) != 2 || !sameStrings(contract.Artifacts[1].ChangedMembers, generationNineChangedMembers()) {
+		t.Fatalf("generation 9 changed-member set was not preserved: %+v", contract)
+	}
+	preview, err := Build(fixture.Project, filepath.Join(fixture.Project, "state"), fixture.Selection)
+	if err != nil {
+		t.Fatal(err)
+	}
+	module := findLegacyDLCModule(t, preview)
+	if preview.Status != "ready" || preview.CommitEnabled || !module.Ready || len(module.Artifacts) != 2 {
+		t.Fatalf("generation 9 canonical preview failed: %+v", preview)
+	}
+}
+
+func TestLegacyDLCGenerationNineMissingRequiredChangedMemberIsRejected(t *testing.T) {
+	fixture := legacyDLCManifestFixture(t, []string{"costume_pc00_bkn"}, 9)
+	changed := generationNineChangedMembers()
+	setPACK12ChangedMembers(t, fixture, changed[:len(changed)-1])
+	if _, err := LoadLegacyDLCCompositionContract(fixture.Project, fixture.Game); err == nil || !strings.Contains(err.Error(), "bounded family policy") {
+		t.Fatalf("partial generation 9 changed-member set was not rejected precisely: %v", err)
+	}
+}
+
+func TestLegacyDLCGenerationNineSixthChangedMemberIsRejected(t *testing.T) {
+	fixture := legacyDLCManifestFixture(t, []string{"costume_pc00_bkn"}, 9)
+	changed := append(generationNineChangedMembers(), "saves/b1/text_fr/str_costume.xml")
+	setPACK12ChangedMembers(t, fixture, changed)
+	if _, err := LoadLegacyDLCCompositionContract(fixture.Project, fixture.Game); err == nil || !strings.Contains(err.Error(), "bounded family policy") {
+		t.Fatalf("sixth PACK12 changed member was not rejected precisely: %v", err)
+	}
+}
+
+func TestLegacyDLCGenerationNineMalformedChangedMembersAreRejected(t *testing.T) {
+	cases := map[string][]string{
+		"wildcard":  {"saves/b1/chara/charabase.xml", "saves/b1/text_*/str_costume.xml"},
+		"traversal": {"saves/b1/chara/charabase.xml", "saves/b1/text_en/../text_jp/str_costume.xml"},
+		"duplicate": {"saves/b1/chara/charabase.xml", "saves/b1/chara/charabase.xml"},
+	}
+	for name, changed := range cases {
+		t.Run(name, func(t *testing.T) {
+			fixture := legacyDLCManifestFixture(t, []string{"costume_pc00_bkn"}, 9)
+			setPACK12ChangedMembers(t, fixture, changed)
+			if _, err := LoadLegacyDLCCompositionContract(fixture.Project, fixture.Game); err == nil {
+				t.Fatalf("malformed changed-member list was accepted: %v", changed)
+			}
+		})
+	}
+}
+
+func TestLegacyDLCStructuredRejectionUsesEmptyArtifacts(t *testing.T) {
+	fixture := legacyDLCManifestFixture(t, []string{"costume_pc00_bkn"}, 9)
+	setPACK12ChangedMembers(t, fixture, generationNineChangedMembers()[:4])
+	preview, err := Build(fixture.Project, filepath.Join(fixture.Project, "state"), fixture.Selection)
+	if err != nil {
+		t.Fatal(err)
+	}
+	module := findLegacyDLCModule(t, preview)
+	if module.Ready || module.Artifacts == nil || len(module.Artifacts) != 0 {
+		t.Fatalf("rejected module must expose a non-nil empty artifact list: %+v", module)
+	}
+	if !strings.Contains(module.Reason, "bounded family policy") {
+		t.Fatalf("structured rejection reason was lost: %q", module.Reason)
+	}
+	data, err := json.Marshal(module)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(data), `"artifacts":null`) {
+		t.Fatalf("rejected module serialized null artifacts: %s", data)
+	}
+}

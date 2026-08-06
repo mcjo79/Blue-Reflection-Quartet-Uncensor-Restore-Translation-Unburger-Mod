@@ -41,15 +41,18 @@ type ChangeSpec struct {
 }
 
 type FileRecord struct {
-	RelativePath    string `json:"relative_path"`
-	OriginalExisted bool   `json:"original_existed"`
-	OriginalSHA256  string `json:"original_sha256,omitempty"`
-	DesiredSHA256   string `json:"desired_sha256"`
-	OriginalMode    uint32 `json:"original_mode,omitempty"`
-	BackupPath      string `json:"backup_path,omitempty"`
-	StagedPath      string `json:"staged_path"`
-	CommitState     string `json:"commit_state"`
-	RollbackState   string `json:"rollback_state"`
+	RelativePath           string `json:"relative_path"`
+	OriginalExisted        bool   `json:"original_existed"`
+	OriginalSHA256         string `json:"original_sha256,omitempty"`
+	DesiredSHA256          string `json:"desired_sha256"`
+	OriginalMode           uint32 `json:"original_mode,omitempty"`
+	BackupPath             string `json:"backup_path,omitempty"`
+	BackupStorageMethod    string `json:"backup_storage_method,omitempty"`
+	StagedPath             string `json:"staged_path"`
+	StagedStorageMethod    string `json:"staged_storage_method,omitempty"`
+	InstalledStorageMethod string `json:"installed_storage_method,omitempty"`
+	CommitState            string `json:"commit_state"`
+	RollbackState          string `json:"rollback_state"`
 }
 
 type Journal struct {
@@ -137,7 +140,8 @@ func Prepare(gameRoot, stateRoot string, changes []ChangeSpec, selectedModules [
 		}
 		stagedRelative := filepath.Join("staged", relative)
 		stagedCopy := filepath.Join(transactionRoot, stagedRelative)
-		if err := copyRegularFile(stagedSource, stagedCopy, 0o600); err != nil {
+		stagedStorageMethod, err := cloneOrCopyRegularFile(stagedSource, stagedCopy, 0o600)
+		if err != nil {
 			return Prepared{}, fmt.Errorf("stage %s: %w", relative, err)
 		}
 		if hash, err := hashFile(stagedCopy); err != nil || hash != desiredHash {
@@ -148,11 +152,12 @@ func Prepare(gameRoot, stateRoot string, changes []ChangeSpec, selectedModules [
 		}
 
 		record := FileRecord{
-			RelativePath:  filepath.ToSlash(relative),
-			DesiredSHA256: desiredHash,
-			StagedPath:    filepath.ToSlash(stagedRelative),
-			CommitState:   "pending",
-			RollbackState: "pending",
+			RelativePath:        filepath.ToSlash(relative),
+			DesiredSHA256:       desiredHash,
+			StagedPath:          filepath.ToSlash(stagedRelative),
+			StagedStorageMethod: stagedStorageMethod,
+			CommitState:         "pending",
+			RollbackState:       "pending",
 		}
 		info, statErr := os.Lstat(target)
 		switch {
@@ -183,7 +188,8 @@ func Prepare(gameRoot, stateRoot string, changes []ChangeSpec, selectedModules [
 				}
 				backupSource = verified
 			}
-			if err := linkOrCopyRegularFile(backupSource, backup, info.Mode().Perm()); err != nil {
+			backupStorageMethod, err := linkCloneOrCopyRegularFile(backupSource, backup, info.Mode().Perm())
+			if err != nil {
 				return Prepared{}, fmt.Errorf("backup %s: %w", relative, err)
 			}
 			if hash, err := hashFile(backup); err != nil || hash != record.OriginalSHA256 {
@@ -193,6 +199,7 @@ func Prepare(gameRoot, stateRoot string, changes []ChangeSpec, selectedModules [
 				return Prepared{}, fmt.Errorf("verify backup %s: %w", relative, err)
 			}
 			record.BackupPath = filepath.ToSlash(backupRelative)
+			record.BackupStorageMethod = backupStorageMethod
 		case errors.Is(statErr, os.ErrNotExist):
 			record.OriginalExisted = false
 		case statErr != nil:
@@ -286,6 +293,10 @@ func DiscardPrepared(journalPath string) (Journal, error) {
 }
 
 func Commit(journalPath string) (Journal, error) {
+	return CommitWithProgress(journalPath, nil)
+}
+
+func CommitWithProgress(journalPath string, progress ProgressFunc) (Journal, error) {
 	journal, err := Load(journalPath)
 	if err != nil {
 		return Journal{}, err
@@ -296,6 +307,7 @@ func Commit(journalPath string) (Journal, error) {
 	if journal.Status != StatusPrepared && journal.Status != StatusCommitting {
 		return Journal{}, fmt.Errorf("cannot commit transaction in status %s", journal.Status)
 	}
+	tracker := newProgressTracker("commit", journal, progress)
 	journal.Status = StatusCommitting
 	if err := writeJournal(journalPath, journal); err != nil {
 		return Journal{}, err
@@ -306,11 +318,13 @@ func Commit(journalPath string) (Journal, error) {
 		if err != nil {
 			return journal, err
 		}
-		currentHash, exists, err := currentRegularHash(target)
+		currentHash, exists, err := tracker.currentRegularHash(index, target, "verify_current")
 		if err != nil {
 			return journal, err
 		}
 		if exists && currentHash == record.DesiredSHA256 {
+			tracker.skipPhase(index, "install")
+			record.InstalledStorageMethod = "already_present"
 			record.CommitState = "committed"
 			journal.UpdatedUTC = time.Now().UTC()
 			if err := writeJournal(journalPath, journal); err != nil {
@@ -325,33 +339,22 @@ func Commit(journalPath string) (Journal, error) {
 		} else if exists {
 			return journal, fmt.Errorf("new target appeared after prepare: %s", record.RelativePath)
 		}
-		stagedHash, err := hashFile(staged)
-		if err != nil {
-			return journal, err
-		}
-		if stagedHash != record.DesiredSHA256 {
-			return journal, fmt.Errorf("staged payload changed: %s", record.RelativePath)
-		}
 		mode := fs.FileMode(0o644)
 		if record.OriginalExisted && record.OriginalMode != 0 {
 			mode = fs.FileMode(record.OriginalMode)
 		}
-		if err := atomicInstall(staged, target, mode); err != nil {
+		installedStorageMethod, err := tracker.atomicInstallVerified(index, staged, target, mode, record.DesiredSHA256, "install")
+		if err != nil {
 			return journal, fmt.Errorf("commit %s: %w", record.RelativePath, err)
 		}
-		installedHash, err := hashFile(target)
-		if err != nil || installedHash != record.DesiredSHA256 {
-			if err == nil {
-				err = fmt.Errorf("installed hash mismatch")
-			}
-			return journal, fmt.Errorf("verify committed %s: %w", record.RelativePath, err)
-		}
+		record.InstalledStorageMethod = installedStorageMethod
 		record.CommitState = "committed"
 		journal.UpdatedUTC = time.Now().UTC()
 		if err := writeJournal(journalPath, journal); err != nil {
 			return journal, err
 		}
 	}
+	tracker.finish()
 	journal.Status = StatusCommitted
 	journal.UpdatedUTC = time.Now().UTC()
 	if err := writeJournal(journalPath, journal); err != nil {
@@ -361,6 +364,10 @@ func Commit(journalPath string) (Journal, error) {
 }
 
 func Rollback(journalPath string) (Journal, error) {
+	return RollbackWithProgress(journalPath, nil)
+}
+
+func RollbackWithProgress(journalPath string, progress ProgressFunc) (Journal, error) {
 	journal, err := Load(journalPath)
 	if err != nil {
 		return Journal{}, err
@@ -373,6 +380,7 @@ func Rollback(journalPath string) (Journal, error) {
 	default:
 		return Journal{}, fmt.Errorf("cannot roll back transaction in status %s", journal.Status)
 	}
+	tracker := newProgressTracker("rollback", journal, progress)
 	journal.Status = StatusRollingBack
 	journal.UpdatedUTC = time.Now().UTC()
 	if err := writeJournal(journalPath, journal); err != nil {
@@ -384,11 +392,13 @@ func Rollback(journalPath string) (Journal, error) {
 		if err != nil {
 			return journal, err
 		}
-		currentHash, exists, err := currentRegularHash(target)
+		currentHash, exists, err := tracker.currentRegularHash(index, target, "verify_current")
 		if err != nil {
 			return journal, err
 		}
 		if record.OriginalExisted && exists && currentHash == record.OriginalSHA256 {
+			tracker.skipPhase(index, "verify_backup")
+			tracker.skipPhase(index, "restore")
 			record.RollbackState = "restored"
 			record.CommitState = "rolled_back"
 			journal.UpdatedUTC = time.Now().UTC()
@@ -398,6 +408,8 @@ func Rollback(journalPath string) (Journal, error) {
 			continue
 		}
 		if !record.OriginalExisted && !exists {
+			tracker.skipPhase(index, "verify_backup")
+			tracker.skipPhase(index, "restore")
 			record.RollbackState = "removed"
 			record.CommitState = "rolled_back"
 			journal.UpdatedUTC = time.Now().UTC()
@@ -407,6 +419,8 @@ func Rollback(journalPath string) (Journal, error) {
 			continue
 		}
 		if record.CommitState != "committed" && currentHash != record.DesiredSHA256 {
+			tracker.skipPhase(index, "verify_backup")
+			tracker.skipPhase(index, "restore")
 			record.RollbackState = "not_needed"
 			continue
 		}
@@ -414,7 +428,7 @@ func Rollback(journalPath string) (Journal, error) {
 			return journal, fmt.Errorf("refusing rollback because target changed after commit: %s", record.RelativePath)
 		}
 		if record.OriginalExisted {
-			backupHash, err := hashFile(backup)
+			backupHash, err := tracker.hashFile(index, backup, "verify_backup")
 			if err != nil {
 				return journal, err
 			}
@@ -425,11 +439,13 @@ func Rollback(journalPath string) (Journal, error) {
 			if mode == 0 {
 				mode = 0o644
 			}
-			if err := atomicInstall(backup, target, mode); err != nil {
+			if _, err := tracker.atomicInstallVerified(index, backup, target, mode, record.OriginalSHA256, "restore"); err != nil {
 				return journal, fmt.Errorf("restore %s: %w", record.RelativePath, err)
 			}
 			record.RollbackState = "restored"
 		} else {
+			tracker.skipPhase(index, "verify_backup")
+			tracker.skipPhase(index, "restore")
 			if err := os.Remove(target); err != nil && !errors.Is(err, os.ErrNotExist) {
 				return journal, fmt.Errorf("remove added file %s: %w", record.RelativePath, err)
 			}
@@ -444,6 +460,7 @@ func Rollback(journalPath string) (Journal, error) {
 			return journal, err
 		}
 	}
+	tracker.finish()
 	journal.Status = StatusRolledBack
 	journal.UpdatedUTC = time.Now().UTC()
 	if err := writeJournal(journalPath, journal); err != nil {
@@ -614,18 +631,42 @@ func hashFile(path string) (string, error) {
 	return hex.EncodeToString(hash.Sum(nil)), nil
 }
 
-func linkOrCopyRegularFile(source, destination string, mode fs.FileMode) error {
+func linkCloneOrCopyRegularFile(source, destination string, mode fs.FileMode) (string, error) {
 	input, err := regularFile(source, "backup source")
 	if err != nil {
-		return err
+		return "", err
 	}
 	if err := os.MkdirAll(filepath.Dir(destination), 0o700); err != nil {
-		return err
+		return "", err
 	}
 	if err := os.Link(input, destination); err == nil {
-		return syncParent(destination)
+		if err := syncParent(destination); err != nil {
+			return "", err
+		}
+		return "hardlink", nil
 	}
-	return copyRegularFile(input, destination, mode)
+	return cloneOrCopyRegularFile(input, destination, mode)
+}
+
+func cloneOrCopyRegularFile(source, destination string, mode fs.FileMode) (string, error) {
+	input, err := regularFile(source, "copy-on-write source")
+	if err != nil {
+		return "", err
+	}
+	if err := os.MkdirAll(filepath.Dir(destination), 0o700); err != nil {
+		return "", err
+	}
+	cloned, err := tryReflinkRegularFile(input, destination, mode)
+	if err != nil {
+		return "", err
+	}
+	if cloned {
+		return "reflink", nil
+	}
+	if err := copyRegularFile(input, destination, mode); err != nil {
+		return "", err
+	}
+	return "copy", nil
 }
 
 func copyRegularFile(source, destination string, mode fs.FileMode) error {
@@ -661,7 +702,40 @@ func copyRegularFile(source, destination string, mode fs.FileMode) error {
 	return syncParent(destination)
 }
 
-func atomicInstall(source, destination string, mode fs.FileMode) error {
+func cloneOrCopyRegularFileVerified(source, destination string, mode fs.FileMode, expectedSHA256 string) (string, error) {
+	input, err := regularFile(source, "verified copy-on-write source")
+	if err != nil {
+		return "", err
+	}
+	if strings.TrimSpace(expectedSHA256) == "" {
+		return "", fmt.Errorf("expected SHA-256 is empty")
+	}
+	if err := os.MkdirAll(filepath.Dir(destination), 0o700); err != nil {
+		return "", err
+	}
+	cloned, err := tryReflinkRegularFile(input, destination, mode)
+	if err != nil {
+		return "", err
+	}
+	if cloned {
+		actual, err := hashFile(destination)
+		if err != nil {
+			_ = os.Remove(destination)
+			return "", err
+		}
+		if actual != expectedSHA256 {
+			_ = os.Remove(destination)
+			return "", fmt.Errorf("reflinked payload hash mismatch")
+		}
+		return "reflink", nil
+	}
+	if err := copyRegularFileVerified(input, destination, mode, expectedSHA256); err != nil {
+		return "", err
+	}
+	return "copy", nil
+}
+
+func copyRegularFileVerified(source, destination string, mode fs.FileMode, expectedSHA256 string) error {
 	input, err := os.Open(source)
 	if err != nil {
 		return err
@@ -670,35 +744,104 @@ func atomicInstall(source, destination string, mode fs.FileMode) error {
 	if err := os.MkdirAll(filepath.Dir(destination), 0o755); err != nil {
 		return err
 	}
-	temp, err := os.CreateTemp(filepath.Dir(destination), ".brpatch-*")
+	output, err := os.OpenFile(destination, os.O_CREATE|os.O_EXCL|os.O_WRONLY, mode)
 	if err != nil {
 		return err
 	}
-	tempPath := temp.Name()
 	ok := false
 	defer func() {
-		_ = temp.Close()
+		_ = output.Close()
 		if !ok {
-			_ = os.Remove(tempPath)
+			_ = os.Remove(destination)
 		}
 	}()
-	if err := temp.Chmod(mode); err != nil {
+	hash := sha256.New()
+	if _, err := io.Copy(io.MultiWriter(output, hash), input); err != nil {
 		return err
 	}
-	if _, err := io.Copy(temp, input); err != nil {
+	if actual := hex.EncodeToString(hash.Sum(nil)); actual != expectedSHA256 {
+		return fmt.Errorf("copied payload hash mismatch")
+	}
+	if err := output.Sync(); err != nil {
 		return err
 	}
-	if err := temp.Sync(); err != nil {
-		return err
-	}
-	if err := temp.Close(); err != nil {
-		return err
-	}
-	if err := os.Rename(tempPath, destination); err != nil {
+	if err := output.Close(); err != nil {
 		return err
 	}
 	ok = true
 	return syncParent(destination)
+}
+
+func atomicInstallVerified(source, destination string, mode fs.FileMode, expectedSHA256 string) (string, error) {
+	if err := os.MkdirAll(filepath.Dir(destination), 0o755); err != nil {
+		return "", err
+	}
+	temp, err := os.CreateTemp(filepath.Dir(destination), ".brpatch-*")
+	if err != nil {
+		return "", err
+	}
+	tempPath := temp.Name()
+	if err := temp.Close(); err != nil {
+		_ = os.Remove(tempPath)
+		return "", err
+	}
+	if err := os.Remove(tempPath); err != nil {
+		return "", err
+	}
+	ok := false
+	defer func() {
+		if !ok {
+			_ = os.Remove(tempPath)
+		}
+	}()
+	storageMethod, err := cloneOrCopyRegularFileVerified(source, tempPath, mode, expectedSHA256)
+	if err != nil {
+		return "", err
+	}
+	if err := os.Rename(tempPath, destination); err != nil {
+		return "", err
+	}
+	ok = true
+	if err := syncParent(destination); err != nil {
+		return "", err
+	}
+	return storageMethod, nil
+}
+
+func atomicInstall(source, destination string, mode fs.FileMode) (string, error) {
+	if err := os.MkdirAll(filepath.Dir(destination), 0o755); err != nil {
+		return "", err
+	}
+	temp, err := os.CreateTemp(filepath.Dir(destination), ".brpatch-*")
+	if err != nil {
+		return "", err
+	}
+	tempPath := temp.Name()
+	if err := temp.Close(); err != nil {
+		_ = os.Remove(tempPath)
+		return "", err
+	}
+	if err := os.Remove(tempPath); err != nil {
+		return "", err
+	}
+	ok := false
+	defer func() {
+		if !ok {
+			_ = os.Remove(tempPath)
+		}
+	}()
+	storageMethod, err := cloneOrCopyRegularFile(source, tempPath, mode)
+	if err != nil {
+		return "", err
+	}
+	if err := os.Rename(tempPath, destination); err != nil {
+		return "", err
+	}
+	ok = true
+	if err := syncParent(destination); err != nil {
+		return "", err
+	}
+	return storageMethod, nil
 }
 
 func atomicWriteBytes(path string, data []byte, mode fs.FileMode) error {

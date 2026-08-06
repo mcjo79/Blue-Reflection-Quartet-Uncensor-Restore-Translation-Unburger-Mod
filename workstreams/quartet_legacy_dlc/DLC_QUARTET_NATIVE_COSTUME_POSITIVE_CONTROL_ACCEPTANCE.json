@@ -1,0 +1,90 @@
+{
+  "type": "br_quartet_native_costume_positive_control_acceptance",
+  "format_version": 1,
+  "workstream_version": "0.0.59",
+  "status": "no_valid_dlc_positive_control_in_existing_evidence_read_only_collector_required",
+  "generation": 8,
+  "runtime_visibility_status": "failed_at_costume_visibility_stage",
+  "runtime_visible_labels": [
+    {
+      "label": "Hoshinomiya Uniform",
+      "classification": "retained_base_label",
+      "positive_control_eligible": false,
+      "reason": "The matching Quartet str_costume row is identical to the original base row; no DLC owner is proven."
+    },
+    {
+      "label": "School Swimsuit",
+      "classification": "retained_base_label",
+      "positive_control_eligible": false,
+      "reason": "The matching Quartet str_costume row is identical to the original base row; no DLC owner is proven."
+    },
+    {
+      "label": "Gym Uniform",
+      "classification": "quartet_only_visible_label_owner_unproven",
+      "positive_control_eligible": false,
+      "reason": "The label is Quartet-only, but existing evidence does not bind it to a DLC member, entitlement or ownership record."
+    },
+    {
+      "label": "Cami",
+      "classification": "quartet_only_visible_label_owner_unproven",
+      "positive_control_eligible": false,
+      "reason": "The label is Quartet-only, but existing evidence does not bind it to a DLC member, entitlement or ownership record."
+    }
+  ],
+  "legacy_dlc_label_observation": {
+    "status": "legacy_labels_replaced_by_dash_in_quartet_string_table",
+    "labels": [
+      "Sailor Swimsuit",
+      "Summer Clothes",
+      "Bath Towel",
+      "Vacation Style",
+      "Rorona",
+      "Firis",
+      "Nightless Saber"
+    ]
+  },
+  "structural_control_observation": {
+    "member_id": "costume_pc00_twl",
+    "status": "structurally_present_runtime_visibility_unproven",
+    "positive_control_eligible": false,
+    "reason": "TWL chara, chara_no and charabase records are present and compatible, but the runtime-visible label set does not include Bath Towel and no exact Quartet-native availability owner is proven."
+  },
+  "target_observation": {
+    "members": [
+      "costume_pc00_bkn",
+      "costume_pc01_bkn",
+      "costume_pc02_bkn",
+      "costume_pc03_bkn",
+      "costume_pc04_bkn",
+      "costume_pc05_bkn",
+      "costume_pc06_bkn",
+      "costume_pc07_bkn"
+    ],
+    "assets_and_charabase": "structurally_valid",
+    "availability_owner": "not_proven",
+    "dressing_room_visibility": "failed"
+  },
+  "collector_policy": {
+    "quartet_native_only": true,
+    "original_appid_semantics_forbidden": true,
+    "steam_emulator_configuration_auxiliary_only": true,
+    "raw_save_export_forbidden": true,
+    "raw_binary_export_forbidden": true,
+    "game_write_forbidden": true,
+    "save_write_forbidden": true,
+    "prepare_forbidden": true,
+    "commit_forbidden": true,
+    "runtime_validation_forbidden": true,
+    "pc08_forbidden": true,
+    "wet_bkn_forbidden": true,
+    "core_modification_forbidden": true
+  },
+  "required_positive_control_gates": [
+    "runtime_visible_label",
+    "exact_character_costume_record",
+    "exact_asset_parent_and_member_binding",
+    "exact_quartet_native_availability_or_ownership_binding",
+    "ui_or_save_state_binding",
+    "no_original_appid_semantics"
+  ]
+}

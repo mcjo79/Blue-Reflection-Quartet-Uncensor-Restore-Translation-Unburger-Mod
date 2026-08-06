@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Publish the validated PC00+PC01+PC02+PC03+PC04+PC05 dry-BKN generation manifest.
+"""Publish the validated PC00+PC01+PC02+PC03+PC04+PC05+PC06+PC07 dry-BKN generation manifest.
 
-This tool is owned by quartet_legacy_dlc. It validates the generation-5 parent
-manifest, the stage-91 PC05 candidate report, candidate and baseline hashes, and
+This tool is owned by quartet_legacy_dlc. It validates the generation-7 parent
+manifest, the stage-92 PC07 candidate report, candidate and baseline hashes, and
 core-owned generic adapter contracts. It then writes provenance evidence and
-atomically replaces ACTIVE.json with generation 6. It never calls transaction
+atomically replaces ACTIVE.json with generation 8. It never calls transaction
 Prepare or Commit and never writes to the game installation.
 """
 from __future__ import annotations
@@ -23,17 +23,17 @@ from typing import Any, Mapping, Sequence
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT_DEFAULT = SCRIPT_DIR.parent.parent
-TOOL_VERSION = "0.0.50"
-ACCEPTANCE_RELATIVE = Path("workstreams/quartet_legacy_dlc/DLC_BKN_DRY_PC05_GENERATION_ACCEPTANCE.json")
-PC05_TOOL_RELATIVE = Path("workstreams/quartet_legacy_dlc/br_dlc_bkn_dry_pc05_generation_tool.py")
+TOOL_VERSION = "0.0.53"
+ACCEPTANCE_RELATIVE = Path("workstreams/quartet_legacy_dlc/DLC_BKN_DRY_PC07_GENERATION_ACCEPTANCE.json")
+PC07_TOOL_RELATIVE = Path("workstreams/quartet_legacy_dlc/br_dlc_bkn_dry_pc07_generation_tool.py")
 ACTIVE_RELATIVE = Path(".local/reports/quartet_legacy_dlc/validated_payloads/ACTIVE.json")
-EVIDENCE_RELATIVE = Path(".local/reports/quartet_legacy_dlc/generations/bkn_dry_generation_6/EVIDENCE.json")
-PUBLICATION_REPORT_RELATIVE = Path(".local/reports/quartet_legacy_dlc/validated_payloads/GENERATION_6_PUBLICATION.json")
-GENERATION5_SHA256 = "61aa6eb253d806f9b780d417910fdd6cda787d00bc318d87fc53b0e2f7004e9f"
-MEMBERS = ["costume_pc00_bkn", "costume_pc01_bkn", "costume_pc02_bkn", "costume_pc03_bkn", "costume_pc04_bkn", "costume_pc05_bkn"]
+EVIDENCE_RELATIVE = Path(".local/reports/quartet_legacy_dlc/generations/bkn_dry_generation_8/EVIDENCE.json")
+PUBLICATION_REPORT_RELATIVE = Path(".local/reports/quartet_legacy_dlc/validated_payloads/GENERATION_8_PUBLICATION.json")
+GENERATION7_SHA256 = "010fa1d82fc0bc810b0ef8e1617dbe577faa219cfd945c6e5d3fc0549fc5deb0"
+MEMBERS = ["costume_pc00_bkn", "costume_pc01_bkn", "costume_pc02_bkn", "costume_pc03_bkn", "costume_pc04_bkn", "costume_pc05_bkn", "costume_pc06_bkn", "costume_pc07_bkn"]
 EXPECTED_CANDIDATES = {
-    "Data/PACK10_02.PAK": ".local/build/quartet_legacy_dlc/family_expansion/costume_pc00_pc01_pc02_pc03_pc04_pc05_bkn_dry/candidate/PACK10_02.PAK",
-    "Data/PACK12.PAK": ".local/build/quartet_legacy_dlc/family_expansion/costume_pc00_pc01_pc02_pc03_pc04_pc05_bkn_dry/candidate/PACK12.PAK",
+    "Data/PACK10_02.PAK": ".local/build/quartet_legacy_dlc/family_expansion/costume_pc00_pc01_pc02_pc03_pc04_pc05_pc06_pc07_bkn_dry/candidate/PACK10_02.PAK",
+    "Data/PACK12.PAK": ".local/build/quartet_legacy_dlc/family_expansion/costume_pc00_pc01_pc02_pc03_pc04_pc05_pc06_pc07_bkn_dry/candidate/PACK12.PAK",
 }
 ADDED_MEMBERS = [
     "data/b1/x64/character/pc00/pc00_dlc_bkn.elixir.gz",
@@ -48,6 +48,10 @@ ADDED_MEMBERS = [
     "data/b1/x64/character/pc04/pc04_dlc_bkn.g1t",
     "data/b1/x64/character/pc05/pc05_dlc_bkn.elixir.gz",
     "data/b1/x64/character/pc05/pc05_dlc_bkn.g1t",
+    "data/b1/x64/character/pc06/pc06_dlc_bkn.elixir.gz",
+    "data/b1/x64/character/pc06/pc06_dlc_bkn.g1t",
+    "data/b1/x64/character/pc07/pc07_dlc_bkn.elixir.gz",
+    "data/b1/x64/character/pc07/pc07_dlc_bkn.g1t",
 ]
 COPY_BLOCK_SIZE = 8 * 1024 * 1024
 
@@ -117,12 +121,12 @@ def version_tuple(raw: str) -> tuple[int, int, int]:
     return tuple(int(item) for item in match.groups())
 
 
-def load_pc05_tool(project_root: Path):
-    path = project_root / PC05_TOOL_RELATIVE
-    regular_file(path, "PC05 generation tool")
-    spec = importlib.util.spec_from_file_location("br_dlc_bkn_dry_pc05_generation_tool_runtime", path)
+def load_pc07_tool(project_root: Path):
+    path = project_root / PC07_TOOL_RELATIVE
+    regular_file(path, "PC07 generation tool")
+    spec = importlib.util.spec_from_file_location("br_dlc_bkn_dry_pc07_generation_tool_runtime", path)
     if spec is None or spec.loader is None:
-        raise GenerationPublishError(f"could not load PC05 generation tool: {path}")
+        raise GenerationPublishError(f"could not load PC07 generation tool: {path}")
     module = importlib.util.module_from_spec(spec)
     sys.modules[spec.name] = module
     spec.loader.exec_module(module)
@@ -131,12 +135,12 @@ def load_pc05_tool(project_root: Path):
 
 def load_acceptance(project_root: Path) -> dict[str, Any]:
     acceptance = read_json(project_root / ACCEPTANCE_RELATIVE)
-    if acceptance.get("type") != "br_quartet_legacy_dlc_bkn_dry_pc05_generation_acceptance":
-        raise GenerationPublishError("unexpected PC05 generation acceptance type")
-    if acceptance.get("status") != "accepted_for_checksum_gated_local_pc00_pc01_pc02_pc03_pc04_pc05_generation":
-        raise GenerationPublishError("PC05 generation is not accepted")
+    if acceptance.get("type") != "br_quartet_legacy_dlc_bkn_dry_pc07_generation_acceptance":
+        raise GenerationPublishError("unexpected PC07 generation acceptance type")
+    if acceptance.get("status") != "accepted_for_checksum_gated_local_pc00_pc01_pc02_pc03_pc04_pc05_pc06_pc07_generation":
+        raise GenerationPublishError("PC07 generation is not accepted")
     auth = acceptance.get("authorization", {})
-    for key in ("local_candidate_build", "active_manifest_generation_6_publication", "read_only_canonical_preview"):
+    for key in ("local_candidate_build", "active_manifest_generation_8_publication", "read_only_canonical_preview"):
         if auth.get(key) is not True:
             raise GenerationPublishError(f"required authorization is missing: {key}")
     for key in (
@@ -166,20 +170,20 @@ def verify_versions_and_core(project_root: Path, acceptance: Mapping[str, Any]) 
 
 
 def load_composition(report_root: Path) -> dict[str, dict[str, Any]]:
-    path = report_root / "DLC_BKN_DRY_PC05_TWO_ARCHIVE_COMPOSITION.tsv"
-    regular_file(path, "PC05 composition report")
+    path = report_root / "DLC_BKN_DRY_PC07_TWO_ARCHIVE_COMPOSITION.tsv"
+    regular_file(path, "PC07 composition report")
     with path.open("r", encoding="utf-8", newline="") as handle:
         rows = list(csv.DictReader(handle, delimiter="\t"))
     by_target = {str(row["archive"]): row for row in rows}
     if set(by_target) != set(EXPECTED_CANDIDATES) or len(rows) != 2:
-        raise GenerationPublishError("PC05 composition must contain exactly PACK10_02 and PACK12")
+        raise GenerationPublishError("PC07 composition must contain exactly PACK10_02 and PACK12")
     for target, expected_path in EXPECTED_CANDIDATES.items():
         row = by_target[target]
         if row.get("candidate_relative_path") != expected_path:
             raise GenerationPublishError(f"unexpected candidate path for {target}: {row.get('candidate_relative_path')}")
         for key in ("candidate_installed", "profile_registered", "runtime_validated"):
             if row.get(key) != "false":
-                raise GenerationPublishError(f"PC05 composition does not fail closed for {key}")
+                raise GenerationPublishError(f"PC07 composition does not fail closed for {key}")
     return by_target
 
 
@@ -192,20 +196,20 @@ def build_evidence(
 ) -> dict[str, Any]:
     report_manifest = report_root / "REPORT_MANIFEST.json"
     summary = report_root / "SUMMARY.json"
-    regular_file(report_manifest, "PC05 report manifest")
-    regular_file(summary, "PC05 summary")
+    regular_file(report_manifest, "PC07 report manifest")
+    regular_file(summary, "PC07 summary")
     return {
         "type": "br_quartet_legacy_dlc_bkn_dry_generation_evidence",
         "format_version": 1,
-        "status": "generation_6_pc00_pc01_pc02_pc03_pc04_pc05_built_validated_not_installed",
+        "status": "generation_8_pc00_pc01_pc02_pc03_pc04_pc05_pc06_pc07_built_validated_not_installed",
         "workstream_id": "quartet_legacy_dlc",
         "workstream_version": TOOL_VERSION,
         "core_version": core_version,
         "family_id": "bkn_dry",
-        "generation": 6,
+        "generation": 8,
         "members": MEMBERS,
         "source_evidence": acceptance["source_evidence"],
-        "parent_generation": acceptance["active_generation5"],
+        "parent_generation": acceptance["active_generation7"],
         "candidate_report": {
             "relative_path": report_root.relative_to(project_root).as_posix(),
             "report_manifest_sha256": sha256_file(report_manifest),
@@ -261,7 +265,7 @@ def build_manifest(
         "type": "validated_quartet_legacy_dlc_payload",
         "format_version": 1,
         "family_id": "bkn_dry",
-        "generation": 6,
+        "generation": 8,
         "members": MEMBERS,
         "source_kind": "validated_quartet_legacy_dlc_handoff",
         "target_id": "blue_reflection_quartet",
@@ -293,7 +297,7 @@ def build_manifest(
 def validate_manifest_semantics(manifest: Mapping[str, Any]) -> None:
     if manifest.get("type") != "validated_quartet_legacy_dlc_payload" or manifest.get("format_version") != 1:
         raise GenerationPublishError("manifest type/version mismatch")
-    if manifest.get("family_id") != "bkn_dry" or manifest.get("generation") != 6:
+    if manifest.get("family_id") != "bkn_dry" or manifest.get("generation") != 8:
         raise GenerationPublishError("manifest family/generation mismatch")
     if manifest.get("members") != MEMBERS:
         raise GenerationPublishError("manifest members mismatch")
@@ -379,8 +383,8 @@ def publish(project_root: Path, game_dir: Path, report_root: Path) -> dict[str, 
     acceptance = load_acceptance(project_root)
     core_version, core_guards = verify_versions_and_core(project_root, acceptance)
 
-    pc05_tool = load_pc05_tool(project_root)
-    pc05_tool.validate_report(report_root)
+    pc07_tool = load_pc07_tool(project_root)
+    pc07_tool.validate_report(report_root)
     composition = load_composition(report_root)
 
     candidates: list[dict[str, Any]] = []
@@ -404,13 +408,13 @@ def publish(project_root: Path, game_dir: Path, report_root: Path) -> dict[str, 
         ))
 
     active_path = project_root / ACTIVE_RELATIVE
-    regular_file(active_path, "generation-5 ACTIVE manifest")
+    regular_file(active_path, "generation-7 ACTIVE manifest")
     active_hash_before = sha256_file(active_path)
-    if active_hash_before != GENERATION5_SHA256:
+    if active_hash_before != GENERATION7_SHA256:
         existing = read_json(active_path)
-        if existing.get("generation") != 6 or existing.get("members") != MEMBERS:
+        if existing.get("generation") != 8 or existing.get("members") != MEMBERS:
             raise GenerationPublishError(
-                f"ACTIVE manifest is not the accepted generation 5 and is not this generation 6: {active_hash_before}"
+                f"ACTIVE manifest is not the accepted generation 7 and is not this generation 8: {active_hash_before}"
             )
 
     evidence = build_evidence(project_root, report_root, acceptance, composition, core_version)
@@ -423,7 +427,7 @@ def publish(project_root: Path, game_dir: Path, report_root: Path) -> dict[str, 
     validate_manifest_semantics(manifest)
     manifest_bytes = canonical_json_bytes(manifest)
     manifest_sha = sha256_bytes(manifest_bytes)
-    active_result = atomic_write_guarded(project_root, active_path, manifest_bytes, [GENERATION5_SHA256, manifest_sha])
+    active_result = atomic_write_guarded(project_root, active_path, manifest_bytes, [GENERATION7_SHA256, manifest_sha])
     if sha256_file(active_path) != manifest_sha:
         raise GenerationPublishError("published ACTIVE manifest hash mismatch")
 
@@ -434,7 +438,7 @@ def publish(project_root: Path, game_dir: Path, report_root: Path) -> dict[str, 
         "tool_version": TOOL_VERSION,
         "core_version": core_version,
         "family_id": "bkn_dry",
-        "generation": 6,
+        "generation": 8,
         "members": MEMBERS,
         "evidence_ready": True,
         "evidence_relative_path": EVIDENCE_RELATIVE.as_posix(),
@@ -442,7 +446,7 @@ def publish(project_root: Path, game_dir: Path, report_root: Path) -> dict[str, 
         "active_manifest_ready": True,
         "active_manifest_relative_path": ACTIVE_RELATIVE.as_posix(),
         "active_manifest_sha256": manifest_sha,
-        "parent_generation_manifest_sha256": GENERATION5_SHA256,
+        "parent_generation_manifest_sha256": GENERATION7_SHA256,
         "artifact_paths": ["Data/PACK10_02.PAK", "Data/PACK12.PAK"],
         "candidates": candidates,
         "baselines": baselines,

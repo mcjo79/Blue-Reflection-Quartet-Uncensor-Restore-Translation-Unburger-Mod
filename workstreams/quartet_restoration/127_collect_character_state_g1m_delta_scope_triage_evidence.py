@@ -50,6 +50,12 @@ def require(condition: bool, message: str) -> None:
         raise CollectorError(message)
 
 
+def version_tuple(raw: str) -> tuple[int, int, int]:
+    parts = raw.strip().split(".")
+    require(len(parts) == 3 and all(part.isdigit() for part in parts), f"invalid semantic version: {raw}")
+    return tuple(int(part) for part in parts)
+
+
 def sha256_file(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as handle:
@@ -311,7 +317,7 @@ def build_report(project_root: Path, *, report_root: Path | None = None, output_
     project_root = project_root.resolve()
     workstream = project_root / "workstreams/quartet_restoration"
     version = (workstream / "VERSION").read_text(encoding="utf-8").strip()
-    require(version == TOOL_VERSION, f"expected quartet_restoration {TOOL_VERSION}, found {version}")
+    require(version_tuple(version) >= version_tuple(TOOL_VERSION), f"expected quartet_restoration >= {TOOL_VERSION}, found {version}")
     report_root = (report_root or project_root / ".local/reports/quartet_restoration").resolve()
     output_report_root = (output_report_root or report_root).resolve()
     output = output_report_root / REPORT_DIR

@@ -23,11 +23,12 @@ const (
 var rawLegacyDLCPolicy []byte
 
 type legacyDLCPolicyArtifact struct {
-	TargetPath           string   `json:"target_path"`
-	Operation            string   `json:"operation"`
-	AddedMemberTemplates []string `json:"added_member_templates"`
-	ChangedMembers       []string `json:"changed_members"`
-	RemovedMembers       []string `json:"removed_members"`
+	TargetPath                  string     `json:"target_path"`
+	Operation                   string     `json:"operation"`
+	AddedMemberTemplates        []string   `json:"added_member_templates"`
+	ChangedMembers              []string   `json:"changed_members"`
+	AdditionalChangedMemberSets [][]string `json:"additional_changed_member_sets,omitempty"`
+	RemovedMembers              []string   `json:"removed_members"`
 }
 
 type legacyDLCFamilyPolicy struct {
@@ -151,6 +152,9 @@ func canonicalRelativePath(raw, label string) (string, error) {
 	if clean != filepath.ToSlash(raw) {
 		return "", fmt.Errorf("%s is not canonical: %q", label, raw)
 	}
+	if strings.ContainsAny(clean, "*?[]") {
+		return "", fmt.Errorf("%s contains wildcard characters: %q", label, raw)
+	}
 	return clean, nil
 }
 
@@ -267,6 +271,40 @@ func normalizedUniquePaths(values []string, label string) ([]string, error) {
 	return result, nil
 }
 
+func allowedLegacyDLCChangedMemberSets(artifact legacyDLCPolicyArtifact) ([][]string, error) {
+	rawSets := make([][]string, 0, 1+len(artifact.AdditionalChangedMemberSets))
+	rawSets = append(rawSets, artifact.ChangedMembers)
+	rawSets = append(rawSets, artifact.AdditionalChangedMemberSets...)
+	result := make([][]string, 0, len(rawSets))
+	seen := map[string]bool{}
+	for index, raw := range rawSets {
+		normalized, err := normalizedUniquePaths(raw, fmt.Sprintf("legacy DLC policy changed member set %d", index))
+		if err != nil {
+			return nil, err
+		}
+		key := strings.Join(normalized, "\x00")
+		if seen[key] {
+			return nil, fmt.Errorf("duplicate legacy DLC policy changed-member set for %s", artifact.TargetPath)
+		}
+		seen[key] = true
+		result = append(result, normalized)
+	}
+	return result, nil
+}
+
+func legacyDLCChangedMemberSetAllowed(artifact legacyDLCPolicyArtifact, declared []string) (bool, error) {
+	allowed, err := allowedLegacyDLCChangedMemberSets(artifact)
+	if err != nil {
+		return false, err
+	}
+	for _, candidate := range allowed {
+		if sameStrings(candidate, declared) {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 func sameStrings(left, right []string) bool {
 	if len(left) != len(right) {
 		return false
@@ -336,7 +374,7 @@ func loadLegacyDLCPolicy() (legacyDLCPolicy, error) {
 					return legacyDLCPolicy{}, err
 				}
 			}
-			if _, err := normalizedUniquePaths(artifact.ChangedMembers, "legacy DLC policy changed member"); err != nil {
+			if _, err := allowedLegacyDLCChangedMemberSets(artifact); err != nil {
 				return legacyDLCPolicy{}, err
 			}
 			if _, err := normalizedUniquePaths(artifact.RemovedMembers, "legacy DLC policy removed member"); err != nil {
@@ -507,7 +545,7 @@ func LoadLegacyDLCCompositionContract(projectRoot, gameRoot string) (LegacyDLCCo
 		if artifact.BaselineSize <= 0 || artifact.CandidateSize <= 0 || !validSHA256(artifact.BaselineSHA256) || !validSHA256(artifact.CandidateSHA256) {
 			return LegacyDLCCompositionContract{}, fmt.Errorf("invalid legacy DLC artifact hash/size contract: %s", artifact.TargetPath)
 		}
-		expectedAdded, expectedChanged, expectedRemoved, err := expectedLegacyDLCMemberDelta(family, policyArtifact, manifest.Members)
+		expectedAdded, _, expectedRemoved, err := expectedLegacyDLCMemberDelta(family, policyArtifact, manifest.Members)
 		if err != nil {
 			return LegacyDLCCompositionContract{}, err
 		}
@@ -523,8 +561,12 @@ func LoadLegacyDLCCompositionContract(projectRoot, gameRoot string) (LegacyDLCCo
 		if err != nil {
 			return LegacyDLCCompositionContract{}, err
 		}
-		if !sameStrings(declaredAdded, expectedAdded) || !sameStrings(declaredChanged, expectedChanged) || !sameStrings(declaredRemoved, expectedRemoved) {
-			return LegacyDLCCompositionContract{}, fmt.Errorf("legacy DLC member delta does not match family policy: %s", artifact.TargetPath)
+		changedAllowed, err := legacyDLCChangedMemberSetAllowed(policyArtifact, declaredChanged)
+		if err != nil {
+			return LegacyDLCCompositionContract{}, err
+		}
+		if !sameStrings(declaredAdded, expectedAdded) || !changedAllowed || !sameStrings(declaredRemoved, expectedRemoved) {
+			return LegacyDLCCompositionContract{}, fmt.Errorf("legacy DLC member delta does not match bounded family policy: %s", artifact.TargetPath)
 		}
 		candidate, candidateInfo, err := secureProjectRegularFile(projectRoot, artifact.CandidateRelativePath, policy.CandidateRoot, "legacy DLC candidate")
 		if err != nil {
@@ -559,7 +601,7 @@ func LoadLegacyDLCCompositionContract(projectRoot, gameRoot string) (LegacyDLCCo
 			BaselineSize:          artifact.BaselineSize,
 			BaselineSHA256:        strings.ToLower(artifact.BaselineSHA256),
 			AddedMembers:          expectedAdded,
-			ChangedMembers:        expectedChanged,
+			ChangedMembers:        declaredChanged,
 			RemovedMembers:        expectedRemoved,
 		})
 	}
@@ -569,7 +611,7 @@ func LoadLegacyDLCCompositionContract(projectRoot, gameRoot string) (LegacyDLCCo
 func inspectLegacyDLCModule(projectRoot, gameRoot, moduleID string) ([]ArtifactPreview, bool, string) {
 	contract, err := LoadLegacyDLCCompositionContract(projectRoot, gameRoot)
 	if err != nil {
-		return nil, false, err.Error()
+		return []ArtifactPreview{}, false, err.Error()
 	}
 	artifacts := make([]ArtifactPreview, 0, len(contract.Artifacts))
 	for _, item := range contract.Artifacts {

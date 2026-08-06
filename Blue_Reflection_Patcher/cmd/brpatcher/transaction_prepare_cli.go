@@ -26,7 +26,7 @@ import (
 
 const (
 	transactionPrepareReportType    = "br_transaction_prepare_report"
-	transactionPrepareFormatVersion = 5
+	transactionPrepareFormatVersion = 6
 	transactionStatusReportType     = "br_transaction_status_report"
 	transactionStatusFormatVersion  = 1
 	transactionDiscardReportType    = "br_transaction_discard_report"
@@ -34,17 +34,19 @@ const (
 )
 
 type transactionPrepareFile struct {
-	RelativePath   string `json:"relative_path"`
-	DesiredAction  string `json:"desired_action"`
-	SourcePath     string `json:"source_path"`
-	SourceSHA256   string `json:"source_sha256"`
-	SourceBytes    int64  `json:"source_bytes"`
-	TargetPath     string `json:"target_path"`
-	TargetExisted  bool   `json:"target_existed"`
-	TargetSHA256   string `json:"target_sha256,omitempty"`
-	TargetBytes    int64  `json:"target_bytes,omitempty"`
-	BackupPrepared bool   `json:"backup_prepared"`
-	StagedPrepared bool   `json:"staged_prepared"`
+	RelativePath        string `json:"relative_path"`
+	DesiredAction       string `json:"desired_action"`
+	SourcePath          string `json:"source_path"`
+	SourceSHA256        string `json:"source_sha256"`
+	SourceBytes         int64  `json:"source_bytes"`
+	TargetPath          string `json:"target_path"`
+	TargetExisted       bool   `json:"target_existed"`
+	TargetSHA256        string `json:"target_sha256,omitempty"`
+	TargetBytes         int64  `json:"target_bytes,omitempty"`
+	BackupPrepared      bool   `json:"backup_prepared"`
+	BackupStorageMethod string `json:"backup_storage_method,omitempty"`
+	StagedPrepared      bool   `json:"staged_prepared"`
+	StagedStorageMethod string `json:"staged_storage_method,omitempty"`
 }
 
 type transactionPrepareReport struct {
@@ -248,7 +250,7 @@ func preparePayloadTransactionWithRevalidation(preview payloadpreview.Preview, r
 		PreviewFormatVersion: preview.FormatVersion, PreviewSHA256: previewHash,
 		PreviewPlanSHA256: previewPlanHash, PreviewRevalidated: revalidation.Performed,
 		ConfirmedPreviewPlanSHA256: revalidation.ConfirmedPreviewPlanSHA256,
-		Warnings:                   []string{}, Policy: "verify preview freshness, preserve an immutable versioned pre-install baseline, stage payloads and verified transaction backups, write journal, and require an explicit transaction-commit --yes before modifying game files",
+		Warnings:                   []string{}, Policy: "verify preview freshness, preserve an immutable versioned pre-install baseline, stage payloads with copy-on-write reflinks when supported and durable copies otherwise, preserve verified transaction backups, write journal, and require an explicit transaction-commit --yes before modifying game files",
 	}
 	active, activeExists, err := installstate.Load(target.StateDirectory, target.TargetID, target.GameRoot)
 	if err != nil {
@@ -400,8 +402,10 @@ func preparePayloadTransactionWithRevalidation(preview payloadpreview.Preview, r
 			return transactionPrepareReport{}, fmt.Errorf("prepared journal contains unexpected path: %s", record.RelativePath)
 		}
 		file.StagedPrepared = true
+		file.StagedStorageMethod = record.StagedStorageMethod
 		if record.OriginalExisted {
 			file.BackupPrepared = true
+			file.BackupStorageMethod = record.BackupStorageMethod
 			report.BackupCount++
 		}
 	}

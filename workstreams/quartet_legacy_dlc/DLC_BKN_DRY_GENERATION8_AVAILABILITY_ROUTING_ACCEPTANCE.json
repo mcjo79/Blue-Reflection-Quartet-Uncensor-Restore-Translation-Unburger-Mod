@@ -1,0 +1,44 @@
+{
+  "type": "br_quartet_legacy_dlc_bkn_dry_generation8_availability_routing_acceptance",
+  "format_version": 1,
+  "status": "accepted_for_read_only_exact_availability_closure",
+  "workstream_version": "0.0.57",
+  "evidence_bundle": "BR_QUARTET_DLC_BKN_DRY_GENERATION8_AVAILABILITY_ROUTING_20260806T141722Z.tar.zst",
+  "evidence_bundle_sha256": "54ba62fd7562e614e6bdcea742b91ae991869838282a72c54519367fbdb2fb4e",
+  "generation": 8,
+  "members": [
+    "costume_pc00_bkn",
+    "costume_pc01_bkn",
+    "costume_pc02_bkn",
+    "costume_pc03_bkn",
+    "costume_pc04_bkn",
+    "costume_pc05_bkn",
+    "costume_pc06_bkn",
+    "costume_pc07_bkn"
+  ],
+  "runtime_status": "failed_at_costume_visibility_stage",
+  "accepted_findings": {
+    "assets_and_charabase_structurally_valid": true,
+    "full_runtime_rollback_to_baseline_confirmed": true,
+    "direct_bkn_unlock_release_entitlement_fields_found": false,
+    "availability_ui_unlock_routing_complete": false,
+    "current_payload_profile_complete": false,
+    "core_change_required": false,
+    "pc08_build_allowed": false
+  },
+  "next_action": "compare the exact original and Quartet costume-string sequences, character records and their XML/binary references to identify whether visibility is table-driven, index-driven or save/entitlement-state-driven",
+  "authorization": {
+    "read_only_exact_closure_audit": true,
+    "candidate_build": false,
+    "active_manifest_write": false,
+    "prepare": false,
+    "commit": false,
+    "install": false,
+    "runtime_validation": false,
+    "pc08_build": false,
+    "core_modification": false,
+    "translation_modification": false,
+    "restoration_modification": false,
+    "git_modification": false
+  }
+}

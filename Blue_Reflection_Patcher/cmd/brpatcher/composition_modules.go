@@ -12,6 +12,34 @@ const (
 	quartetLegacyDLCModule   = "quartet_legacy_dlc"
 )
 
+const (
+	restorationProfilePolicyRuntimeValidated         = "runtime-validated"
+	restorationProfilePolicyAllCandidatesRuntimeTest = "all-current-candidates-for-runtime-test"
+)
+
+func normalizeRestorationProfilePolicy(raw string) (string, error) {
+	policy := strings.TrimSpace(raw)
+	if policy == "" {
+		policy = restorationProfilePolicyRuntimeValidated
+	}
+	switch policy {
+	case restorationProfilePolicyRuntimeValidated, restorationProfilePolicyAllCandidatesRuntimeTest:
+		return policy, nil
+	default:
+		return "", fmt.Errorf("unsupported Restoration profile policy: %s", policy)
+	}
+}
+
+func validateRestorationProfilePolicyForModules(policy string, modules []string) error {
+	if policy != restorationProfilePolicyAllCandidatesRuntimeTest {
+		return nil
+	}
+	if !sameQuartetCompositionModules(modules, []string{quartetRestorationModule}) {
+		return fmt.Errorf("all-current-candidates-for-runtime-test is allowed only for isolated Restoration-only composition")
+	}
+	return nil
+}
+
 var quartetCompositionModuleOrder = []string{
 	quartetTranslationModule,
 	quartetRestorationModule,

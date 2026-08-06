@@ -1,0 +1,24 @@
+{
+  "type": "br_quartet_legacy_dlc_controlled_visibility_force_point_return_acceptance",
+  "format_version": 1,
+  "workstream_version": "0.0.62",
+  "source_stage": 101,
+  "source_bundle": "BR_QUARTET_CONTROLLED_VISIBILITY_FORCE_POINT_20260806T194540Z.tar.zst",
+  "source_bundle_sha256": "290871a4ed421c470845cc70328e4c8cc4ead6c77cdc67f0ce5d1dd7641973bd",
+  "integrity_status": "accepted",
+  "semantic_status": "collector_detector_invalid_for_bkn_identity",
+  "accepted_facts": [
+    "generation 8 charabase routes PC00-PC07 dry BKN to restored BKN assets",
+    "both installation PAKs were at baseline during the audit",
+    "no candidate, transaction, installation or runtime action occurred",
+    "the original and Quartet str_costume sequences preserve multiple legacy DLC label blocks"
+  ],
+  "rejected_assumption": "BKN can be located in original str_costume by matching the literal words Bikini or ビキニ",
+  "reason": "The original English str_costume table contains no literal BKN/Bikini label. PCxx_DLC_BKN is a separate internal costume family represented in chara/chara_no/charabase, so a zero-row text match is not evidence that the family lacks a safe synthetic visibility route.",
+  "required_next_stage": "stage102_bkn_synthetic_label_slot_audit",
+  "generation9_build_allowed": false,
+  "game_modified": false,
+  "core_modified": false,
+  "translation_workstream_modified": false,
+  "restoration_modified": false
+}

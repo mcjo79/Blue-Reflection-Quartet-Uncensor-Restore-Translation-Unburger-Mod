@@ -1,0 +1,63 @@
+{
+  "type": "br_quartet_legacy_dlc_bkn_dry_generation8_runtime_visibility_return",
+  "format_version": 1,
+  "status": "accepted_failed_at_costume_visibility_stage",
+  "source_kind": "core_runtime_validation_return_supplied_by_user",
+  "tested_family_id": "bkn_dry",
+  "tested_generation": 8,
+  "tested_members": [
+    "costume_pc00_bkn",
+    "costume_pc01_bkn",
+    "costume_pc02_bkn",
+    "costume_pc03_bkn",
+    "costume_pc04_bkn",
+    "costume_pc05_bkn",
+    "costume_pc06_bkn",
+    "costume_pc07_bkn"
+  ],
+  "runtime_results": {
+    "transaction_commit": "pass",
+    "game_boot": "pass",
+    "translation": "pass",
+    "unburger_marker": "pass",
+    "dressing_room_visibility": "fail",
+    "runtime_validation": "failed_at_costume_visibility_stage"
+  },
+  "observed_character": "Hinako",
+  "observed_dressing_room_entries": [
+    "Hoshinomiya Uniform",
+    "School Swimsuit",
+    "Gym Uniform",
+    "Cami"
+  ],
+  "bkn_entry_visible": false,
+  "accepted_interpretation": {
+    "asset_installation_structurally_correct": true,
+    "charabase_overlay_structurally_correct": true,
+    "availability_ui_unlock_routing_restored": false,
+    "availability_ui_unlock_routing_verified": false,
+    "runtime_profile_complete": false
+  },
+  "required_followup": [
+    "audit additional Quartet costume-availability tables",
+    "audit unlock and release-condition fields",
+    "audit entitlement and inventory records",
+    "audit Dressing Room or costume-list registries",
+    "compare visible positive-control costumes with BKN stubs",
+    "identify exact payload members required beyond PACK10_02 and the current charabase overlay"
+  ],
+  "constraints": {
+    "modify_core": false,
+    "modify_generation_mechanism": false,
+    "prepare_transaction": false,
+    "commit_transaction": false,
+    "write_game_files": false,
+    "install_new_generation": false,
+    "runtime_validation": false,
+    "continue_to_pc08_build": false,
+    "include_wet_bkn": false,
+    "modify_translation": false,
+    "modify_restoration": false,
+    "modify_git": false
+  }
+}

@@ -10,11 +10,23 @@ import (
 )
 
 func buildQuartetModuleCompositionPreview(rawProjectRoot, gameRoot string, modules []string) (quartetCompositionPreview, error) {
+	return buildQuartetModuleCompositionPreviewWithPolicy(rawProjectRoot, gameRoot, modules, restorationProfilePolicyRuntimeValidated)
+}
+
+func buildQuartetModuleCompositionPreviewWithPolicy(rawProjectRoot, gameRoot string, modules []string, rawPolicy string) (quartetCompositionPreview, error) {
 	normalized, err := normalizeQuartetCompositionModules(modules)
 	if err != nil {
 		return quartetCompositionPreview{}, err
 	}
-	if sameQuartetCompositionModules(normalized, []string{quartetTranslationModule, quartetRestorationModule}) {
+	policy, err := normalizeRestorationProfilePolicy(rawPolicy)
+	if err != nil {
+		return quartetCompositionPreview{}, err
+	}
+	if err := validateRestorationProfilePolicyForModules(policy, normalized); err != nil {
+		return quartetCompositionPreview{}, err
+	}
+	runtimeTestMode := policy == restorationProfilePolicyAllCandidatesRuntimeTest
+	if !runtimeTestMode && sameQuartetCompositionModules(normalized, []string{quartetTranslationModule, quartetRestorationModule}) {
 		preview, err := buildQuartetCompositionPreview(rawProjectRoot, gameRoot)
 		if err != nil {
 			return quartetCompositionPreview{}, err
@@ -22,6 +34,13 @@ func buildQuartetModuleCompositionPreview(rawProjectRoot, gameRoot string, modul
 		preview.FormatVersion = quartetCompositionPreviewVersion
 		preview.SelectedModules = append([]string{}, normalized...)
 		preview.CompositionPolicy = "start from each verified selected-module source, merge only declared member deltas, reject additions/removals or non-identical member conflicts, and fully re-extract every rebuilt archive"
+		preview.ProfileSelectionPolicy = policy
+		for index := range preview.Profiles {
+			preview.Profiles[index].SelectedForComposition = preview.Profiles[index].ProductionEligible
+			if preview.Profiles[index].SelectedForComposition {
+				preview.SelectedProfileCount++
+			}
+		}
 		return preview, nil
 	}
 
@@ -42,11 +61,16 @@ func buildQuartetModuleCompositionPreview(rawProjectRoot, gameRoot string, modul
 		Type: quartetCompositionPreviewType, FormatVersion: quartetCompositionPreviewVersion,
 		GeneratedUTC: time.Now().UTC(), ProjectRoot: projectRoot, GameRoot: gameRoot,
 		TargetID: quartetTargetID, CommitEnabled: false,
-		SelectedModules:   append([]string{}, normalized...),
-		CompositionPolicy: "start from each verified selected-module source, merge only declared member deltas, reject additions/removals or non-identical member conflicts, and fully re-extract every rebuilt archive",
-		TranslationBases:  []compositionTranslationBase{}, LegacyDLCInputs: []compositionLegacyDLCInput{},
+		SelectedModules:        append([]string{}, normalized...),
+		ProfileSelectionPolicy: policy,
+		RuntimeTestOnly:        runtimeTestMode,
+		CompositionPolicy:      "start from each verified selected-module source, merge only declared member deltas, reject additions/removals or non-identical member conflicts, and fully re-extract every rebuilt archive",
+		TranslationBases:       []compositionTranslationBase{}, LegacyDLCInputs: []compositionLegacyDLCInput{},
 		Profiles: []compositionProfilePreview{}, Archives: []compositionArchivePreview{},
 		RegistryIssues: []localProfileIssue{}, Warnings: []string{},
+	}
+	if runtimeTestMode {
+		preview.CompositionPolicy = "isolated Restoration-only runtime test: select every current valid profile manifest, require a stable all-candidate set, reject member conflicts, compose from exact installed baselines, and keep production eligibility unchanged"
 	}
 
 	translationMembers := map[string]map[string]bool{}
@@ -89,19 +113,19 @@ func buildQuartetModuleCompositionPreview(rawProjectRoot, gameRoot string, modul
 			profileIDs = append(profileIDs, id)
 		}
 		sort.Strings(profileIDs)
-		runtimeOwners := map[string][]string{}
+		selectedOwners := map[string][]string{}
 		for _, id := range profileIDs {
 			item := registry.Profiles[id]
-			if !item.Manifest.RuntimeValidated {
+			if !runtimeTestMode && !item.Manifest.RuntimeValidated {
 				continue
 			}
 			for _, member := range item.Manifest.ChangedMembers {
 				key := foldCompositionPath(item.Manifest.TargetRelativePath) + "\x00" + foldCompositionPath(member)
-				runtimeOwners[key] = append(runtimeOwners[key], id)
+				selectedOwners[key] = append(selectedOwners[key], id)
 			}
 		}
-		for key := range runtimeOwners {
-			sort.Strings(runtimeOwners[key])
+		for key := range selectedOwners {
+			sort.Strings(selectedOwners[key])
 		}
 		for _, id := range profileIDs {
 			item := registry.Profiles[id]
@@ -120,8 +144,8 @@ func buildQuartetModuleCompositionPreview(rawProjectRoot, gameRoot string, modul
 					profile.TranslationConflicts = append(profile.TranslationConflicts, member)
 				}
 				key := foldCompositionPath(manifest.TargetRelativePath) + "\x00" + foldedMember
-				owners := runtimeOwners[key]
-				if manifest.RuntimeValidated && len(owners) > 1 {
+				owners := selectedOwners[key]
+				if len(owners) > 1 {
 					for _, owner := range owners {
 						if owner != id {
 							profile.RuntimeProfileConflicts = append(profile.RuntimeProfileConflicts, owner+":"+member)
@@ -135,23 +159,39 @@ func buildQuartetModuleCompositionPreview(rawProjectRoot, gameRoot string, modul
 			case len(profile.TranslationConflicts) > 0:
 				profile.Status = "blocked_translation_member_conflict"
 			case len(profile.RuntimeProfileConflicts) > 0:
-				profile.Status = "blocked_runtime_profile_conflict"
+				profile.Status = "blocked_profile_member_conflict"
+			case runtimeTestMode:
+				profile.Status = "eligible_runtime_test_candidate"
+				profile.RuntimeTestEligible = true
+				profile.SelectedForComposition = true
+				key := foldCompositionPath(manifest.TargetRelativePath)
+				eligibleProfilesByArchive[key] = append(eligibleProfilesByArchive[key], item)
 			case !profile.RuntimeValidated:
 				profile.Status = "candidate_awaiting_runtime_validation"
 			default:
 				profile.Status = "eligible_runtime_validated"
 				profile.ProductionEligible = true
+				profile.SelectedForComposition = true
 				key := foldCompositionPath(manifest.TargetRelativePath)
 				eligibleProfilesByArchive[key] = append(eligibleProfilesByArchive[key], item)
 			}
 			if profile.RuntimeValidated {
 				preview.RuntimeValidatedProfileCount++
-				if !profile.ProductionEligible {
+				if !runtimeTestMode && !profile.ProductionEligible {
 					runtimeBlocked = true
 				}
 			}
+			if len(profile.RuntimeProfileConflicts) > 0 {
+				runtimeBlocked = true
+			}
 			if profile.ProductionEligible {
 				preview.ProductionEligibleCount++
+			}
+			if profile.RuntimeTestEligible {
+				preview.RuntimeTestCandidateCount++
+			}
+			if profile.SelectedForComposition {
+				preview.SelectedProfileCount++
 			}
 			preview.Profiles = append(preview.Profiles, profile)
 		}
@@ -279,6 +319,10 @@ func buildQuartetModuleCompositionPreview(rawProjectRoot, gameRoot string, modul
 		preview.Status = "blocked_member_conflict"
 	case archiveBlocked:
 		preview.Status = "blocked_archive_precondition"
+	case runtimeTestMode && selected[quartetRestorationModule] && preview.SelectedProfileCount > 0 && preview.RegistryIssueCount == 0:
+		preview.Status = "ready_for_runtime_test_composition_build"
+	case runtimeTestMode && preview.RegistryIssueCount > 0:
+		preview.Status = "blocked_invalid_profile_registry"
 	case selected[quartetRestorationModule] && preview.ProductionEligibleCount > 0:
 		preview.Status = "ready_for_composition_build"
 	case selected[quartetRestorationModule] && preview.ValidProfileCount > 0:

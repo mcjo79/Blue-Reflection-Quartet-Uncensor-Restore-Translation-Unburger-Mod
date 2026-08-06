@@ -85,7 +85,9 @@ func commandTransactionCommit(args []string) error {
 	if !confirmed {
 		return fmt.Errorf("transaction-commit modifies game files; inspect the journal and pass --yes to confirm")
 	}
-	report, err := commitPreparedTransaction(journalPath)
+	progress := newTransactionProgressRenderer(os.Stdout)
+	report, err := commitPreparedTransactionWithProgress(journalPath, progress.Callback)
+	progress.Finish()
 	if err != nil {
 		return err
 	}
@@ -115,7 +117,9 @@ func commandTransactionRollback(args []string) error {
 	if !confirmed {
 		return fmt.Errorf("transaction-rollback modifies game files; inspect the journal and pass --yes to confirm")
 	}
-	report, err := rollbackInstalledTransaction(journalPath)
+	progress := newTransactionProgressRenderer(os.Stdout)
+	report, err := rollbackInstalledTransactionWithProgress(journalPath, progress.Callback)
+	progress.Finish()
 	if err != nil {
 		return err
 	}
@@ -156,6 +160,10 @@ func loadTransactionCommandContext(journalPath string) (transactionCommandContex
 }
 
 func commitPreparedTransaction(journalPath string) (transactionCommitReport, error) {
+	return commitPreparedTransactionWithProgress(journalPath, nil)
+}
+
+func commitPreparedTransactionWithProgress(journalPath string, progress transaction.ProgressFunc) (transactionCommitReport, error) {
 	context, err := loadTransactionCommandContext(journalPath)
 	if err != nil {
 		return transactionCommitReport{}, err
@@ -200,7 +208,7 @@ func commitPreparedTransaction(journalPath string) (transactionCommitReport, err
 			}
 		}
 	}
-	committed, err := transaction.Commit(context.JournalPath)
+	committed, err := transaction.CommitWithProgress(context.JournalPath, progress)
 	if err != nil {
 		return transactionCommitReport{}, fmt.Errorf("commit interrupted or blocked: %w; the journal was retained and the same transaction may be resumed or rolled back", err)
 	}
@@ -236,6 +244,10 @@ func makeTransactionCommitReport(context transactionCommandContext, active insta
 }
 
 func rollbackInstalledTransaction(journalPath string) (transactionRollbackReport, error) {
+	return rollbackInstalledTransactionWithProgress(journalPath, nil)
+}
+
+func rollbackInstalledTransactionWithProgress(journalPath string, progress transaction.ProgressFunc) (transactionRollbackReport, error) {
 	context, err := loadTransactionCommandContext(journalPath)
 	if err != nil {
 		return transactionRollbackReport{}, err
@@ -270,7 +282,7 @@ func rollbackInstalledTransaction(journalPath string) (transactionRollbackReport
 		}
 		return transactionRollbackReport{}, fmt.Errorf("active installation relationship does not permit rollback: journal=%s expected_previous=%s active=%s", journal.TransactionID, context.ExpectedPreviousID, current)
 	}
-	rolledBack, err := transaction.Rollback(context.JournalPath)
+	rolledBack, err := transaction.RollbackWithProgress(context.JournalPath, progress)
 	if err != nil {
 		return transactionRollbackReport{}, fmt.Errorf("rollback interrupted or blocked: %w; the journal was retained and rollback may be resumed", err)
 	}

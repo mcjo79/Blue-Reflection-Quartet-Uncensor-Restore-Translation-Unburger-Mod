@@ -137,6 +137,10 @@ type compositionBuildReport struct {
 	TranslationRepackReportSHA256 string                           `json:"translation_repack_report_sha256"`
 	TranslationRepackReportBytes  int64                            `json:"translation_repack_report_bytes"`
 	ProductionProfileIDs          []string                         `json:"production_profile_ids"`
+	RuntimeTestProfileIDs         []string                         `json:"runtime_test_profile_ids"`
+	SelectedProfileIDs            []string                         `json:"selected_profile_ids"`
+	RestorationProfilePolicy      string                           `json:"restoration_profile_policy"`
+	RuntimeTestOnly               bool                             `json:"runtime_test_only"`
 	ProfileInputs                 []compositionBuildProfileInput   `json:"profile_inputs"`
 	LegacyDLCInputs               []compositionBuildLegacyDLCInput `json:"legacy_dlc_inputs"`
 	Archives                      []compositionBuildArchive        `json:"archives"`
@@ -493,8 +497,11 @@ func normalizeQuartetCompositionSelection(selectedModules []string) ([]string, e
 			result = append(result, moduleID)
 		}
 	}
+	if len(result) == 1 && seen["quartet_restoration"] {
+		return result, nil
+	}
 	if len(result) < 2 {
-		return nil, fmt.Errorf("shared composition requires at least two selected modules")
+		return nil, fmt.Errorf("shared composition requires at least two selected modules unless the selection is isolated Restoration-only")
 	}
 	if !seen["quartet_restoration"] && !(seen["blue_reflection_translation"] && seen["quartet_legacy_dlc"]) {
 		return nil, fmt.Errorf("selected modules do not require shared composition")
@@ -548,7 +555,21 @@ func loadVerifiedCompositionArtifacts(projectRoot, gameRoot string, repack repac
 	if report.Status != "ok" || report.CommitEnabled {
 		return nil, fmt.Errorf("composition report is not a completed preview-only build")
 	}
-	if report.TargetID != quartetTargetID || report.PreflightStatus != "ready_for_composition_build" {
+	profilePolicy := strings.TrimSpace(report.RestorationProfilePolicy)
+	if profilePolicy == "" {
+		profilePolicy = "runtime-validated"
+	}
+	runtimeTest := report.RuntimeTestOnly
+	expectedPreflight := "ready_for_composition_build"
+	if runtimeTest {
+		expectedPreflight = "ready_for_runtime_test_composition_build"
+		if profilePolicy != "all-current-candidates-for-runtime-test" || !reflect.DeepEqual(report.SelectedModules, []string{"quartet_restoration"}) {
+			return nil, fmt.Errorf("runtime-test composition must be isolated Restoration-only with the explicit all-current-candidates policy")
+		}
+	} else if profilePolicy != "runtime-validated" {
+		return nil, fmt.Errorf("unsupported production Restoration profile policy: %s", profilePolicy)
+	}
+	if report.TargetID != quartetTargetID || report.PreflightStatus != expectedPreflight {
 		return nil, fmt.Errorf("composition report target/preflight mismatch")
 	}
 	if len(report.Errors) != 0 {
@@ -579,13 +600,24 @@ func loadVerifiedCompositionArtifacts(projectRoot, gameRoot string, repack repac
 	}
 
 	if selected["quartet_restoration"] {
-		if len(report.ProductionProfileIDs) == 0 {
-			return nil, fmt.Errorf("composition report contains no production-eligible restoration profiles")
+		selectedProfileIDs := report.SelectedProfileIDs
+		if len(selectedProfileIDs) == 0 {
+			selectedProfileIDs = report.ProductionProfileIDs
 		}
-		if err := verifyCurrentProfileInputs(projectRoot, report); err != nil {
+		if len(selectedProfileIDs) == 0 {
+			return nil, fmt.Errorf("composition report contains no selected restoration profiles")
+		}
+		if runtimeTest {
+			if len(report.ProductionProfileIDs) != 0 || !sameStringSet(selectedProfileIDs, report.RuntimeTestProfileIDs) {
+				return nil, fmt.Errorf("runtime-test composition profile classifications are inconsistent")
+			}
+		} else if len(report.RuntimeTestProfileIDs) != 0 || !sameStringSet(selectedProfileIDs, report.ProductionProfileIDs) {
+			return nil, fmt.Errorf("production composition profile classifications are inconsistent")
+		}
+		if err := verifyCurrentProfileInputs(projectRoot, report, selectedProfileIDs, runtimeTest); err != nil {
 			return nil, fmt.Errorf("stale composition profile inputs: %w", err)
 		}
-	} else if len(report.ProductionProfileIDs) != 0 || len(report.ProfileInputs) != 0 {
+	} else if len(report.ProductionProfileIDs) != 0 || len(report.RuntimeTestProfileIDs) != 0 || len(report.SelectedProfileIDs) != 0 || len(report.ProfileInputs) != 0 || report.RuntimeTestOnly {
 		return nil, fmt.Errorf("composition report contains Restoration inputs although Restoration was not selected")
 	}
 
@@ -645,6 +677,11 @@ func loadVerifiedCompositionArtifacts(projectRoot, gameRoot string, repack repac
 	for _, item := range legacyContract.Artifacts {
 		legacyByArchive[strings.ToLower(filepath.ToSlash(item.RelativePath))] = item
 	}
+	profilesByArchive := map[string][]compositionBuildProfileInput{}
+	for _, input := range report.ProfileInputs {
+		key := strings.ToLower(filepath.ToSlash(input.TargetRelativePath))
+		profilesByArchive[key] = append(profilesByArchive[key], input)
+	}
 	seen := map[string]bool{}
 	artifacts := make([]ArtifactPreview, 0, len(report.Archives))
 	for _, archive := range report.Archives {
@@ -684,6 +721,11 @@ func loadVerifiedCompositionArtifacts(projectRoot, gameRoot string, repack repac
 			if !ok || archive.BaseSHA256 != item.CandidateSHA256 || archive.BaseBytes != item.CandidateSize {
 				return nil, fmt.Errorf("composition Legacy DLC base is stale for %s", relative)
 			}
+		case "verified_runtime_validated_restoration_profile":
+			inputs := profilesByArchive[key]
+			if !selected["quartet_restoration"] || len(inputs) != 1 || !inputs[0].RuntimeValidated || len(archive.ProfileIDs) != 1 || archive.ProfileIDs[0] != inputs[0].ProfileID || archive.BaseSHA256 != inputs[0].PayloadSHA256 || archive.BaseBytes != inputs[0].PayloadBytes {
+				return nil, fmt.Errorf("composition Restoration profile passthrough is stale for %s", relative)
+			}
 		case "installed_game_baseline", "installed_baseline_archive":
 			if archive.BaseSHA256 == "" || archive.BaseBytes <= 0 {
 				return nil, fmt.Errorf("composition installed baseline metadata is missing for %s", relative)
@@ -712,6 +754,10 @@ func loadVerifiedCompositionArtifacts(projectRoot, gameRoot string, repack repac
 		case "verified_legacy_dlc_passthrough":
 			if archive.Status != "published_verified_legacy_dlc_passthrough" || !archive.ManifestDeclarationChecked || archive.FullReextractVerified {
 				return nil, fmt.Errorf("unverified Legacy DLC passthrough archive: %s", relative)
+			}
+		case "verified_restoration_profile_passthrough":
+			if archive.Status != "published_verified_restoration_profile_passthrough" || !archive.ManifestDeclarationChecked || archive.FullReextractVerified || len(archive.ProfileIDs) != 1 {
+				return nil, fmt.Errorf("unverified Restoration profile passthrough archive: %s", relative)
 			}
 		case "member_overlay":
 			if archive.Status != "published_member_overlay_verified" || !archive.ManifestDeclarationChecked || !archive.FullReextractVerified {
@@ -926,20 +972,34 @@ func verifyProjectFileFingerprint(projectRoot, relative, expectedHash string, ex
 	return nil
 }
 
-func verifyCurrentProfileInputs(projectRoot string, report compositionBuildReport) error {
-	if len(report.ProfileInputs) != len(report.ProductionProfileIDs) {
-		return fmt.Errorf("profile input count does not match production profile count")
+func sameStringSet(left, right []string) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	a := append([]string{}, left...)
+	b := append([]string{}, right...)
+	sort.Strings(a)
+	sort.Strings(b)
+	return reflect.DeepEqual(a, b)
+}
+
+func verifyCurrentProfileInputs(projectRoot string, report compositionBuildReport, selectedProfileIDs []string, runtimeTest bool) error {
+	if len(report.ProfileInputs) != len(selectedProfileIDs) {
+		return fmt.Errorf("profile input count does not match selected profile count")
 	}
 	expected := map[string]bool{}
-	for _, id := range report.ProductionProfileIDs {
+	for _, id := range selectedProfileIDs {
 		if strings.TrimSpace(id) == "" || expected[id] {
-			return fmt.Errorf("invalid or duplicate production profile id: %q", id)
+			return fmt.Errorf("invalid or duplicate selected profile id: %q", id)
 		}
 		expected[id] = true
 	}
 	for _, input := range report.ProfileInputs {
-		if !expected[input.ProfileID] || !input.RuntimeValidated {
-			return fmt.Errorf("unexpected or non-runtime profile input: %s", input.ProfileID)
+		if !expected[input.ProfileID] {
+			return fmt.Errorf("unexpected profile input: %s", input.ProfileID)
+		}
+		if !runtimeTest && !input.RuntimeValidated {
+			return fmt.Errorf("non-runtime profile entered production composition: %s", input.ProfileID)
 		}
 		if err := verifyProjectFileFingerprint(projectRoot, input.ManifestPath, input.ManifestSHA256, input.ManifestBytes); err != nil {
 			return fmt.Errorf("profile %s manifest: %w", input.ProfileID, err)
@@ -956,38 +1016,68 @@ func verifyCurrentProfileInputs(projectRoot string, report compositionBuildRepor
 		if err := json.Unmarshal(data, &manifest); err != nil {
 			return fmt.Errorf("decode profile %s manifest: %w", input.ProfileID, err)
 		}
-		if manifest.SchemaVersion != 1 || manifest.WorkstreamID != "quartet_restoration" || !manifest.RuntimeValidated || manifest.ProfileID != input.ProfileID || manifest.TargetRelativePath != input.TargetRelativePath || manifest.BaselineSHA256 != input.BaselineSHA256 || manifest.BaselineSize != input.BaselineBytes || manifest.ProfileSHA256 != input.PayloadSHA256 || manifest.ProfileSize != input.PayloadBytes {
+		if manifest.SchemaVersion != 1 || manifest.WorkstreamID != "quartet_restoration" || manifest.ProfileID != input.ProfileID || manifest.TargetRelativePath != input.TargetRelativePath || manifest.BaselineSHA256 != input.BaselineSHA256 || manifest.BaselineSize != input.BaselineBytes || manifest.ProfileSHA256 != input.PayloadSHA256 || manifest.ProfileSize != input.PayloadBytes || manifest.RuntimeValidated != input.RuntimeValidated {
 			return fmt.Errorf("profile %s manifest no longer matches the composition input", input.ProfileID)
 		}
+		if !runtimeTest && !manifest.RuntimeValidated {
+			return fmt.Errorf("profile %s lost runtime validation after composition build", input.ProfileID)
+		}
 	}
+
 	manifestRoot, err := secureProjectPath(projectRoot, ".local/build/quartet_restoration/core_profiles")
 	if err != nil {
 		return err
 	}
 	current := map[string]bool{}
-	entries, err := os.ReadDir(manifestRoot)
-	if err != nil {
-		return err
-	}
-	for _, entry := range entries {
-		if entry.IsDir() || !strings.EqualFold(filepath.Ext(entry.Name()), ".json") {
-			continue
+	err = filepath.WalkDir(manifestRoot, func(path string, entry os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
 		}
-		path := filepath.Join(manifestRoot, entry.Name())
+		if path == manifestRoot {
+			return nil
+		}
 		info, err := os.Lstat(path)
-		if err != nil || info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
-			return fmt.Errorf("invalid profile manifest entry: %s", entry.Name())
+		if err != nil {
+			return err
+		}
+		if info.Mode()&os.ModeSymlink != 0 {
+			return fmt.Errorf("symlink is not allowed in restoration profile registry: %s", path)
+		}
+		if entry.IsDir() {
+			return nil
+		}
+		if !strings.EqualFold(filepath.Ext(entry.Name()), ".json") {
+			return nil
+		}
+		if !info.Mode().IsRegular() {
+			return fmt.Errorf("invalid profile manifest entry: %s", path)
 		}
 		data, err := os.ReadFile(path)
 		if err != nil {
 			return err
 		}
 		var manifest currentProfileManifest
-		if json.Unmarshal(data, &manifest) == nil && manifest.SchemaVersion == 1 && manifest.WorkstreamID == "quartet_restoration" && manifest.RuntimeValidated {
+		if err := json.Unmarshal(data, &manifest); err != nil {
+			return fmt.Errorf("decode current profile manifest %s: %w", path, err)
+		}
+		if manifest.SchemaVersion != 1 || manifest.WorkstreamID != "quartet_restoration" || strings.TrimSpace(manifest.ProfileID) == "" {
+			return fmt.Errorf("invalid current profile manifest: %s", path)
+		}
+		if current[manifest.ProfileID] {
+			return fmt.Errorf("duplicate current profile id: %s", manifest.ProfileID)
+		}
+		if runtimeTest || manifest.RuntimeValidated {
 			current[manifest.ProfileID] = true
 		}
+		return nil
+	})
+	if err != nil {
+		return err
 	}
 	if !reflect.DeepEqual(current, expected) {
+		if runtimeTest {
+			return fmt.Errorf("current all-candidate profile set changed after runtime-test composition build")
+		}
 		return fmt.Errorf("runtime-validated profile set changed after composition build")
 	}
 	return nil

@@ -1,0 +1,100 @@
+{
+  "type": "br_quartet_legacy_dlc_bkn_synthetic_label_slot_return_acceptance",
+  "format_version": 1,
+  "workstream_id": "quartet_legacy_dlc",
+  "accepted_at_version": "0.0.63",
+  "status": "accepted_for_generation9_append_only_synthetic_label_candidate_build",
+  "source_bundle": "BR_QUARTET_BKN_SYNTHETIC_LABEL_SLOT_AUDIT_20260806T200244Z.tar.zst",
+  "source_bundle_sha256": "14d16b97b24bd0fd6922a16e9f670448c577b5b048fbb2fe5cdb34e2da38f102",
+  "source_stage": 102,
+  "source_tool_version": "0.0.62",
+  "parent_generation": 8,
+  "generation": 9,
+  "members": [
+    "costume_pc00_bkn",
+    "costume_pc01_bkn",
+    "costume_pc02_bkn",
+    "costume_pc03_bkn",
+    "costume_pc04_bkn",
+    "costume_pc05_bkn",
+    "costume_pc06_bkn",
+    "costume_pc07_bkn"
+  ],
+  "active_generation8": {
+    "relative_path": ".local/reports/quartet_legacy_dlc/validated_payloads/ACTIVE.json",
+    "sha256": "237bca51efb207edfa61b3c4fc8d1ba64f21fc07f8fc211b2a54a69e1dc4929e"
+  },
+  "generation8_candidates": [
+    {
+      "target_path": "Data/PACK10_02.PAK",
+      "relative_path": ".local/build/quartet_legacy_dlc/family_expansion/costume_pc00_pc01_pc02_pc03_pc04_pc05_pc06_pc07_bkn_dry/candidate/PACK10_02.PAK",
+      "size": 11537018569,
+      "sha256": "a5b48d585673f4cdfb64baff4a3b1b9ce48319fa0bdb7865199a025223942f0a"
+    },
+    {
+      "target_path": "Data/PACK12.PAK",
+      "relative_path": ".local/build/quartet_legacy_dlc/family_expansion/costume_pc00_pc01_pc02_pc03_pc04_pc05_pc06_pc07_bkn_dry/candidate/PACK12.PAK",
+      "size": 26124713,
+      "sha256": "82ee73e37c1b1057218423606ce2ed573a84264cdf1712b26d3961e357a52b2d"
+    }
+  ],
+  "installed_baselines": [
+    {
+      "target_path": "Data/PACK10_02.PAK",
+      "relative_path": "Data/PACK10_02.PAK",
+      "size": 11402829898,
+      "sha256": "e798f39c3bcdbb11381197bddf9bd3ad8de6ccf5d7c0c78b22613046d47f5302"
+    },
+    {
+      "target_path": "Data/PACK12.PAK",
+      "relative_path": "Data/PACK12.PAK",
+      "size": 26124649,
+      "sha256": "a108a22dd59116e79cf0fabcffd5d0427f72e13de267318869431d28717404f4"
+    }
+  ],
+  "append_plan": {
+    "string_no_start": 393339,
+    "string_no_end": 393346,
+    "record_count": 8,
+    "operation": "append_new_record",
+    "replaces_existing_record": false,
+    "target_members": [
+      "saves/b1/text_en/str_costume.xml",
+      "saves/b1/text_jp/str_costume.xml",
+      "saves/b1/text_sc/str_costume.xml",
+      "saves/b1/text_tc/str_costume.xml"
+    ],
+    "labels": {
+      "saves/b1/text_en/str_costume.xml": "Bikini",
+      "saves/b1/text_jp/str_costume.xml": "ビキニ",
+      "saves/b1/text_sc/str_costume.xml": "比基尼",
+      "saves/b1/text_tc/str_costume.xml": "比基尼"
+    }
+  },
+  "core_contract_gates": {
+    "Blue_Reflection_Patcher/internal/plan/payloadpreview/legacy_dlc.go": "e97aad18f69089cc68c006c88687d30a8a748918b7fbb812e0294cdd6b3047d5",
+    "Blue_Reflection_Patcher/internal/plan/payloadpreview/legacy_dlc_policy.json": "17d31e43dd111caaa182a0a0567d2545fb510005e5cf6c8434307d4e014e011c",
+    "workstreams/core/contracts/quartet_legacy_dlc/GENERIC_ADAPTER_RETURN_CONTRACT.json": "7be5d5e0b9d59997cac0c3cdb3c053c10392d39f9e2facbeed29b8f4535fe316",
+    "workstreams/core/contracts/quartet_legacy_dlc/MANIFEST_POLICY.md": "054c6231729db2b979ae2ea0e5e82c82d2aa4ab6c0ff20679599b75e575b0411",
+    "workstreams/core/contracts/quartet_legacy_dlc/VALIDATED_QUARTET_LEGACY_DLC_PAYLOAD.schema.json": "e2162dfbe8f6b5a5f78a7ec7a2123ec6a11af6da01790c599d3483e497591fd0",
+    "workstreams/core/tools/validate_quartet_legacy_dlc_active_manifest.sh": "81044708177aa8c482f8dfd96a3bc293ae799d2dfe2cd5c060be22d13f87ad7d"
+  },
+  "authorization": {
+    "local_candidate_build": true,
+    "generation9_active_manifest_publication": true,
+    "read_only_canonical_preview": true,
+    "prepare": false,
+    "commit": false,
+    "installation": false,
+    "profile_registration": false,
+    "runtime_validation": false,
+    "existing_costume_replacement": false,
+    "global_show_all": false,
+    "pc08": false,
+    "wet_bkn": false,
+    "translation_workstream_modification": false,
+    "restoration_modification": false,
+    "core_modification": false,
+    "git_modification": false
+  }
+}

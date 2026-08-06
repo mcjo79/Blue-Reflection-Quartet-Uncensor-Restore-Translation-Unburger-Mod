@@ -89,48 +89,8 @@ for rel in Data/PACK10_02.PAK Data/PACK12.PAK; do
   stat -c '%n\t%s\t%Y\t%i' "$path"
 done > "$OUTPUT_DIR/GAME_TARGET_STAT_AFTER.tsv"
 
-python3 - "$OUTPUT_DIR" <<'PY'
-import copy, json, pathlib, sys
-root=pathlib.Path(sys.argv[1])
-preview=json.loads((root/'PAYLOAD_PREVIEW.json').read_text())
-before=json.loads((root/'TRANSACTION_STATUS_BEFORE.json').read_text())
-after=json.loads((root/'TRANSACTION_STATUS_AFTER.json').read_text())
-for value in (before,after): value.pop('generated_utc',None)
-errors=[]
-if preview.get('status')!='ready': errors.append(f"preview status={preview.get('status')}")
-if preview.get('commit_enabled') is not False: errors.append('CommitEnabled is not false')
-targets=preview.get('targets',[])
-if len(targets)!=1: errors.append(f'expected one target, got {len(targets)}')
-arts=[]
-if targets:
-  target=targets[0]
-  if target.get('selected_modules')!=['quartet_legacy_dlc']: errors.append('selected modules mismatch')
-  for module in target.get('modules',[]):
-    if module.get('source_kind')!='validated_quartet_legacy_dlc_handoff': errors.append('source kind mismatch')
-    if not module.get('ready'): errors.append('module not ready')
-    arts.extend(module.get('artifacts',[]))
-paths=sorted(a.get('relative_path') for a in arts)
-if paths!=['Data/PACK10_02.PAK','Data/PACK12.PAK']: errors.append(f'artifact paths mismatch: {paths}')
-if before!=after: errors.append('transaction state changed')
-if (root/'GAME_TARGET_STAT_BEFORE.tsv').read_text()!=(root/'GAME_TARGET_STAT_AFTER.tsv').read_text(): errors.append('game target metadata changed')
-result={
- 'type':'br_quartet_legacy_dlc_generic_manifest_canonical_preview',
- 'format_version':1,
- 'status':'pass' if not errors else 'fail',
- 'artifact_count':len(arts),
- 'artifact_paths':paths,
- 'all_or_none_ready':not errors,
- 'source_kind':'validated_quartet_legacy_dlc_handoff',
- 'commit_enabled':preview.get('commit_enabled'),
- 'transaction_function_called':False,
- 'transaction_prepare_called':False,
- 'transaction_commit_called':False,
- 'game_modified':False,
- 'errors':errors,
-}
-(root/'VALIDATION.json').write_text(json.dumps(result,indent=2)+'\n')
-if errors: raise SystemExit('\n'.join(errors))
-PY
+python3 "$PROJECT_ROOT/workstreams/core/tools/validate_quartet_legacy_dlc_preview_result.py" \
+  --output-dir "$OUTPUT_DIR"
 
 (
   cd "$OUTPUT_DIR"

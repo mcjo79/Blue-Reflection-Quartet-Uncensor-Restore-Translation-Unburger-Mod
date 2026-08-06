@@ -1,0 +1,88 @@
+{
+  "type": "br_quartet_restoration_runtime_validation_registry",
+  "format_version": 1,
+  "updated_utc": "2026-08-06T17:17:45Z",
+  "source_evidence": {
+    "core_return_bundle_sha256": "93d106ac2ee390734725ca9d1c10b225d1af11294d4e355df90ef1e1b5cf0068",
+    "local_promotion_evidence_sha256": "ccacd9234a60656a022bcb1155b8afc3e7fe6091b504882ad325083aeed83567",
+    "runtime_results_path": "01_RESULTS/RUNTIME_VALIDATION_RESULTS.json",
+    "runtime_report_path": "01_RESULTS/RUNTIME_VALIDATION_REPORT.md",
+    "shader_fix_directions_path": "03_POSSIBLE_FIX/POSSIBLE_SHADER_FIX_DIRECTIONS.md"
+  },
+  "profiles": {
+    "candidate_bathroom_river_containing_pak_static_inverse_062e39915e7d": {
+      "target_relative_path": "Data/PACK10_03.PAK",
+      "profile_sha256": "f0eb8da6f2ea2ad9baa1e0eaab26d577f17225968542b7d7b2f66a0ecd14c10d",
+      "runtime_status": "pass_visual_and_stability",
+      "runtime_validated": true,
+      "production_eligible": true,
+      "observation": "Home bath scene loads without a crash and the water is clearly more transparent than baseline.",
+      "confirmed_semantics": {
+        "classification": "water_visibility_transparency_restoration",
+        "field": "home_bathroom",
+        "description": "Restores visibly greater water visibility/transparency in the home bathroom field."
+      }
+    },
+    "water_shader_swater_original_code": {
+      "target_relative_path": "Data/PACK10_01.PAK",
+      "profile_sha256": "46486d8e897a9d1eec486c97c4d426357579e0f99ffb8e811932978106ca177a",
+      "runtime_status": "runtime_failed",
+      "runtime_validated": false,
+      "production_eligible": false,
+      "observation": "Crashes near the start of New Game loading when active alone."
+    },
+    "height_fog_shader_original_code": {
+      "target_relative_path": "Data/PACK10_01.PAK",
+      "profile_sha256": "332ef210348bd956463cd86473089534656b9dcb3db7dd3252fe15c8492187a0",
+      "runtime_status": "runtime_failed",
+      "runtime_validated": false,
+      "production_eligible": false,
+      "observation": "The first cutscene plays; the game crashes immediately after it when active alone."
+    }
+  },
+  "event_group": {
+    "target_relative_path": "Data/PACK11.PAK",
+    "profile_ids": [
+      "repeated_context_69adef108a_c90700a5a2",
+      "route_sequence_te02_a570203aa6",
+      "single_scene_event_te02_230_0143f9822b",
+      "shared_presentation_d88c7c3a6f",
+      "candidate_single_scene_multishape_em01_050_954fadd61cac",
+      "candidate_subset_ce07_060_1cddf6cac60969c4",
+      "candidate_subset_ce11_010_abc7939e4ff69ead",
+      "candidate_subset_em01_060_43f9052741640b35",
+      "candidate_subset_em02_030_552c84999f656afb",
+      "candidate_subset_te01_270_f6e3b892ac7ba1b9",
+      "candidate_subset_xf07_030_d85e6afc33b5802b",
+      "candidate_fe13_090_complete_residual_inverse_9a57d11730c0"
+    ],
+    "profile_count": 12,
+    "group_runtime_status": "runtime_safe_visual_inconclusive",
+    "individual_runtime_validated": false,
+    "production_eligible": false,
+    "observation": "New Game, the first cutscene, the tested prologue path and the home bath scene run without a crash, but no profile-specific visual effect was confirmed. B+C looks the same as B-only in the tested bath scene."
+  },
+  "shader_failure_investigation": {
+    "status": "hypothesis_supported_not_proven",
+    "hypothesis": "The transplanted source DXBC executable code may assume source-side registers, constant buffers, resource bindings or signatures that do not match the Quartet target layout.",
+    "required_next_steps": [
+      "Compare source and target per program: RDEF, ISGN, OSGN, shader model, constant buffers, variables, offsets, resources, bind points, program order and executable register usage.",
+      "Split swater into vertex-only and pixel-only variants.",
+      "Split modified heightfog programs into separately testable variants.",
+      "Prefer minimal patches to Quartet target bytecode over wholesale source executable-code transplantation.",
+      "Test every repaired variant through the Fast Test Lab.",
+      "Do not set runtime_validated=true before a real game test."
+    ]
+  },
+  "policy": {
+    "only_explicit_runtime_results_are_persisted": true,
+    "runtime_validation_is_not_inferred": true,
+    "shader_failures_remain_excluded_from_production": true,
+    "event_profiles_remain_individually_unvalidated": true,
+    "core_modified": false,
+    "translation_modified": false,
+    "legacy_dlc_modified": false,
+    "installed_game_modified": false,
+    "git_modified": false
+  }
+}

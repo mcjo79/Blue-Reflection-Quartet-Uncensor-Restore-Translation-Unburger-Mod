@@ -55,6 +55,13 @@ REQUIRED_REPORTS = {
     STAGE120_DIR: STAGE120_ARCHIVE,
 }
 
+POST_STAGE121_LOW_VERSION_REPORT_IDS = {
+    "br1_official_source_inventory_refresh_preview_evidence",
+    "br1_official_source_metadata_refresh_evidence",
+    "br1_official_source_retirement_closure_evidence",
+    "quartet_restoration",
+}
+
 EXPECTED = {
     "report_catalog_rows": 110,
     "asset_family_rows": 22,
@@ -403,6 +410,11 @@ def build_report(project_root: Path, report_root: Path | None = None, output_rep
         for report_id in sorted(catalog_sources):
             summary_path = catalog_sources[report_id]
             data = load_json(summary_path)
+            # These reports were completed after the reviewed stage-121 snapshot
+            # but retain older tool-version values. Exclude them explicitly so
+            # extraction of archived reports cannot expand the frozen catalog.
+            if report_id not in reports and report_id in POST_STAGE121_LOW_VERSION_REPORT_IDS:
+                continue
             # Stage 121 is a historical snapshot. On newer workstream versions,
             # do not let later reports expand its reviewed 110-report catalog.
             # Required stage-121 inputs remain included even when their tool

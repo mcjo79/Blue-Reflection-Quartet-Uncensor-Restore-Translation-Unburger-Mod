@@ -23,6 +23,7 @@ ALLOWED_TARGETS = {"Data/PACK11.PAK", "Data/PACK10_01.PAK", "Data/PACK10_03.PAK"
 LOCAL_BUILD_PREFIX = ".local/build/quartet_restoration/"
 PROFILE_ID_RE = re.compile(r"^[A-Za-z0-9._-]+$")
 REPORT_NAME = "BR_quartet_restoration_core_profile_manifest_evidence.tar.zst"
+RUNTIME_VALIDATION_REGISTRY = "workstreams/quartet_restoration/RUNTIME_VALIDATION_REGISTRY.json"
 
 
 class ManifestGenerationError(RuntimeError):
@@ -302,6 +303,77 @@ def validate_specs(specs: Sequence[ProfileSpec]) -> None:
             safe_relative_path(member, label="changed archive member")
 
 
+def load_runtime_validation_registry(
+    project_root: Path,
+    specs: Sequence[ProfileSpec],
+) -> tuple[dict[str, bool], dict[str, object]]:
+    path = project_root / RUNTIME_VALIDATION_REGISTRY
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError as exc:
+        raise ManifestGenerationError(f"missing runtime-validation registry: {path}") from exc
+    except json.JSONDecodeError as exc:
+        raise ManifestGenerationError(f"invalid runtime-validation registry JSON: {exc}") from exc
+    if data.get("type") != "br_quartet_restoration_runtime_validation_registry":
+        raise ManifestGenerationError("runtime-validation registry type mismatch")
+    if data.get("format_version") != 1:
+        raise ManifestGenerationError("runtime-validation registry format mismatch")
+
+    spec_by_id = {spec.profile_id: spec for spec in specs}
+    decisions: dict[str, bool] = {}
+    direct = data.get("profiles")
+    if not isinstance(direct, dict):
+        raise ManifestGenerationError("runtime-validation registry profiles are missing")
+    for profile_id, row in direct.items():
+        if profile_id not in spec_by_id:
+            raise ManifestGenerationError(f"runtime-validation registry references unknown profile: {profile_id}")
+        if not isinstance(row, dict) or not isinstance(row.get("runtime_validated"), bool):
+            raise ManifestGenerationError(f"invalid runtime decision for {profile_id}")
+        spec = spec_by_id[profile_id]
+        if row.get("target_relative_path") != spec.target_relative_path:
+            raise ManifestGenerationError(f"runtime target mismatch for {profile_id}")
+        if row.get("profile_sha256") != spec.profile_sha256:
+            raise ManifestGenerationError(f"runtime profile checksum mismatch for {profile_id}")
+        if bool(row.get("production_eligible")) != bool(row.get("runtime_validated")):
+            raise ManifestGenerationError(f"runtime production eligibility mismatch for {profile_id}")
+        decisions[profile_id] = bool(row["runtime_validated"])
+
+    event_group = data.get("event_group")
+    if not isinstance(event_group, dict):
+        raise ManifestGenerationError("runtime-validation event group is missing")
+    event_ids = event_group.get("profile_ids")
+    if not isinstance(event_ids, list) or not all(isinstance(item, str) for item in event_ids):
+        raise ManifestGenerationError("runtime-validation event profile IDs are invalid")
+    expected_event_ids = {
+        spec.profile_id for spec in specs if spec.target_relative_path == "Data/PACK11.PAK"
+    }
+    if set(event_ids) != expected_event_ids or len(event_ids) != len(expected_event_ids):
+        raise ManifestGenerationError("runtime-validation event group does not match current PACK11 specs")
+    if event_group.get("profile_count") != len(expected_event_ids):
+        raise ManifestGenerationError("runtime-validation event group count mismatch")
+    if event_group.get("individual_runtime_validated") is not False:
+        raise ManifestGenerationError("PACK11 profiles must remain individually runtime-unvalidated")
+    if event_group.get("production_eligible") is not False:
+        raise ManifestGenerationError("PACK11 profiles must remain production-ineligible")
+    for profile_id in event_ids:
+        if profile_id in decisions:
+            raise ManifestGenerationError(f"duplicate runtime decision for {profile_id}")
+        decisions[profile_id] = False
+
+    if set(decisions) != set(spec_by_id):
+        missing = sorted(set(spec_by_id) - set(decisions))
+        extra = sorted(set(decisions) - set(spec_by_id))
+        raise ManifestGenerationError(
+            f"runtime-validation registry coverage mismatch: missing={missing}, extra={extra}"
+        )
+    validated = sorted(profile_id for profile_id, value in decisions.items() if value)
+    bathroom_id = "candidate_bathroom_river_containing_pak_static_inverse_062e39915e7d"
+    expected_validated = [bathroom_id] if bathroom_id in spec_by_id else []
+    if validated != expected_validated:
+        raise ManifestGenerationError(f"unexpected runtime-validated profile set: {validated}")
+    return decisions, data
+
+
 def read_workstream_version(project_root: Path) -> str:
     path = project_root / "workstreams" / WORKSTREAM_ID / "VERSION"
     try:
@@ -344,7 +416,11 @@ def validate_local_profile(project_root: Path, spec: ProfileSpec) -> Path:
     return resolved
 
 
-def build_manifest(spec: ProfileSpec, workstream_version: str) -> dict[str, object]:
+def build_manifest(
+    spec: ProfileSpec,
+    workstream_version: str,
+    runtime_validated: bool,
+) -> dict[str, object]:
     return {
         "schema_version": SCHEMA_VERSION,
         "profile_id": spec.profile_id,
@@ -356,7 +432,7 @@ def build_manifest(spec: ProfileSpec, workstream_version: str) -> dict[str, obje
         "local_profile_path": spec.local_profile_path,
         "changed_member_count": len(spec.changed_members),
         "changed_members": list(spec.changed_members),
-        "runtime_validated": False,
+        "runtime_validated": runtime_validated,
         "workstream_id": WORKSTREAM_ID,
         "workstream_version": workstream_version,
     }
@@ -468,7 +544,11 @@ def write_evidence_report(
         "type": "br_quartet_restoration_core_profile_manifest_evidence_summary",
         "format_version": 1,
         "tool_version": workstream_version,
-        "status": "all_current_local_profiles_registered_runtime_unvalidated",
+        "status": (
+            "current_local_profiles_registered_with_runtime_validated_subset"
+            if any(manifest["runtime_validated"] for _, manifest in manifests)
+            else "all_current_local_profiles_registered_runtime_unvalidated"
+        ),
         "profile_rows": len(manifests),
         "pack11_profile_rows": sum(
             1 for spec, _ in manifests if spec.target_relative_path == "Data/PACK11.PAK"
@@ -479,7 +559,13 @@ def write_evidence_report(
         "pack10_03_profile_rows": sum(
             1 for spec, _ in manifests if spec.target_relative_path == "Data/PACK10_03.PAK"
         ),
-        "runtime_validated_profile_rows": 0,
+        "runtime_validated_profile_rows": sum(
+            1 for _, manifest in manifests if manifest["runtime_validated"]
+        ),
+        "runtime_validated_profile_ids": [
+            spec.profile_id for spec, manifest in manifests if manifest["runtime_validated"]
+        ],
+        "runtime_validation_registry": RUNTIME_VALIDATION_REGISTRY,
         "manifest_root": generated_dir.relative_to(project_root).as_posix(),
         "policy": {
             "local_paks_copied": False,
@@ -528,11 +614,12 @@ def generate_manifests(
         raise ManifestGenerationError(f"project root does not exist: {project_root}")
     validate_specs(specs)
     version = read_workstream_version(project_root)
+    runtime_decisions, _ = load_runtime_validation_registry(project_root, specs)
 
     prepared: list[tuple[ProfileSpec, dict[str, object]]] = []
     for spec in specs:
         validate_local_profile(project_root, spec)
-        prepared.append((spec, build_manifest(spec, version)))
+        prepared.append((spec, build_manifest(spec, version, runtime_decisions[spec.profile_id])))
 
     generated_dir = replace_generated_directory(project_root=project_root, manifests=prepared)
     report = write_evidence_report(
@@ -559,7 +646,7 @@ def main() -> int:
     for manifest in manifests:
         print(
             f"- {manifest['profile_id']} -> {manifest['target_relative_path']} "
-            f"({manifest['changed_member_count']} changed member(s), runtime_validated=false)"
+            f"({manifest['changed_member_count']} changed member(s), runtime_validated={str(manifest['runtime_validated']).lower()})"
         )
     if report is not None:
         print(f"Report: {report}")

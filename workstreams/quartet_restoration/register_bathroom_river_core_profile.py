@@ -220,7 +220,14 @@ def register_profile(project_root: Path, *, create_report_archive: bool = True):
         create_report_archive=create_report_archive,
     )
     require(len(manifests) == 15, "generic registry did not generate exactly fifteen manifests")
-    require(all(item.get("runtime_validated") is False for item in manifests), "one or more profiles are runtime-validated")
+    validated = [item for item in manifests if item.get("runtime_validated") is True]
+    require(len(validated) == 1 and validated[0].get("profile_id") == PROFILE_ID,
+            "exactly the bathroom river profile must be runtime-validated")
+    require(all(
+        item.get("runtime_validated") is False
+        for item in manifests
+        if item.get("profile_id") != PROFILE_ID
+    ), "a non-bathroom profile is runtime-validated")
     selected = [item for item in manifests if item.get("profile_id") == PROFILE_ID]
     require(len(selected) == 1, "field manifest is missing or duplicated")
     manifest = selected[0]
@@ -231,6 +238,7 @@ def register_profile(project_root: Path, *, create_report_archive: bool = True):
     require(manifest.get("profile_size") == PROFILE_SIZE, "field manifest size mismatch")
     require(manifest.get("local_profile_path") == LOCAL_PROFILE_PATH, "field manifest local path mismatch")
     require(manifest.get("changed_members") == [TARGET_MEMBER], "field manifest member mismatch")
+    require(manifest.get("runtime_validated") is True, "field manifest runtime-validation state mismatch")
     require(sum(item.get("target_relative_path") == "Data/PACK11.PAK" for item in manifests) == 12, "generated PACK11 count mismatch")
     require(sum(item.get("target_relative_path") == "Data/PACK10_01.PAK" for item in manifests) == 2, "generated PACK10_01 count mismatch")
     require(sum(item.get("target_relative_path") == "Data/PACK10_03.PAK" for item in manifests) == 1, "generated PACK10_03 count mismatch")
@@ -250,7 +258,7 @@ def main() -> int:
     print(f"Core PACK10_03 target verified: {support['fully_supported']}")
     print(f"Generated manifests: {len(manifests)}")
     print(f"Manifest directory: {generated}")
-    print(f"Registered field profile: {PROFILE_ID} (runtime_validated=false)")
+    print(f"Registered field profile: {PROFILE_ID} (runtime_validated=true)")
     if report is not None:
         print(f"Report: {report}")
     return 0

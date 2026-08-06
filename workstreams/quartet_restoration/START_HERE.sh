@@ -5,6 +5,18 @@ VERSION="$(tr -d '[:space:]' < "$PROJECT_ROOT/workstreams/quartet_restoration/VE
 printf 'Blue Reflection Quartet restoration workstream\n'
 printf 'Version: %s\n' "$VERSION"
 printf 'Project root: %s\n\n' "$PROJECT_ROOT"
+printf '[DONE] Stage 139: 261 exact sections parsed in 235/288 G1E members; 0 whole members resolved\n'
+printf '[DONE] Stage 139: 16 KPS programs retain exact interfaces and opcode inventories\n'
+printf '[CURRENT] Stage 140: parse section table triplets/opaque bodies and classify no-write KPS minimal-patch feasibility\n'
+printf '[RULE] Section-table entries are not authoritative record bindings; partial coverage never resolves a whole G1E member\n'
+printf '[RULE] Bathroom-water B remains the only production profile; failed shaders remain excluded\n'
+printf '[DONE] Stage 137: bounded exact-parser queue locally verified (83 G1E families, 6 KPS paths)\n'
+printf '[DONE] CORE runtime return verified: bathroom-water profile passes stability and visibly restores water transparency\n'
+printf '[DONE] Shader runtime split: swater and heightfog fail independently and remain excluded\n'
+printf '[DONE] PACK11 group passes tested path but all 12 profiles remain individually visually inconclusive\n'
+printf '[CURRENT] Stage 138: canonically regenerate 15 manifests with exactly one runtime_validated profile\n'
+printf '[RULE] Runtime decisions come from RUNTIME_VALIDATION_REGISTRY.json; regeneration is fail-closed on drift\n'
+printf '[RULE] Do not modify core, Translation, Legacy DLC, installed game or Git\n\n'
 printf '[DONE] Stage 113: 58 resolved reference pairs, 14 eligible recurrence classes, 0/175 candidate residuals masked\n'
 printf '[NEXT] Stage 115: audit exact continuity of the five validated trailer fields without numeric closeness or semantic labels\n'
 printf '[DONE] Corrected read-only Original vs Quartet inventory and comparison\n'
@@ -81,9 +93,9 @@ printf '[DONE] Stage 69: exact local river.bin member prototype; 17/17 gates and
 printf '[DONE] Stage 70: parent Elixir repack; 25/25 gates and all 14 unrelated EARC members preserved\n'
 printf '[DONE] Stage 71: local PACK10_03 repack; 20/20 gates and all 426 unrelated PAK members preserved\n'
 printf '[DONE] Stage 72: exact PACK10_03 core interface request generated and fulfilled by coordinated core update\n'
-printf '[NEXT] Stage 73: register the fifteenth inactive profile after verifying three-target core support\n'
+printf '[DONE] Stage 73: fifteenth profile registered; later verified runtime result is integrated by stage 138\n'
 printf '[READY] Evidence and restoration-item registries\n'
-printf '[DEFERRED] Runtime validation of event and shader profiles until suitable scene saves are available\n'
+printf '[RUNTIME] B validated; both shaders failed; 12 event profiles remain individually deferred\n'
 printf '[DEFERRED] Legacy DLC work belongs to its own later workstream\n'
 printf '[RULE] This workstream must not edit translation JSONs or br_text_tool.py.\n'
 printf '[RULE] Build only under .local/build/quartet_restoration.\n'
@@ -1518,3 +1530,192 @@ printf '[READY] Stage 126: classify the full G1M/material delta surface without 
 # .local/paths.sh or explicit arguments.
 printf '[DONE] Stage 126: all 120 universal families classified at G1M/material level; no semantics or write authorization\n'
 printf '[READY] Stage 127: separate broad engine/format patterns from bounded narrow static candidates and enforce path hygiene\n'
+
+# Update 0.1.46 / stage 128 — unresolved coverage selector channels and
+# standalone render-path audit. This stage reads reviewed metadata only.
+#
+# Run:
+#   bash workstreams/quartet_restoration/128_collect_coverage_selector_standalone_render_path_audit.sh
+#
+# Upload:
+#   .local/reports/quartet_restoration/BR_quartet_restoration_coverage_selector_standalone_render_path_audit_evidence.tar.zst
+#
+# Four item families retain unique OID seeds without binding; fifteen udw2/udw3
+# families retain only self/structural identifiers. Heightfog and swater remain
+# parked runtime-unvalidated profiles. Cwater, cwater2 and caustics remain
+# static candidates. No visual semantics or write is authorized.
+printf '[DONE] Stage 127: broad G1M patterns separated from bounded narrow candidates; local-path hygiene clean\n'
+printf '[READY] Stage 128: bound unresolved selector channels and five standalone render paths using existing metadata\n'
+
+
+# Update 0.1.47 / stage 129 — structured selector and water-dependency audit.
+# Game roots are loaded from .local/paths.sh; no local path is versioned.
+#
+# Run:
+#   bash workstreams/quartet_restoration/129_collect_structured_selector_water_dependency_evidence.sh
+#
+# Upload:
+#   .local/reports/quartet_restoration/BR_quartet_restoration_structured_selector_water_dependency_evidence.tar.zst
+#
+# The stage reads bounded local payloads but emits metadata only. It assigns no
+# visual/censorship semantics and authorizes no PAK, profile, registry, core,
+# game, Translation, Legacy-DLC or Git write.
+printf '[DONE] Stage 128: nineteen coverage channels and five standalone render paths bounded without semantics or writes\n'
+printf '[READY] Stage 129: scan structured selector tables and OID sibling matrices; close cwater/cwater2 code-level deltas and bound caustics dependencies\n'
+
+# Update 0.1.48 / stage 130 — non-character technical namespace saturation.
+# This metadata-only stage partitions the full BR1-vs-Quartet asset inventory:
+# character (already audited), localization boundary, and 920 technical rows.
+# It bounds 539 non-identical Restoration candidates across field, shader,
+# effect and posteffect. Only 19 were previously focused; 520 remain.
+#
+# Run:
+#   bash workstreams/quartet_restoration/130_collect_non_character_namespace_saturation_audit.sh
+#
+# Upload:
+#   .local/reports/quartet_restoration/BR_quartet_restoration_non_character_namespace_saturation_audit_evidence.tar.zst
+#
+# No game payload, save, runtime execution, semantic assignment, PAK build or
+# profile/registry/core/game/Translation/Legacy-DLC/Git write is involved.
+printf '[DONE] Stage 129: structured selector/OID channels bounded; cwater pair closed at executable-code level; caustics subsystem remains semantics-free\n'
+printf '[READY] Stage 130: saturate every non-character technical namespace and expose the full remaining static discovery queue\n'
+
+# Update 0.1.49 / stage 131 — complete field namespace member saturation.
+# The locally verified stage-130 archive is fixed at:
+# de8b339921387dfa8858415110166120f49ceddcf63ea148883fcf41d214d69c
+#
+# Stage 131 reads Original PACK00_03 and Quartet PACK10_03 through the normal
+# project cache. It parses 312 paired field EARC archives, records three
+# source-only EARC archives, and keeps three changed G1PF paths at file level.
+# Evidence contains metadata only and assigns no visual/censorship semantics.
+#
+# Run:
+#   bash workstreams/quartet_restoration/131_collect_field_namespace_member_saturation_evidence.sh
+#
+# Upload:
+#   .local/reports/quartet_restoration/BR_quartet_restoration_field_namespace_member_saturation_evidence.tar.zst
+printf '[DONE] Stage 130: all non-character technical namespaces saturated; 539 candidates bounded and 520 previously unfocused paths exposed\n'
+printf '[READY] Stage 131: exact member saturation for all 105 field scene roots without saves, runtime or writes\n'
+
+# Update 0.1.50 / stage 132 — field member-role and format-family classification.
+# Consumes the exact metadata-only stage-131 archive; no game payload is read.
+#
+# Run:
+#   bash workstreams/quartet_restoration/132_collect_field_member_role_format_classification_evidence.sh
+#
+# Upload:
+#   .local/reports/quartet_restoration/BR_quartet_restoration_field_member_role_format_classification_evidence.tar.zst
+printf '[DONE] Stage 131: all 105 field scene roots saturated at exact member level\n'
+printf '[READY] Stage 132: classify recurrent field member roles and format families without semantics, saves or writes\n'
+
+# Update 0.1.51 / stage 133 — complete shader namespace executable/signature/
+# reflection sweep. Reads all 214 non-identical shader paths from the normal
+# PACK00_01/PACK10_01 cache and emits metadata only.
+#
+# Run:
+#   bash workstreams/quartet_restoration/133_collect_shader_namespace_executable_signature_reflection_sweep_evidence.sh
+#
+# Upload:
+#   .local/reports/quartet_restoration/BR_quartet_restoration_shader_namespace_executable_signature_reflection_sweep_evidence.tar.zst
+printf '[DONE] Stage 132: all field member-role and format families classified; local report verified\n'
+printf '[READY] Stage 133: classify all 214 shader paths by executable code, reflection, signatures and metadata without saves or writes\n'
+
+# Update 0.1.52 / stage 134 — saturate all six effect archives and the one
+# posteffect archive at member level, then audit all fifteen bounded shader
+# candidates against exact static dependency channels.
+#
+# Run:
+#   bash workstreams/quartet_restoration/134_collect_effect_posteffect_namespace_member_saturation_evidence.sh
+#
+# Upload:
+#   .local/reports/quartet_restoration/BR_quartet_restoration_effect_posteffect_namespace_member_saturation_evidence.tar.zst
+printf '[DONE] Stage 133: all 214 shader paths classified; local report verified\n'
+printf '[READY] Stage 134: saturate six effect archives and one posteffect archive; keep shader dependency binding fail-closed\n'
+
+
+# Update 0.1.53 / stage 135 — effect/posteffect role and format classification
+#
+# Stage 134 is locally verified at SHA-256
+# 597238b7b85606b07e50131428a028b37f2233a83fc2f0c063bd812a39738263.
+# Stage 135 consumes only its metadata and classifies all 658 non-identical
+# members and 602 role families by G1E/G1EM/G1T/KPS format, size-delta direction,
+# namespace and recurrence. All fifteen shader candidates remain unresolved.
+#
+# Run:
+#   bash workstreams/quartet_restoration/135_collect_effect_posteffect_member_role_format_classification_evidence.sh
+#
+# Upload:
+#   .local/reports/quartet_restoration/BR_quartet_restoration_effect_posteffect_member_role_format_classification_evidence.tar.zst
+#
+# No proprietary payload, save, runtime, PAK build, prototype or project/game
+# write is involved.
+
+# Update 0.1.54 / stage 136 — complete G1E and KPS structural sweep
+# The locally verified stage-135 report has SHA-256
+# f19420c6dbfde35272690957128814f4eedc6c39323fd8b56a41693c176bd623.
+# Stage 136 reads the seven existing effect/posteffect containers read-only,
+# structurally analyzes all 621 changed G1E members and parses DXBC envelopes
+# in all 27 changed/added KPS members. It keeps G1EM/G1T and all fifteen bounded
+# shaders unresolved and assigns no visual/censorship semantics.
+#
+# Run:
+# bash workstreams/quartet_restoration/136_collect_effect_posteffect_g1e_kps_structural_sweep_evidence.sh
+#
+# No save, runtime, PAK build, installed-game write, prototype, profile/registry,
+# core, Translation, Legacy DLC or Git operation is authorized.
+
+
+# Update 0.1.55 / stage 137 — bounded exact-parser queues from stage 136.
+# The locally verified stage-136 report is fixed at:
+# f1e44fbde4d19dc27bba548ca41c5b7154e85066740fc841a73174043b101fcc
+#
+# Run:
+#   bash workstreams/quartet_restoration/137_collect_effect_posteffect_bounded_exact_parser_queue_evidence.sh
+#
+# Upload:
+#   .local/reports/quartet_restoration/BR_quartet_restoration_effect_posteffect_bounded_exact_parser_queue_evidence.tar.zst
+#
+# Stage 137 consumes metadata only. It queues all 83 recurrent G1E structure
+# families, 646 high-recurrence transitions, six non-metadata KPS paths and 43
+# non-metadata KPS programs. No semantics, runtime or write is authorized.
+printf '[DONE] Stage 136: all 621 G1E and 27 KPS members structurally swept; local report verified\n'
+printf '[READY] Stage 137: bound exact-parser queues for recurrent G1E and non-metadata KPS without saves or writes\n'
+
+# Update 0.1.56 / stage 138 — canonical runtime-validation integration.
+# Local evidence is verified at:
+# 8d818ee5035ece1221efda5d66388b6480cef8cbf128374dec2027c002e04089
+printf '[DONE] Stage 138: bathroom-water profile canonically runtime validated; failed shaders and deferred event profiles preserved\n'
+
+# Update 0.1.57 / stage 139 — exact layout/interface calibration.
+# Reads 288 G1E members in seven broad recurrent families and six KPS paths.
+# No save, runtime, PAK build or semantic/write authorization is involved.
+#
+# Run:
+#   bash workstreams/quartet_restoration/139_collect_effect_posteffect_broad_g1e_exact_layout_kps_interface_evidence.sh
+#
+# Upload:
+#   .local/reports/quartet_restoration/BR_quartet_restoration_effect_posteffect_broad_g1e_exact_layout_kps_interface_evidence.tar.zst
+printf '[READY] Stage 139: parse exact G1E section layouts and KPS interfaces while preserving the canonical runtime profile state\n'
+
+# Update 0.1.59 / stage 141 — metadata-only KPS target-dword prototype plan.
+# Stage 140 is locally verified at:
+# dbb672ecf2821c5e84e2eb9d1027a060395b8136871ff677705fa65b624b2566
+#
+# Run:
+#   bash workstreams/quartet_restoration/141_collect_effect_posteffect_kps_target_dword_prototype_plan_evidence.sh
+#
+# Upload:
+#   .local/reports/quartet_restoration/BR_quartet_restoration_effect_posteffect_kps_target_dword_prototype_plan_evidence.tar.zst
+printf '[DONE] Stage 140: exact-section content and KPS feasibility locally verified; all G1E families unresolved\n'
+printf '[READY] Stage 141: plan 227 preconditioned target-side KPS dword edits across 15 whole programs; build no patch\n'
+
+# Update 0.1.62 / stage 144 — Gamma-only Fast Test Lab runtime activation.
+# Uses the existing core-owned PACK10_01 transaction route; no core source is
+# modified. GlowLight remains blocked until Gamma is observed and rolled back.
+#
+# Activate:
+#   bash workstreams/quartet_restoration/144_gamma_fast_test_lab.sh activate
+#
+# After exiting the game completely, rollback:
+#   bash workstreams/quartet_restoration/144_gamma_fast_test_lab.sh rollback
+printf '[READY] Stage 144: activate Gamma only through the verified core transaction route; exact rollback required before GlowLight\n'

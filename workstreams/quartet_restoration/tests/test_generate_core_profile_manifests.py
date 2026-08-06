@@ -42,6 +42,20 @@ class CoreProfileManifestTests(unittest.TestCase):
             local_profile_path=rel,
             changed_members=("event/b1/event_jp/test.ebd",),
         )
+        registry = {
+            "type": "br_quartet_restoration_runtime_validation_registry",
+            "format_version": 1,
+            "profiles": {},
+            "event_group": {
+                "profile_ids": [profile_id],
+                "profile_count": 1,
+                "individual_runtime_validated": False,
+                "production_eligible": False,
+            },
+        }
+        registry_path = root / TOOL.RUNTIME_VALIDATION_REGISTRY
+        registry_path.parent.mkdir(parents=True, exist_ok=True)
+        registry_path.write_text(json.dumps(registry, indent=2) + "\n", encoding="utf-8")
         return spec, path
 
     def test_generates_exact_schema_and_current_version(self):
@@ -65,6 +79,28 @@ class CoreProfileManifestTests(unittest.TestCase):
                 "changed_members", "runtime_validated", "workstream_id",
                 "workstream_version",
             })
+
+    def test_canonical_registry_marks_only_bathroom_profile_runtime_validated(self):
+        decisions, registry = TOOL.load_runtime_validation_registry(ROOT, TOOL.CURRENT_PROFILE_SPECS)
+        self.assertEqual(
+            [profile_id for profile_id, value in decisions.items() if value],
+            ["candidate_bathroom_river_containing_pak_static_inverse_062e39915e7d"],
+        )
+        self.assertEqual(
+            registry["profiles"]["candidate_bathroom_river_containing_pak_static_inverse_062e39915e7d"]
+            ["confirmed_semantics"]["classification"],
+            "water_visibility_transparency_restoration",
+        )
+        self.assertFalse(decisions["water_shader_swater_original_code"])
+        self.assertFalse(decisions["height_fog_shader_original_code"])
+
+    def test_missing_runtime_registry_is_fail_closed(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            spec, _ = self._fixture(root)
+            (root / TOOL.RUNTIME_VALIDATION_REGISTRY).unlink()
+            with self.assertRaisesRegex(TOOL.ManifestGenerationError, "missing runtime-validation registry"):
+                TOOL.generate_manifests(project_root=root, specs=(spec,), create_report_archive=False)
 
     def test_checksum_mismatch_keeps_existing_registry_untouched(self):
         with tempfile.TemporaryDirectory() as temporary:

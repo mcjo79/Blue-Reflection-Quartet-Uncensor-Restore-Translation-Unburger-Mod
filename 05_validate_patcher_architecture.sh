@@ -240,9 +240,13 @@ PYTX
 
   rm -rf -- "$PAYLOAD_PREVIEW_TEST_ROOT"
   mkdir -p -- "$PAYLOAD_PREVIEW_TEST_ROOT/project/workstreams/core" \
+    "$PAYLOAD_PREVIEW_TEST_ROOT/project/workstreams/translation" \
+    "$PAYLOAD_PREVIEW_TEST_ROOT/project/workstreams/translation_tooling" \
     "$PAYLOAD_PREVIEW_TEST_ROOT/project/Blue_Reflection_Patcher" \
     "$PAYLOAD_PREVIEW_TEST_ROOT/game/DATA"
   printf '0.0.22\n' > "$PAYLOAD_PREVIEW_TEST_ROOT/project/workstreams/core/VERSION"
+  printf '0.0.113\n' > "$PAYLOAD_PREVIEW_TEST_ROOT/project/workstreams/translation/VERSION"
+  printf '0.0.54\n' > "$PAYLOAD_PREVIEW_TEST_ROOT/project/workstreams/translation_tooling/VERSION"
   printf 'module synthetic/payload-preview\n' > "$PAYLOAD_PREVIEW_TEST_ROOT/project/Blue_Reflection_Patcher/go.mod"
 
   python3 - "$PAYLOAD_PREVIEW_TEST_ROOT" <<'PYPAYLOADBUILD'
@@ -275,7 +279,42 @@ for relative, payload in artifacts.items():
         "output_bytes": len(payload),
         "failures": [],
     })
-report = {"status": "ok", "archives": archives}
+loose_report = {
+    "type": "br_translation_loose_build_report",
+    "format_version": 2,
+    "status": "ok",
+    "translation_version": "0.0.113",
+    "translation_tooling_version": "0.0.54",
+    "canonical_input_fingerprint": hashlib.sha256(b"synthetic-payload-preview").hexdigest(),
+    "targets": {"blue_reflection_original": {"files": []}},
+}
+loose_path = project / ".local/reports/translation/BR_TRANSLATION_LOOSE_BUILD_REPORT.json"
+loose_path.parent.mkdir(parents=True, exist_ok=True)
+loose_payload = (json.dumps(loose_report, indent=2) + "\n").encode("utf-8")
+loose_path.write_bytes(loose_payload)
+for archive in archives:
+    baseline = ("synthetic-baseline-" + archive["archive_relative_path"]).encode("utf-8")
+    archive.update({
+        "source_policy": "current_installation_baseline_extraction",
+        "source_archive_sha256": hashlib.sha256(baseline).hexdigest(),
+        "source_archive_bytes": len(baseline),
+        "changed_members": [],
+        "full_reextract_verified": True,
+    })
+report = {
+    "type": "br_translation_pak_repack_report",
+    "format_version": 2,
+    "status": "ok",
+    "translation_version": "0.0.113",
+    "translation_tooling_version": "0.0.54",
+    "minimum_translation_version": "0.0.113",
+    "canonical_input_fingerprint": loose_report["canonical_input_fingerprint"],
+    "loose_report_path": loose_path.relative_to(project).as_posix(),
+    "loose_report_sha256": hashlib.sha256(loose_payload).hexdigest(),
+    "loose_report_bytes": len(loose_payload),
+    "selected_targets": ["blue_reflection_original"],
+    "archives": archives,
+}
 report_path = project / ".local/reports/translation/BR_TRANSLATION_PAK_REPACK_REPORT.json"
 report_path.parent.mkdir(parents=True, exist_ok=True)
 report_path.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
@@ -317,10 +356,13 @@ report = Path(sys.argv[2])
 report.parent.mkdir(parents=True, exist_ok=True)
 report.write_text(json.dumps({
     "type": "br_local_translation_workflow_report",
+    "format_version": 5,
     "status": "ready_preview_only",
     "target_id": "blue_reflection_original",
     "game_root": game,
+    "preview_only": True,
     "game_files_modified": False,
+    "commit_enabled": False,
 }, indent=2) + "\n", encoding="utf-8")
 PYGUIDEDLOCALREPORT
 PYGUIDEDLOCALBUILDER
@@ -396,7 +438,7 @@ if prepared.get("type") != "br_transaction_prepare_report" or prepared.get("stat
     raise SystemExit(f"Translation transaction was not prepared: {prepared!r}")
 if prepared.get("commit_enabled") is not True:
     raise SystemExit(f"Prepared transaction does not expose explicit commit: {prepared!r}")
-if prepared.get("format_version") != 4:
+if prepared.get("format_version") != 5:
     raise SystemExit(f"Unexpected transaction prepare format: {prepared!r}")
 if prepared.get("baseline_action") != "created" or not prepared.get("baseline_id"):
     raise SystemExit(f"Persistent baseline was not created: {prepared!r}")
@@ -734,9 +776,13 @@ PYBASELINESTATUS
 
   rm -rf -- "$COMPOSITION_PREVIEW_TEST_ROOT"
   mkdir -p -- "$COMPOSITION_PREVIEW_TEST_ROOT/project/workstreams/core" \
+    "$COMPOSITION_PREVIEW_TEST_ROOT/project/workstreams/translation" \
+    "$COMPOSITION_PREVIEW_TEST_ROOT/project/workstreams/translation_tooling" \
     "$COMPOSITION_PREVIEW_TEST_ROOT/project/Blue_Reflection_Patcher" \
     "$COMPOSITION_PREVIEW_TEST_ROOT/game/Data"
   printf '0.0.24\n' > "$COMPOSITION_PREVIEW_TEST_ROOT/project/workstreams/core/VERSION"
+  printf '0.0.113\n' > "$COMPOSITION_PREVIEW_TEST_ROOT/project/workstreams/translation/VERSION"
+  printf '0.0.54\n' > "$COMPOSITION_PREVIEW_TEST_ROOT/project/workstreams/translation_tooling/VERSION"
   printf 'module synthetic/quartet-composition\n' > "$COMPOSITION_PREVIEW_TEST_ROOT/project/Blue_Reflection_Patcher/go.mod"
 
   GUST_PAK_BIN="${GUST_PAK:-$PROJECT_ROOT/.local/vendor/gust_tools/gust_pak}"
@@ -817,6 +863,23 @@ translation_title = make_pak(
     "PACK00_04_01.PAK",
     {"ui/title.bin": b"translation-title-" * 300},
 )
+translation_partitions = {}
+for partition_name in (
+    "PACK01_01.PAK",
+    "PACK02_01.PAK",
+    "PACK01_02.PAK",
+    "PACK02_02.PAK",
+    "PACK01_03.PAK",
+    "PACK02_03.PAK",
+):
+    translation_partitions[partition_name] = make_pak(
+        root / "pak_sources" / ("translation_" + Path(partition_name).stem.lower()),
+        partition_name,
+        {
+            "synthetic/" + Path(partition_name).stem.lower() + ".bin":
+                ("translation-" + partition_name + "-").encode("utf-8") * 200
+        },
+    )
 
 (game / "Data/PACK11.PAK").write_bytes(baseline_pack11.read_bytes())
 # Structural markers used for target detection. Unselected restoration archives
@@ -825,19 +888,37 @@ translation_title = make_pak(
 (game / "Data/PACK10_03.PAK").write_bytes(b"synthetic-field-marker")
 (game / "Data/PACK12.PAK").write_bytes(b"synthetic-text-marker")
 (game / "Data/PACK00_04_01.PAK").write_bytes(b"synthetic-title-marker")
+for partition_marker in (
+    "PACK01_01.PAK",
+    "PACK02_01.PAK",
+    "PACK01_02.PAK",
+    "PACK02_02.PAK",
+    "PACK01_03.PAK",
+    "PACK02_03.PAK",
+):
+    (game / "Data" / partition_marker).write_bytes(
+        ("synthetic-partition-marker-" + partition_marker).encode("utf-8")
+    )
 
 archives = []
-for source, relative in (
-    (translation_pack11, "Data/PACK11.PAK"),
-    (translation_pack12, "Data/PACK12.PAK"),
-    (translation_title, "Data/PACK00_04_01.PAK"),
-):
-    output = project / ".local/build/translation/archives/blue_reflection_quartet" / relative
+translation_archive_sources = [
+    (translation_pack11, "blue_reflection_quartet", "Data/PACK11.PAK"),
+    (translation_pack12, "blue_reflection_quartet", "Data/PACK12.PAK"),
+    (translation_partitions["PACK01_01.PAK"], "blue_reflection_ray_quartet", "Data/PACK01_01.PAK"),
+    (translation_partitions["PACK02_01.PAK"], "blue_reflection_ray_quartet", "Data/PACK02_01.PAK"),
+    (translation_partitions["PACK01_02.PAK"], "blue_reflection_sun_quartet", "Data/PACK01_02.PAK"),
+    (translation_partitions["PACK02_02.PAK"], "blue_reflection_sun_quartet", "Data/PACK02_02.PAK"),
+    (translation_partitions["PACK01_03.PAK"], "second_light_quartet", "Data/PACK01_03.PAK"),
+    (translation_partitions["PACK02_03.PAK"], "second_light_quartet", "Data/PACK02_03.PAK"),
+    (translation_title, "blue_reflection_quartet", "Data/PACK00_04_01.PAK"),
+]
+for source, content_target_id, relative in translation_archive_sources:
+    output = project / ".local/build/translation/archives" / content_target_id / relative
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_bytes(source.read_bytes())
     digest, size = sha_size(output)
     archives.append({
-        "target_id": "blue_reflection_quartet",
+        "target_id": content_target_id,
         "archive_relative_path": relative,
         "output_path": output.relative_to(project).as_posix(),
         "output_sha256": digest,
@@ -845,13 +926,16 @@ for source, relative in (
         "failures": [],
     })
 
-repack = project / ".local/reports/translation/BR_TRANSLATION_PAK_REPACK_REPORT.json"
-repack.parent.mkdir(parents=True, exist_ok=True)
-repack.write_text(json.dumps({"status": "ok", "archives": archives}, indent=2) + "\n", encoding="utf-8")
-
+fingerprint = hashlib.sha256(b"synthetic-quartet-composition").hexdigest()
 loose = project / ".local/reports/translation/BR_TRANSLATION_LOOSE_BUILD_REPORT.json"
-loose.write_text(json.dumps({
+loose.parent.mkdir(parents=True, exist_ok=True)
+loose_payload = (json.dumps({
+    "type": "br_translation_loose_build_report",
+    "format_version": 2,
     "status": "ok",
+    "translation_version": "0.0.113",
+    "translation_tooling_version": "0.0.54",
+    "canonical_input_fingerprint": fingerprint,
     "targets": {
         "blue_reflection_quartet": {
             "files": [{
@@ -859,8 +943,34 @@ loose.write_text(json.dumps({
                 "internal_path": "event/b1/event_en/test.ebm",
                 "changed": True,
             }]
-        }
+        },
+        "blue_reflection_ray_quartet": {"files": []},
+        "blue_reflection_sun_quartet": {"files": []},
+        "second_light_quartet": {"files": []},
     },
+}, indent=2) + "\n").encode("utf-8")
+loose.write_bytes(loose_payload)
+
+repack = project / ".local/reports/translation/BR_TRANSLATION_PAK_REPACK_REPORT.json"
+repack.parent.mkdir(parents=True, exist_ok=True)
+repack.write_text(json.dumps({
+    "type": "br_translation_pak_repack_report",
+    "format_version": 2,
+    "status": "ok",
+    "translation_version": "0.0.113",
+    "translation_tooling_version": "0.0.54",
+    "minimum_translation_version": "0.0.113",
+    "canonical_input_fingerprint": fingerprint,
+    "loose_report_path": loose.relative_to(project).as_posix(),
+    "loose_report_sha256": hashlib.sha256(loose_payload).hexdigest(),
+    "loose_report_bytes": len(loose_payload),
+    "selected_targets": [
+        "blue_reflection_quartet",
+        "blue_reflection_ray_quartet",
+        "blue_reflection_sun_quartet",
+        "second_light_quartet",
+    ],
+    "archives": archives,
 }, indent=2) + "\n", encoding="utf-8")
 
 profile_relative = ".local/build/quartet_restoration/synthetic/runtime_profile/Data/PACK11.PAK"
@@ -945,11 +1055,11 @@ root = Path(sys.argv[2])
 gust_pak = Path(sys.argv[3])
 project = root / "project"
 game = root / "game"
-if report.get("type") != "br_quartet_translation_restoration_composition_build" or report.get("format_version") != 2:
+if report.get("type") != "br_quartet_translation_restoration_composition_build" or report.get("format_version") != 4:
     raise SystemExit(f"Unexpected composition build type/version: {report!r}")
 if report.get("status") != "ok" or report.get("commit_enabled") is not False:
     raise SystemExit(f"Composition build is not safe and complete: {report!r}")
-if report.get("published_archive_count") != 3 or report.get("composed_archive_count") != 1:
+if report.get("published_archive_count") != 9 or report.get("composed_archive_count") != 1:
     raise SystemExit(f"Unexpected composition build summary: {report!r}")
 for key in ("translation_loose_report_sha256", "translation_repack_report_sha256"):
     if len(report.get(key, "")) != 64:
@@ -997,12 +1107,12 @@ root = Path(sys.argv[2])
 if preview.get("format_version") != 2 or preview.get("status") != "ready" or preview.get("commit_enabled") is not False:
     raise SystemExit(f"Composed payload preview is not safe and ready: {preview!r}")
 targets = preview.get("targets", [])
-if len(targets) != 1 or targets[0].get("pending_module_count") != 0 or targets[0].get("ready_artifact_count") != 3:
+if len(targets) != 1 or targets[0].get("pending_module_count") != 0 or targets[0].get("ready_artifact_count") != 9:
     raise SystemExit(f"Unexpected composed payload target: {targets!r}")
 modules = {item["module_id"]: item for item in targets[0].get("modules", [])}
 translation = modules.get("blue_reflection_translation")
 restoration = modules.get("quartet_restoration")
-if not translation or not translation.get("ready") or len(translation.get("artifacts", [])) != 3:
+if not translation or not translation.get("ready") or len(translation.get("artifacts", [])) != 9:
     raise SystemExit(f"Composed Translation module is not ready: {translation!r}")
 if not restoration or not restoration.get("ready") or restoration.get("artifacts"):
     raise SystemExit(f"Restoration was not represented by the shared composition set: {restoration!r}")

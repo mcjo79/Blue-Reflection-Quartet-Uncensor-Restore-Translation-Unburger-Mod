@@ -728,3 +728,204 @@ func TestQuartetSevenCombinationPreviewMatrix(t *testing.T) {
 		})
 	}
 }
+
+func writeSyntheticRestorationRuntimeTestComposition(t *testing.T, root, game string) {
+	t.Helper()
+	const targetRelative = "Data/PACK10_01.PAK"
+	const profileID = "candidate_runtime_test_profile"
+	baseline := []byte("stock PACK10_01 baseline\n")
+	output := []byte("stock PACK10_01 baseline plus candidate overlay\n")
+	profilePayload := []byte("candidate profile payload\n")
+	testWrite(t, filepath.Join(game, filepath.FromSlash(targetRelative)), baseline)
+
+	profilePayloadRelative := filepath.ToSlash(filepath.Join(".local/build/quartet_restoration/runtime_test", profileID, filepath.FromSlash(targetRelative)))
+	testWrite(t, filepath.Join(root, filepath.FromSlash(profilePayloadRelative)), profilePayload)
+	profileManifestRelative := filepath.ToSlash(filepath.Join(".local/build/quartet_restoration/core_profiles/generated", profileID+".json"))
+	profileManifest := currentProfileManifest{
+		SchemaVersion: 1, ProfileID: profileID, TargetRelativePath: targetRelative,
+		BaselineSHA256: digest(baseline), BaselineSize: int64(len(baseline)),
+		ProfileSHA256: digest(profilePayload), ProfileSize: int64(len(profilePayload)),
+		LocalProfilePath: profilePayloadRelative, RuntimeValidated: false, WorkstreamID: "quartet_restoration",
+	}
+	profileManifestData, err := json.MarshalIndent(profileManifest, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	profileManifestData = append(profileManifestData, byte('\n'))
+	testWrite(t, filepath.Join(root, filepath.FromSlash(profileManifestRelative)), profileManifestData)
+
+	outputRelative := filepath.ToSlash(filepath.Join(compositionOutputRelative, filepath.FromSlash(targetRelative)))
+	testWrite(t, filepath.Join(root, filepath.FromSlash(outputRelative)), output)
+	report := compositionBuildReport{
+		Type: compositionReportType, FormatVersion: 4, Status: "ok",
+		ProjectRoot: root, GameRoot: game, TargetID: quartetTargetID, CommitEnabled: false,
+		SelectedModules:          []string{"quartet_restoration"},
+		PreflightStatus:          "ready_for_runtime_test_composition_build",
+		OutputRoot:               compositionOutputRelative,
+		EmbeddedReportPath:       compositionEmbeddedReportRelative,
+		RuntimeTestProfileIDs:    []string{profileID},
+		SelectedProfileIDs:       []string{profileID},
+		RestorationProfilePolicy: "all-current-candidates-for-runtime-test",
+		RuntimeTestOnly:          true,
+		ProfileInputs: []compositionBuildProfileInput{{
+			ProfileID: profileID, ManifestPath: profileManifestRelative,
+			ManifestSHA256: digest(profileManifestData), ManifestBytes: int64(len(profileManifestData)),
+			PayloadPath: profilePayloadRelative, PayloadSHA256: digest(profilePayload), PayloadBytes: int64(len(profilePayload)),
+			TargetRelativePath: targetRelative, BaselineSHA256: digest(baseline), BaselineBytes: int64(len(baseline)), RuntimeValidated: false,
+		}},
+		Archives: []compositionBuildArchive{{
+			ArchiveRelativePath: targetRelative, Mode: "member_overlay", BaseSourceKind: "installed_game_baseline",
+			BaseSourcePath: targetRelative, BaseSHA256: digest(baseline), BaseBytes: int64(len(baseline)),
+			InstalledBaselineSHA256: digest(baseline), InstalledBaselineBytes: int64(len(baseline)),
+			OutputPath: outputRelative, OutputSHA256: digest(output), OutputBytes: int64(len(output)),
+			FullReextractVerified: true, ManifestDeclarationChecked: true,
+			Status: "published_member_overlay_verified", ProfileIDs: []string{profileID},
+		}},
+		PublishedArchiveCount: 1, ComposedArchiveCount: 1, PassthroughArchiveCount: 0, FullReextractCount: 1,
+		Errors: []string{},
+	}
+	data, err := json.MarshalIndent(report, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	data = append(data, byte('\n'))
+	testWrite(t, filepath.Join(root, filepath.FromSlash(compositionReportRelative)), data)
+	testWrite(t, filepath.Join(root, filepath.FromSlash(compositionEmbeddedReportRelative)), data)
+}
+
+func TestRestorationOnlyRuntimeTestCompositionBecomesCanonicalPreviewReady(t *testing.T) {
+	root, game := syntheticProject(t, quartetTargetID, map[string][]byte{"Data/PACK10_01.PAK": []byte("unused translation fixture")})
+	writeSyntheticRestorationRuntimeTestComposition(t, root, game)
+	selection := model.SelectionResult{Targets: []model.TargetSelection{{
+		TargetID: quartetTargetID, DisplayName: "Quartet", Root: game,
+		DetectionSource: "test", SelectedModuleIDs: []string{"quartet_restoration"},
+	}}}
+	preview, err := Build(root, filepath.Join(root, "state"), selection)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if preview.Status != "ready" || preview.Targets[0].Status != "ready" || preview.Targets[0].ReadyArtifactCount != 1 || preview.Targets[0].PendingModuleCount != 0 {
+		t.Fatalf("runtime-test Restoration-only preview is not ready: %+v", preview)
+	}
+	if len(preview.Targets[0].Modules) != 1 || preview.Targets[0].Modules[0].ModuleID != "quartet_restoration" || !preview.Targets[0].Modules[0].Ready || len(preview.Targets[0].Modules[0].Artifacts) != 1 {
+		t.Fatalf("runtime-test module preview is wrong: %+v", preview.Targets[0].Modules)
+	}
+	artifact := preview.Targets[0].Modules[0].Artifacts[0]
+	if artifact.RelativePath != "Data/PACK10_01.PAK" || !artifact.CompositionVerified || !artifact.TransactionReady || artifact.DesiredAction != "replace" {
+		t.Fatalf("runtime-test artifact is not transaction-preview ready: %+v", artifact)
+	}
+	if preview.CommitEnabled {
+		t.Fatal("runtime-test payload preview unexpectedly enabled commit")
+	}
+}
+
+func TestRuntimeTestCompositionRejectsProfileSetDrift(t *testing.T) {
+	root, game := syntheticProject(t, quartetTargetID, map[string][]byte{"Data/PACK10_01.PAK": []byte("unused translation fixture")})
+	writeSyntheticRestorationRuntimeTestComposition(t, root, game)
+	extraManifest := currentProfileManifest{
+		SchemaVersion: 1, ProfileID: "late_candidate", TargetRelativePath: "Data/PACK10_01.PAK",
+		BaselineSHA256: digest([]byte("stock PACK10_01 baseline\n")), BaselineSize: int64(len([]byte("stock PACK10_01 baseline\n"))),
+		ProfileSHA256: digest([]byte("late payload")), ProfileSize: int64(len([]byte("late payload"))),
+		LocalProfilePath: ".local/build/quartet_restoration/runtime_test/late_candidate/Data/PACK10_01.PAK",
+		RuntimeValidated: false, WorkstreamID: "quartet_restoration",
+	}
+	extraData, err := json.MarshalIndent(extraManifest, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	extraData = append(extraData, byte('\n'))
+	testWrite(t, filepath.Join(root, ".local/build/quartet_restoration/core_profiles/generated/late_candidate.json"), extraData)
+	testWrite(t, filepath.Join(root, filepath.FromSlash(extraManifest.LocalProfilePath)), []byte("late payload"))
+	selection := model.SelectionResult{Targets: []model.TargetSelection{{
+		TargetID: quartetTargetID, DisplayName: "Quartet", Root: game,
+		DetectionSource: "test", SelectedModuleIDs: []string{"quartet_restoration"},
+	}}}
+	preview, err := Build(root, filepath.Join(root, "state"), selection)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if preview.Status != "not_ready" || len(preview.Warnings) == 0 || !strings.Contains(strings.Join(preview.Warnings, " "), "all-candidate profile set changed") {
+		t.Fatalf("profile-set drift did not invalidate runtime-test composition: %+v", preview)
+	}
+}
+
+func writeSyntheticProductionRestorationPassthrough(t *testing.T, root, game string) {
+	t.Helper()
+	const profileID = "candidate-bathroom-b"
+	const targetRelative = "Data/PACK10_03.PAK"
+	baseline := []byte("stock-" + targetRelative)
+	profilePayload := []byte("runtime-validated-bathroom-profile")
+	profilePayloadRelative := filepath.ToSlash(filepath.Join(".local/build/quartet_restoration/runtime_validated", profileID, filepath.FromSlash(targetRelative)))
+	testWrite(t, filepath.Join(root, filepath.FromSlash(profilePayloadRelative)), profilePayload)
+	profileManifestRelative := filepath.ToSlash(filepath.Join(".local/build/quartet_restoration/core_profiles/generated", profileID+".json"))
+	profileManifest := currentProfileManifest{
+		SchemaVersion: 1, ProfileID: profileID, TargetRelativePath: targetRelative,
+		BaselineSHA256: digest(baseline), BaselineSize: int64(len(baseline)),
+		ProfileSHA256: digest(profilePayload), ProfileSize: int64(len(profilePayload)),
+		LocalProfilePath: profilePayloadRelative, RuntimeValidated: true, WorkstreamID: "quartet_restoration",
+	}
+	profileManifestData, err := json.MarshalIndent(profileManifest, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	profileManifestData = append(profileManifestData, '\n')
+	testWrite(t, filepath.Join(root, filepath.FromSlash(profileManifestRelative)), profileManifestData)
+	outputRelative := filepath.ToSlash(filepath.Join(compositionOutputRelative, filepath.FromSlash(targetRelative)))
+	testWrite(t, filepath.Join(root, filepath.FromSlash(outputRelative)), profilePayload)
+	report := compositionBuildReport{
+		Type: compositionReportType, FormatVersion: 4, Status: "ok",
+		ProjectRoot: root, GameRoot: game, TargetID: quartetTargetID, CommitEnabled: false,
+		SelectedModules: []string{"quartet_restoration"},
+		PreflightStatus: "ready_for_composition_build", OutputRoot: compositionOutputRelative,
+		EmbeddedReportPath:   compositionEmbeddedReportRelative,
+		ProductionProfileIDs: []string{profileID}, SelectedProfileIDs: []string{profileID},
+		RestorationProfilePolicy: "runtime-validated", RuntimeTestOnly: false,
+		ProfileInputs: []compositionBuildProfileInput{{
+			ProfileID: profileID, ManifestPath: profileManifestRelative,
+			ManifestSHA256: digest(profileManifestData), ManifestBytes: int64(len(profileManifestData)),
+			PayloadPath: profilePayloadRelative, PayloadSHA256: digest(profilePayload), PayloadBytes: int64(len(profilePayload)),
+			TargetRelativePath: targetRelative, BaselineSHA256: digest(baseline), BaselineBytes: int64(len(baseline)), RuntimeValidated: true,
+		}},
+		Archives: []compositionBuildArchive{{
+			ArchiveRelativePath: targetRelative, Mode: "verified_restoration_profile_passthrough",
+			BaseSourceKind: "verified_runtime_validated_restoration_profile", BaseSourcePath: profilePayloadRelative,
+			BaseSHA256: digest(profilePayload), BaseBytes: int64(len(profilePayload)),
+			InstalledBaselineSHA256: digest(baseline), InstalledBaselineBytes: int64(len(baseline)),
+			OutputPath: outputRelative, OutputSHA256: digest(profilePayload), OutputBytes: int64(len(profilePayload)),
+			FullReextractVerified: false, ManifestDeclarationChecked: true,
+			Status: "published_verified_restoration_profile_passthrough", ProfileIDs: []string{profileID},
+		}},
+		PublishedArchiveCount: 1, ComposedArchiveCount: 0, PassthroughArchiveCount: 1, FullReextractCount: 0,
+		Errors: []string{},
+	}
+	data, err := json.MarshalIndent(report, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	data = append(data, '\n')
+	testWrite(t, filepath.Join(root, filepath.FromSlash(compositionReportRelative)), data)
+	testWrite(t, filepath.Join(root, filepath.FromSlash(compositionEmbeddedReportRelative)), data)
+}
+
+func TestRuntimeValidatedRestorationProfilePassthroughBecomesCanonicalPreviewReady(t *testing.T) {
+	root, game := syntheticProject(t, quartetTargetID, map[string][]byte{"Data/PACK10_03.PAK": []byte("unused translation fixture")})
+	writeSyntheticProductionRestorationPassthrough(t, root, game)
+	selection := model.SelectionResult{Targets: []model.TargetSelection{{
+		TargetID: quartetTargetID, DisplayName: "Quartet", Root: game,
+		DetectionSource: "test", SelectedModuleIDs: []string{"quartet_restoration"},
+	}}}
+	preview, err := Build(root, filepath.Join(root, "state"), selection)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if preview.Status != "ready" || preview.Targets[0].Status != "ready" || preview.Targets[0].ReadyArtifactCount != 1 || preview.Targets[0].PendingModuleCount != 0 {
+		t.Fatalf("runtime-validated passthrough preview is not ready: %+v", preview)
+	}
+	artifact := preview.Targets[0].Modules[0].Artifacts[0]
+	if artifact.RelativePath != "Data/PACK10_03.PAK" || !artifact.CompositionVerified || !artifact.TransactionReady || artifact.DesiredAction != "replace" {
+		t.Fatalf("runtime-validated passthrough artifact is not transaction ready: %+v", artifact)
+	}
+	if preview.CommitEnabled {
+		t.Fatal("preview unexpectedly enabled commit")
+	}
+}

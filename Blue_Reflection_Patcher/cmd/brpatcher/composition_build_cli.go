@@ -133,6 +133,10 @@ type quartetCompositionBuildReport struct {
 	TranslationRepackReportSHA256 string                           `json:"translation_repack_report_sha256"`
 	TranslationRepackReportBytes  int64                            `json:"translation_repack_report_bytes"`
 	ProductionProfileIDs          []string                         `json:"production_profile_ids"`
+	RuntimeTestProfileIDs         []string                         `json:"runtime_test_profile_ids"`
+	SelectedProfileIDs            []string                         `json:"selected_profile_ids"`
+	RestorationProfilePolicy      string                           `json:"restoration_profile_policy"`
+	RuntimeTestOnly               bool                             `json:"runtime_test_only"`
 	ProfileInputs                 []compositionBuildProfileInput   `json:"profile_inputs"`
 	LegacyDLCInputs               []compositionBuildLegacyDLCInput `json:"legacy_dlc_inputs"`
 	Archives                      []compositionBuildArchive        `json:"archives"`
@@ -299,7 +303,7 @@ func (tool gustPakArchiveTool) Repack(manifestPath, workingDirectory string, tim
 func commandQuartetCompositionBuild(args []string) error {
 	flags := flag.NewFlagSet("quartet-composition-build", flag.ContinueOnError)
 	var roots rootsFlag
-	var projectRoot, gustPak, output, moduleList string
+	var projectRoot, gustPak, output, moduleList, profilePolicy string
 	var timeout time.Duration
 	flags.Var(&roots, "game-dir", "BLUE REFLECTION Quartet game directory")
 	flags.Var(&roots, "root", "alias for --game-dir")
@@ -307,6 +311,7 @@ func commandQuartetCompositionBuild(args []string) error {
 	flags.StringVar(&gustPak, "gust-pak", "", "path to gust_pak/gust_pak.exe; optional when configured locally")
 	flags.StringVar(&output, "json", "", "also write the composition build report to this file")
 	flags.StringVar(&moduleList, "modules", "blue_reflection_translation,quartet_restoration", "comma-separated Quartet modules to compose")
+	flags.StringVar(&profilePolicy, "restoration-profile-policy", restorationProfilePolicyRuntimeValidated, "Restoration profile policy: runtime-validated or all-current-candidates-for-runtime-test")
 	flags.DurationVar(&timeout, "timeout", quartetCompositionDefaultTimeout, "timeout for each gust_pak operation")
 	if err := flags.Parse(args); err != nil {
 		return err
@@ -347,7 +352,14 @@ func commandQuartetCompositionBuild(args []string) error {
 	if err != nil {
 		return err
 	}
-	report, buildErr := buildQuartetModuleComposition(resolvedProject, quartet[0].Root, modules, gustPakArchiveTool{Path: resolvedTool}, timeout)
+	policy, err := normalizeRestorationProfilePolicy(profilePolicy)
+	if err != nil {
+		return err
+	}
+	if err := validateRestorationProfilePolicyForModules(policy, modules); err != nil {
+		return err
+	}
+	report, buildErr := buildQuartetModuleCompositionWithPolicy(resolvedProject, quartet[0].Root, modules, policy, gustPakArchiveTool{Path: resolvedTool}, timeout)
 	defaultReport := filepath.Join(resolvedProject, filepath.FromSlash(quartetCompositionReportRelative))
 	if writeErr := writeJSONAtomic(defaultReport, report, 0o600); writeErr != nil {
 		if buildErr != nil {
@@ -385,7 +397,8 @@ func buildQuartetComposition(projectRoot, gameRoot string, tool compositionArchi
 		EmbeddedReportPath:          filepath.ToSlash(filepath.Join(quartetCompositionOutputRelative, quartetCompositionEmbeddedReport)),
 		TranslationLooseReportPath:  filepath.ToSlash(translationLooseReportRelative),
 		TranslationRepackReportPath: filepath.ToSlash(translationRepackReportRelative),
-		ProductionProfileIDs:        []string{}, ProfileInputs: []compositionBuildProfileInput{}, LegacyDLCInputs: []compositionBuildLegacyDLCInput{}, Archives: []compositionBuildArchive{}, Errors: []string{}, Warnings: []string{},
+		ProductionProfileIDs:        []string{}, RuntimeTestProfileIDs: []string{}, SelectedProfileIDs: []string{}, ProfileInputs: []compositionBuildProfileInput{}, LegacyDLCInputs: []compositionBuildLegacyDLCInput{}, Archives: []compositionBuildArchive{}, Errors: []string{}, Warnings: []string{},
+		RestorationProfilePolicy: restorationProfilePolicyRuntimeValidated, RuntimeTestOnly: false,
 	}
 	projectRoot, err := filepath.Abs(projectRoot)
 	if err != nil {
@@ -455,6 +468,7 @@ func buildQuartetComposition(projectRoot, gameRoot string, tool compositionArchi
 		}
 		eligibleProfiles[profile.ProfileID] = item
 		report.ProductionProfileIDs = append(report.ProductionProfileIDs, profile.ProfileID)
+		report.SelectedProfileIDs = append(report.SelectedProfileIDs, profile.ProfileID)
 		manifestAbsolute, pathErr := secureJoin(projectRoot, item.ManifestPath)
 		if pathErr != nil {
 			err := fmt.Errorf("resolve profile manifest %s: %w", profile.ProfileID, pathErr)
@@ -483,6 +497,7 @@ func buildQuartetComposition(projectRoot, gameRoot string, tool compositionArchi
 		})
 	}
 	sort.Strings(report.ProductionProfileIDs)
+	sort.Strings(report.SelectedProfileIDs)
 	sort.Slice(report.ProfileInputs, func(i, j int) bool { return report.ProfileInputs[i].ProfileID < report.ProfileInputs[j].ProfileID })
 	if len(eligibleProfiles) == 0 {
 		err := fmt.Errorf("composition preflight selected no production-eligible restoration profiles")
@@ -625,9 +640,11 @@ func publishTranslationPassthrough(projectRoot, stagingRoot string, base composi
 	if err != nil {
 		return archive, err
 	}
-	if err := copyFileDurable(source, destination, base.SHA256, base.Bytes, 0o600); err != nil {
+	method, err := cloneOrCopyCompositionFile(source, destination, base.SHA256, base.Bytes, 0o600)
+	if err != nil {
 		return archive, err
 	}
+	archive.Warnings = append(archive.Warnings, "storage_method="+method)
 	hash, size, err := checkedFile(destination)
 	if err != nil {
 		return archive, err
@@ -1323,7 +1340,11 @@ func lastLines(value string, count int) []string {
 func printHumanQuartetCompositionBuild(out io.Writer, report quartetCompositionBuildReport) {
 	fmt.Fprintf(out, "\n%s%sQuartet content-aware composition build%s\n", ansiBold, ansiCyan, ansiReset)
 	fmt.Fprintf(out, "%sStatus:%s %s\n", ansiBold, ansiReset, report.Status)
-	fmt.Fprintf(out, "Profiles: %d production eligible\n", len(report.ProductionProfileIDs))
+	if report.RuntimeTestOnly {
+		fmt.Fprintf(out, "Profiles: %d runtime-test candidate(s), production eligibility unchanged\n", len(report.RuntimeTestProfileIDs))
+	} else {
+		fmt.Fprintf(out, "Profiles: %d production eligible\n", len(report.ProductionProfileIDs))
+	}
 	for _, archive := range report.Archives {
 		style := ansiGreen
 		if archive.Status == "failed" {

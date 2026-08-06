@@ -350,3 +350,44 @@ func TestHumanQuartetCompositionPreviewShowsProfilesOnlyWhenSelected(t *testing.
 		t.Fatalf("Restoration profile summary is missing: %q", output.String())
 	}
 }
+
+func TestQuartetRestorationRuntimeTestPreviewSelectsAllCurrentCandidates(t *testing.T) {
+	fixture := newCompositionFixture(t, false, false)
+	preview, err := buildQuartetModuleCompositionPreviewWithPolicy(
+		fixture.project,
+		fixture.game,
+		[]string{quartetRestorationModule},
+		restorationProfilePolicyAllCandidatesRuntimeTest,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if preview.Status != "ready_for_runtime_test_composition_build" || !preview.RuntimeTestOnly {
+		t.Fatalf("runtime-test preview was not ready: %+v", preview)
+	}
+	if preview.ProfileSelectionPolicy != restorationProfilePolicyAllCandidatesRuntimeTest || preview.SelectedProfileCount != 1 || preview.RuntimeTestCandidateCount != 1 {
+		t.Fatalf("runtime-test profile selection is wrong: %+v", preview)
+	}
+	if preview.ProductionEligibleCount != 0 || len(preview.Profiles) != 1 || !preview.Profiles[0].RuntimeTestEligible || !preview.Profiles[0].SelectedForComposition {
+		t.Fatalf("unvalidated candidate was not isolated as a runtime-test input: %+v", preview.Profiles)
+	}
+	if len(preview.Archives) != 1 || preview.Archives[0].ArchiveRelativePath != "Data/PACK11.PAK" || preview.Archives[0].Status != "ready_for_member_overlay" {
+		t.Fatalf("unexpected runtime-test archive plan: %+v", preview.Archives)
+	}
+	if preview.CommitEnabled {
+		t.Fatal("runtime-test preflight unexpectedly enabled commit")
+	}
+}
+
+func TestQuartetRestorationRuntimeTestPolicyRejectsMixedModules(t *testing.T) {
+	fixture := newCompositionFixture(t, false, false)
+	_, err := buildQuartetModuleCompositionPreviewWithPolicy(
+		fixture.project,
+		fixture.game,
+		[]string{quartetTranslationModule, quartetRestorationModule},
+		restorationProfilePolicyAllCandidatesRuntimeTest,
+	)
+	if err == nil || !strings.Contains(err.Error(), "isolated Restoration-only") {
+		t.Fatalf("mixed-module runtime-test policy was not rejected: %v", err)
+	}
+}

@@ -185,7 +185,7 @@ class BathroomRiverCoreProfileRegistrationTests(unittest.TestCase):
         with self.assertRaisesRegex(TOOL.RegistrationError, "exactly fifteen"):
             TOOL.validate_generator_extension(SimpleNamespace(CURRENT_PROFILE_SPECS=specs))
 
-    def test_registration_generates_fifteen_runtime_unvalidated_profiles(self):
+    def test_registration_generates_one_runtime_validated_bathroom_profile(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             reports = root / ".local/reports/quartet_restoration"
@@ -203,6 +203,7 @@ class BathroomRiverCoreProfileRegistrationTests(unittest.TestCase):
             ]
             selected = next(item for item in manifests if item["profile_id"] == TOOL.PROFILE_ID)
             selected.update({
+                "runtime_validated": True,
                 "baseline_sha256": TOOL.BASELINE_SHA256,
                 "baseline_size": TOOL.BASELINE_SIZE,
                 "profile_sha256": TOOL.PROFILE_SHA256,
@@ -223,7 +224,13 @@ class BathroomRiverCoreProfileRegistrationTests(unittest.TestCase):
                 _, _, result, _ = TOOL.register_profile(root, create_report_archive=False)
             self.assertEqual(len(result), 15)
             self.assertEqual(sum(item["target_relative_path"] == TOOL.TARGET_ARCHIVE for item in result), 1)
-            self.assertTrue(all(item["runtime_validated"] is False for item in result))
+            self.assertEqual(sum(item["runtime_validated"] is True for item in result), 1)
+            self.assertTrue(selected["runtime_validated"])
+            self.assertTrue(all(
+                item["runtime_validated"] is False
+                for item in result
+                if item["profile_id"] != TOOL.PROFILE_ID
+            ))
 
 
 if __name__ == "__main__":

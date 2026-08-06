@@ -102,6 +102,8 @@ type compositionProfilePreview struct {
 	RuntimeProfileConflicts []string `json:"runtime_profile_conflicts"`
 	Status                  string   `json:"status"`
 	ProductionEligible      bool     `json:"production_eligible"`
+	RuntimeTestEligible     bool     `json:"runtime_test_eligible"`
+	SelectedForComposition  bool     `json:"selected_for_composition"`
 }
 
 type compositionArchivePreview struct {
@@ -163,6 +165,10 @@ type quartetCompositionPreview struct {
 	RegistryIssueCount           int                          `json:"registry_issue_count"`
 	RuntimeValidatedProfileCount int                          `json:"runtime_validated_profile_count"`
 	ProductionEligibleCount      int                          `json:"production_eligible_count"`
+	ProfileSelectionPolicy       string                       `json:"profile_selection_policy"`
+	RuntimeTestOnly              bool                         `json:"runtime_test_only"`
+	RuntimeTestCandidateCount    int                          `json:"runtime_test_candidate_count"`
+	SelectedProfileCount         int                          `json:"selected_profile_count"`
 	TranslationBases             []compositionTranslationBase `json:"translation_bases"`
 	LegacyDLCInputs              []compositionLegacyDLCInput  `json:"legacy_dlc_inputs"`
 	Profiles                     []compositionProfilePreview  `json:"profiles"`
@@ -174,12 +180,13 @@ type quartetCompositionPreview struct {
 func commandQuartetCompositionPreview(args []string) error {
 	flags := flag.NewFlagSet("quartet-composition-preview", flag.ContinueOnError)
 	var roots rootsFlag
-	var output, projectRoot, moduleList string
+	var output, projectRoot, moduleList, profilePolicy string
 	flags.Var(&roots, "game-dir", "BLUE REFLECTION Quartet game directory")
 	flags.Var(&roots, "root", "alias for --game-dir")
 	flags.StringVar(&projectRoot, "project-root", "", "project root containing verified translation and restoration builds")
 	flags.StringVar(&output, "json", "", "write composition preflight JSON to this file")
 	flags.StringVar(&moduleList, "modules", "blue_reflection_translation,quartet_restoration", "comma-separated Quartet modules to compose")
+	flags.StringVar(&profilePolicy, "restoration-profile-policy", restorationProfilePolicyRuntimeValidated, "Restoration profile policy: runtime-validated or all-current-candidates-for-runtime-test")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
@@ -204,7 +211,14 @@ func commandQuartetCompositionPreview(args []string) error {
 	if err != nil {
 		return err
 	}
-	preview, err := buildQuartetModuleCompositionPreview(projectRoot, quartet[0].Root, modules)
+	policy, err := normalizeRestorationProfilePolicy(profilePolicy)
+	if err != nil {
+		return err
+	}
+	if err := validateRestorationProfilePolicyForModules(policy, modules); err != nil {
+		return err
+	}
+	preview, err := buildQuartetModuleCompositionPreviewWithPolicy(projectRoot, quartet[0].Root, modules, policy)
 	if err != nil {
 		return err
 	}
@@ -667,6 +681,9 @@ func printHumanQuartetCompositionPreview(out io.Writer, preview quartetCompositi
 	}
 	if selected[quartetRestorationModule] {
 		fmt.Fprintf(out, "Restoration profiles: %d valid, %d runtime validated, %d production eligible\n", preview.ValidProfileCount, preview.RuntimeValidatedProfileCount, preview.ProductionEligibleCount)
+		if preview.RuntimeTestOnly {
+			fmt.Fprintf(out, "Runtime-test scope: %d current candidate(s) selected under %s\n", preview.SelectedProfileCount, preview.ProfileSelectionPolicy)
+		}
 	}
 	if selected[quartetLegacyDLCModule] {
 		verified := 0
@@ -692,7 +709,7 @@ func printHumanQuartetCompositionPreview(out io.Writer, preview quartetCompositi
 			fmt.Fprintf(out, "      %s%s%s\n", ansiYellow, warning, ansiReset)
 		}
 	}
-	if selected[quartetRestorationModule] {
+	if selected[quartetRestorationModule] && !preview.RuntimeTestOnly {
 		candidateCount := 0
 		for _, profile := range preview.Profiles {
 			if profile.Status == "candidate_awaiting_runtime_validation" {

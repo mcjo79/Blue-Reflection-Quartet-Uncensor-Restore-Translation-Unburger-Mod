@@ -31,6 +31,18 @@ func TestPreparePayloadTransactionStagesAndBacksUpWithoutGameEdit(t *testing.T) 
 	if report.Status != "prepared" || !report.CommitEnabled || report.PreparedChangeCount != 1 || report.BackupCount != 1 {
 		t.Fatalf("unexpected prepare report: %+v", report)
 	}
+	if transactionPrepareFormatVersion != 6 {
+		t.Fatalf("unexpected prepare format constant: %d", transactionPrepareFormatVersion)
+	}
+	if report.FormatVersion != transactionPrepareFormatVersion {
+		t.Fatalf("unexpected prepare report format: %d", report.FormatVersion)
+	}
+	if len(report.Files) != 1 || (report.Files[0].StagedStorageMethod != "reflink" && report.Files[0].StagedStorageMethod != "copy") {
+		t.Fatalf("prepare did not report staged storage method: %+v", report.Files)
+	}
+	if report.Files[0].BackupStorageMethod != "hardlink" && report.Files[0].BackupStorageMethod != "reflink" && report.Files[0].BackupStorageMethod != "copy" {
+		t.Fatalf("prepare did not report backup storage method: %+v", report.Files)
+	}
 	if report.BaselineAction != "created" || report.BaselineID == "" || report.BaselineManifestPath == "" || report.BaselineFileCount != 1 {
 		t.Fatalf("persistent baseline was not recorded: %+v", report)
 	}
