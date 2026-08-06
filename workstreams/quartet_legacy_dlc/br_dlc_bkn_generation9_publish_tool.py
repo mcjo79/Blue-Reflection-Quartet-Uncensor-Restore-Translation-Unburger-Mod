@@ -19,7 +19,7 @@ from typing import Any, Mapping, Sequence
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT_DEFAULT = SCRIPT_DIR.parent.parent
-TOOL_VERSION = "0.0.64"
+TOOL_VERSION = "0.0.65"
 ACCEPTANCE_RELATIVE = Path("workstreams/quartet_legacy_dlc/DLC_BKN_SYNTHETIC_LABEL_SLOT_RETURN_ACCEPTANCE.json")
 CANDIDATE_TOOL_RELATIVE = Path("workstreams/quartet_legacy_dlc/br_dlc_bkn_generation9_label_candidate_tool.py")
 ACTIVE_RELATIVE = Path(".local/reports/quartet_legacy_dlc/validated_payloads/ACTIVE.json")
@@ -262,6 +262,163 @@ def atomic_write_guarded(project_root: Path, target: Path, data: bytes, allowed_
     return "published"
 
 
+
+def _require_exact_fields(
+    existing: Mapping[str, Any],
+    desired: Mapping[str, Any],
+    fields: Sequence[str],
+    label: str,
+) -> None:
+    for field in fields:
+        if existing.get(field) != desired.get(field):
+            raise Generation9PublishError(
+                f"{label} field mismatch: {field}"
+            )
+
+
+def validate_replaceable_generation9_evidence(
+    existing: Mapping[str, Any],
+    desired: Mapping[str, Any],
+) -> None:
+    _require_exact_fields(
+        existing,
+        desired,
+        (
+            "type",
+            "format_version",
+            "status",
+            "family_id",
+            "generation",
+            "parent_generation",
+            "members",
+            "artifacts",
+            "append_plan",
+            "authorization",
+        ),
+        "existing generation9 evidence",
+    )
+
+    existing_report = existing.get("candidate_report")
+    desired_report = desired.get("candidate_report")
+    if not isinstance(existing_report, Mapping) or not isinstance(
+        desired_report, Mapping
+    ):
+        raise Generation9PublishError(
+            "existing generation9 evidence candidate_report is invalid"
+        )
+    if existing_report.get("relative_path") != desired_report.get(
+        "relative_path"
+    ):
+        raise Generation9PublishError(
+            "existing generation9 evidence report path mismatch"
+        )
+
+
+def validate_replaceable_generation9_manifest(
+    existing: Mapping[str, Any],
+    desired: Mapping[str, Any],
+) -> None:
+    validate_manifest_semantics(existing)
+    _require_exact_fields(
+        existing,
+        desired,
+        (
+            "type",
+            "format_version",
+            "family_id",
+            "generation",
+            "members",
+            "source_kind",
+            "target_id",
+            "artifacts",
+            "transaction",
+            "authorization",
+        ),
+        "existing generation9 manifest",
+    )
+
+    existing_provenance = existing.get("provenance")
+    desired_provenance = desired.get("provenance")
+    if not isinstance(existing_provenance, Mapping) or not isinstance(
+        desired_provenance, Mapping
+    ):
+        raise Generation9PublishError(
+            "existing generation9 manifest provenance is invalid"
+        )
+    for field in ("workstream_id", "evidence_relative_path"):
+        if existing_provenance.get(field) != desired_provenance.get(field):
+            raise Generation9PublishError(
+                f"existing generation9 manifest provenance mismatch: {field}"
+            )
+
+
+def validate_replaceable_generation9_publication(
+    existing: Mapping[str, Any],
+    desired: Mapping[str, Any],
+) -> None:
+    _require_exact_fields(
+        existing,
+        desired,
+        (
+            "type",
+            "format_version",
+            "status",
+            "family_id",
+            "generation",
+            "parent_generation",
+            "members",
+            "evidence_ready",
+            "evidence_relative_path",
+            "active_manifest_ready",
+            "parent_generation_manifest_sha256",
+            "artifact_paths",
+            "candidates",
+            "baselines",
+            "commit_enabled",
+            "transaction_function_called",
+            "transaction_prepare_called",
+            "transaction_commit_called",
+            "candidate_installed",
+            "profile_registered",
+            "runtime_validated",
+            "wet_variant_included",
+            "game_modified",
+            "save_modified",
+            "existing_costume_replaced",
+            "global_show_all_enabled",
+        ),
+        "existing generation9 publication",
+    )
+
+
+def semantic_replacement_hashes(
+    target: Path,
+    desired: Mapping[str, Any],
+    validator,
+    base_allowed_hashes: Sequence[str],
+) -> list[str]:
+    allowed = list(dict.fromkeys(base_allowed_hashes))
+    if not target.exists():
+        return allowed
+
+    regular_file(target, "existing publication target")
+    current_hash = sha256_file(target)
+    desired_hash = sha256_bytes(canonical_json_bytes(desired))
+
+    if current_hash == desired_hash or current_hash in allowed:
+        return allowed
+
+    existing = read_json(target)
+    if not isinstance(existing, Mapping):
+        raise Generation9PublishError(
+            f"existing publication target is not a JSON object: {target}"
+        )
+
+    validator(existing, desired)
+    allowed.append(current_hash)
+    return allowed
+
+
 def load_composition(report_root: Path) -> dict[str, dict[str, str]]:
     path = report_root / "GENERATION9_TWO_ARCHIVE_COMPOSITION.tsv"
     regular_file(path, "generation9 composition")
@@ -442,14 +599,36 @@ def publish(project_root: Path, game_dir: Path, report_root: Path) -> dict[str, 
     evidence = build_evidence(project_root, report_root, acceptance, composition, core_version)
     evidence_bytes = canonical_json_bytes(evidence)
     evidence_path = project_root / EVIDENCE_RELATIVE
-    atomic_write_guarded(project_root, evidence_path, evidence_bytes, [sha256_bytes(evidence_bytes)])
+    evidence_allowed_hashes = semantic_replacement_hashes(
+        evidence_path,
+        evidence,
+        validate_replaceable_generation9_evidence,
+        [sha256_bytes(evidence_bytes)],
+    )
+    atomic_write_guarded(
+        project_root,
+        evidence_path,
+        evidence_bytes,
+        evidence_allowed_hashes,
+    )
     evidence_sha = sha256_file(evidence_path)
 
     manifest = build_manifest(composition, acceptance, evidence_sha)
     validate_manifest_semantics(manifest)
     manifest_bytes = canonical_json_bytes(manifest)
     manifest_sha = sha256_bytes(manifest_bytes)
-    active_result = atomic_write_guarded(project_root, active_path, manifest_bytes, [GENERATION8_SHA256, manifest_sha])
+    active_allowed_hashes = semantic_replacement_hashes(
+        active_path,
+        manifest,
+        validate_replaceable_generation9_manifest,
+        [GENERATION8_SHA256, manifest_sha],
+    )
+    active_result = atomic_write_guarded(
+        project_root,
+        active_path,
+        manifest_bytes,
+        active_allowed_hashes,
+    )
     if sha256_file(active_path) != manifest_sha:
         raise Generation9PublishError("published ACTIVE manifest hash mismatch")
 
@@ -489,7 +668,19 @@ def publish(project_root: Path, game_dir: Path, report_root: Path) -> dict[str, 
         "global_show_all_enabled": False,
     }
     report_bytes = canonical_json_bytes(report)
-    atomic_write_guarded(project_root, project_root / PUBLICATION_REPORT_RELATIVE, report_bytes, [sha256_bytes(report_bytes)])
+    publication_path = project_root / PUBLICATION_REPORT_RELATIVE
+    publication_allowed_hashes = semantic_replacement_hashes(
+        publication_path,
+        report,
+        validate_replaceable_generation9_publication,
+        [sha256_bytes(report_bytes)],
+    )
+    atomic_write_guarded(
+        project_root,
+        publication_path,
+        report_bytes,
+        publication_allowed_hashes,
+    )
     return report
 
 

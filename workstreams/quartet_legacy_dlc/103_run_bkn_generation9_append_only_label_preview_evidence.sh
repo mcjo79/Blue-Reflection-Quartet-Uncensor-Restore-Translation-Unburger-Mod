@@ -47,7 +47,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 [[ -d "$PROJECT_ROOT/workstreams/quartet_legacy_dlc" ]] || fail "invalid project root: $PROJECT_ROOT"
-[[ "$(tr -d '\r\n' < "$PROJECT_ROOT/workstreams/quartet_legacy_dlc/VERSION")" == "0.0.64" ]] || fail "quartet_legacy_dlc 0.0.64 is required"
+[[ "$(tr -d '\r\n' < "$PROJECT_ROOT/workstreams/quartet_legacy_dlc/VERSION")" == "0.0.65" ]] || fail "quartet_legacy_dlc 0.0.65 is required"
 [[ -n "$QUARTET_ROOT" && -d "$QUARTET_ROOT" ]] || fail "provide a valid --game-dir or BR_QUARTET_GAME_ROOT"
 
 if [[ -z "$GUST_PAK" ]]; then
@@ -82,7 +82,8 @@ cd -- "$PROJECT_ROOT"
 python3 -m unittest \
   workstreams.quartet_legacy_dlc.tests.test_br_dlc_bkn_generation9_label_candidate_tool \
   workstreams.quartet_legacy_dlc.tests.test_br_dlc_bkn_generation9_publish_tool \
-  workstreams.quartet_legacy_dlc.tests.test_br_dlc_bkn_generation9_core_capability_gate
+  workstreams.quartet_legacy_dlc.tests.test_br_dlc_bkn_generation9_core_capability_gate \
+  workstreams.quartet_legacy_dlc.tests.test_br_dlc_bkn_generation9_idempotent_publication
 
 REPORT_ROOT="$PROJECT_ROOT/.local/reports/quartet_legacy_dlc/bkn_dry_generation9_append_only_label_candidate_evidence"
 python3 workstreams/quartet_legacy_dlc/br_dlc_bkn_generation9_label_candidate_tool.py audit \
