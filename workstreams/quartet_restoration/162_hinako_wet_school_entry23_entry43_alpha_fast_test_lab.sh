@@ -1,0 +1,80 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+PROJECT_ROOT="$(cd -- "$SCRIPT_DIR/../.." && pwd -P)"
+PATHS_FILE="$PROJECT_ROOT/.local/paths.sh"
+PYTHON_TOOL="$SCRIPT_DIR/162_hinako_wet_school_entry23_entry43_alpha_fast_test_lab.py"
+AUTH_TOKEN="--user-authorized-wet-school-entry23-entry43-alpha-test"
+
+fail() { printf '[wet-school-entry23-entry43-alpha-fast-test] ERROR: %s\n' "$*" >&2; exit 1; }
+usage() {
+  cat <<'EOF'
+Usage:
+  162_hinako_wet_school_entry23_entry43_alpha_fast_test_lab.sh preflight
+  162_hinako_wet_school_entry23_entry43_alpha_fast_test_lab.sh activate --user-authorized-wet-school-entry23-entry43-alpha-test
+  162_hinako_wet_school_entry23_entry43_alpha_fast_test_lab.sh status
+  162_hinako_wet_school_entry23_entry43_alpha_fast_test_lab.sh rollback
+
+The activation targets only Data/PACK10_02.PAK and requires the exact stage-161
+baseline and profile. PACK10_01, PACK10_03 and PACK11 are read-only guards.
+EOF
+}
+
+[[ -f "$PATHS_FILE" ]] || fail "Missing local path configuration: $PATHS_FILE"
+# shellcheck disable=SC1090
+source "$PATHS_FILE"
+[[ -n "${BR1_QUARTET_ROOT:-}" ]] || fail "BR1_QUARTET_ROOT is empty"
+[[ -d "$BR1_QUARTET_ROOT" ]] || fail "Quartet game root not found: $BR1_QUARTET_ROOT"
+[[ -f "$PYTHON_TOOL" ]] || fail "Missing stage-162 transaction tool: $PYTHON_TOOL"
+[[ $# -ge 1 ]] || { usage >&2; exit 2; }
+action="$1"
+
+case "$action" in
+  preflight)
+    [[ $# -eq 1 ]] || { usage >&2; exit 2; }
+    python3 "$PYTHON_TOOL" preflight --project-root "$PROJECT_ROOT" --quartet-root "$BR1_QUARTET_ROOT"
+    printf '[wet-school-entry23-entry43-alpha-fast-test] Read-only preflight passed. No game file was modified.\n'
+    ;;
+  activate)
+    [[ $# -eq 2 && "$2" == "$AUTH_TOKEN" ]] || fail "Activation requires explicit token: $AUTH_TOKEN"
+    python3 "$PYTHON_TOOL" activate --project-root "$PROJECT_ROOT" --quartet-root "$BR1_QUARTET_ROOT"
+    report="$(python3 "$PYTHON_TOOL" collect-activation --project-root "$PROJECT_ROOT" --quartet-root "$BR1_QUARTET_ROOT")"
+    printf '\n[wet-school-entry23-entry43-alpha-fast-test] ACTIVE: only the stage-161 PACK10_02 Fast Test profile is installed.\n'
+    printf '[wet-school-entry23-entry43-alpha-fast-test] PACK10_01, PACK10_03 and PACK11 passed byte guards.\n'
+    printf '[wet-school-entry23-entry43-alpha-fast-test] Activation evidence: %s\n' "$report"
+    printf '[wet-school-entry23-entry43-alpha-fast-test] Activation evidence SHA-256: '
+    sha256sum "$report" | awk '{print $1}'
+    cat <<'EOF'
+
+TEST NOW:
+  1. Launch Quartet and load the existing save for Hinako's first wet-school scene.
+  2. Check model integrity first: any mesh corruption is an immediate FAIL.
+  3. Check the canonical smaller blue collar/neck shape separately.
+  4. Compare wet-shirt transparency specifically against the stage-158 entry23-only result.
+  5. Confirm the stage-158 wet skin / visible water droplets remain present.
+  6. Exit the game completely.
+  7. Run the stage-162 rollback before any other PACK10_02 experiment.
+
+A stable game alone does NOT validate the visual effect.
+GlowLight remains separate and untouched by this transaction.
+EOF
+    ;;
+  status)
+    [[ $# -eq 1 ]] || { usage >&2; exit 2; }
+    python3 "$PYTHON_TOOL" status --project-root "$PROJECT_ROOT" --quartet-root "$BR1_QUARTET_ROOT"
+    ;;
+  rollback)
+    [[ $# -eq 1 ]] || { usage >&2; exit 2; }
+    python3 "$PYTHON_TOOL" rollback --project-root "$PROJECT_ROOT" --quartet-root "$BR1_QUARTET_ROOT"
+    report="$(python3 "$PYTHON_TOOL" collect-rollback --project-root "$PROJECT_ROOT" --quartet-root "$BR1_QUARTET_ROOT")"
+    printf '\n[wet-school-entry23-entry43-alpha-fast-test] Exact stage-161 PACK10_02 baseline restored.\n'
+    printf '[wet-school-entry23-entry43-alpha-fast-test] PACK10_01, PACK10_03 and PACK11 remained byte-identical.\n'
+    printf '[wet-school-entry23-entry43-alpha-fast-test] Rollback evidence: %s\n' "$report"
+    printf '[wet-school-entry23-entry43-alpha-fast-test] Rollback evidence SHA-256: '
+    sha256sum "$report" | awk '{print $1}'
+    ;;
+  *)
+    usage >&2
+    exit 2
+    ;;
+esac

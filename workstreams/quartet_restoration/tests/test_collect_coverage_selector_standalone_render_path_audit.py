@@ -26,11 +26,13 @@ class CoverageSelectorStandaloneRenderPathAuditTests(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls.tmp = tempfile.TemporaryDirectory(prefix="stage128-tests-")
         cls.root = Path(cls.tmp.name)
+        cls.profile_manifest_root = Path(__file__).resolve().parent / "fixtures" / "stage119_historical_core_profile_manifests"
         cls.archive, cls.summary = TOOL.build_report(
             PROJECT,
             report_root=PROJECT / ".local/reports/quartet_restoration",
             output_report_root=cls.root,
             create_archive=True,
+            profile_manifest_root=cls.profile_manifest_root,
         )
         cls.report = cls.root / TOOL.REPORT_DIR
         cls.coverage = read_tsv(cls.report / "COVERAGE_SELECTOR_CHANNEL_AUDIT.tsv")

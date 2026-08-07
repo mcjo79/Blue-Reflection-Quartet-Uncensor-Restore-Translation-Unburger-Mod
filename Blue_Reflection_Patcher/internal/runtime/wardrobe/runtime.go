@@ -11,7 +11,10 @@ type ApplyReport struct {
 	ModuleBase                         string   `json:"module_base"`
 	AllocatedTable                     string   `json:"allocated_table"`
 	AllocatedSyntheticCache            string   `json:"allocated_synthetic_cache"`
+	AllocatedContextTable              string   `json:"allocated_context_table"`
+	AllocatedOverflowContext           string   `json:"allocated_overflow_context"`
 	AllocatedHookStub                  string   `json:"allocated_hook_stub"`
+	AllocatedSeenStateStub             string   `json:"allocated_seen_state_stub"`
 	BaselineRecordCount                int      `json:"baseline_record_count"`
 	AppendedRecordCount                int      `json:"appended_record_count"`
 	FinalRecordCount                   int      `json:"final_record_count"`
@@ -23,6 +26,17 @@ type ApplyReport struct {
 	SyntheticVisibleIndices            []int    `json:"synthetic_visible_indices"`
 	PatchedSites                       []string `json:"patched_sites"`
 	ValidationOnlySites                []string `json:"validation_only_sites"`
+	SeenValidationSites                []string `json:"seen_validation_sites"`
+	PerObjectSyntheticCache            bool     `json:"per_object_synthetic_cache"`
+	ContextSlotCount                   int      `json:"context_slot_count"`
+	NativePointerFormulaExact          bool     `json:"native_pointer_formula_exact"`
+	NativeBranchTargetVerified         bool     `json:"native_branch_target_verified"`
+	HookRegisterTransparent            bool     `json:"hook_register_transparent"`
+	RDXPreserved                       bool     `json:"rdx_preserved"`
+	ProcessLocalSyntheticSeen          bool     `json:"process_local_synthetic_seen_state"`
+	SyntheticSeenSurvivesRebuild       bool     `json:"synthetic_seen_survives_cache_rebuild"`
+	NativeSeenBehaviorPreserved        bool     `json:"native_seen_behavior_preserved"`
+	NativeSeenBackingTouched           bool     `json:"native_seen_backing_touched"`
 	SaveMutationPerformed              bool     `json:"save_mutation_performed"`
 	OnDiskModuleModified               bool     `json:"on_disk_module_modified"`
 	RollbackSemantics                  string   `json:"rollback_semantics"`

@@ -7,7 +7,7 @@ import (
 )
 
 func ValidateModule(path string, p TargetProfile) (ModuleValidationReport, error) {
-	report := ModuleValidationReport{Type: "br_runtime_wardrobe_module_validation", FormatVersion: 2, ReadOnly: true, ModulePath: path, ProfileTargetID: p.TargetID, BaselineRecordCount: p.Registry.BaselineRecordCount, Stride: p.Registry.Stride, MaxAppendRecords: p.Registry.MaxAppendRecords, CacheEndExclusive: fmt.Sprintf("0x%x", p.CacheSurface.ObjectCacheOffset+p.CacheSurface.RecordStride*p.CacheSurface.BaselineRecordCount), NextLiveFieldOffset: fmt.Sprintf("0x%x", p.CacheSurface.NextLiveFieldOffset), EmbeddedCacheExtensionSafe: false}
+	report := ModuleValidationReport{Type: "br_runtime_wardrobe_module_validation", FormatVersion: 4, ReadOnly: true, ModulePath: path, ProfileTargetID: p.TargetID, BaselineRecordCount: p.Registry.BaselineRecordCount, Stride: p.Registry.Stride, MaxAppendRecords: p.Registry.MaxAppendRecords, CacheEndExclusive: fmt.Sprintf("0x%x", p.CacheSurface.ObjectCacheOffset+p.CacheSurface.RecordStride*p.CacheSurface.BaselineRecordCount), NextLiveFieldOffset: fmt.Sprintf("0x%x", p.CacheSurface.NextLiveFieldOffset), EmbeddedCacheExtensionSafe: false}
 	img, err := OpenPE(path)
 	if err != nil {
 		report.Status = "failed"
@@ -47,7 +47,9 @@ func ValidateModule(path string, p TargetProfile) (ModuleValidationReport, error
 	for _, s := range p.Bounds {
 		validate(s.Name, s.RVA, "bound", "", s.ExpectedHex)
 	}
-	validate(p.CacheSurface.PointerHook.Name, p.CacheSurface.PointerHook.RVA, "cache_pointer_hook", "redirect synthetic indices to external shadow cache", p.CacheSurface.PointerHook.ExpectedHex)
+	validate(p.CacheSurface.PointerHook.Name, p.CacheSurface.PointerHook.RVA, "cache_pointer_hook", "redirect synthetic indices to per-object external cache", p.CacheSurface.PointerHook.ExpectedHex)
+	validate(p.SeenState.ForwarderHook.Name, p.SeenState.ForwarderHook.RVA, "seen_state_forwarder_hook", "route synthetic seen-state updates to process-local template while preserving native <=55 setter behavior", p.SeenState.ForwarderHook.ExpectedHex)
+	validate(p.SeenState.NativeSetterSite.Name, p.SeenState.NativeSetterSite.RVA, "seen_state_validation", p.SeenState.NativeSetterSite.Role, p.SeenState.NativeSetterSite.ExpectedHex)
 	for _, s := range p.CacheSurface.ValidationOnlySites {
 		validate(s.Name, s.RVA, "validation_only", s.Role, s.ExpectedHex)
 	}

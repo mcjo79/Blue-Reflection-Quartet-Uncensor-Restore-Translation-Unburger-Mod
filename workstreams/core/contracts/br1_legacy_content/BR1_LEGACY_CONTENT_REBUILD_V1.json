@@ -1,0 +1,84 @@
+{
+  "type": "br1_legacy_content_rebuild_contract",
+  "format_version": 1,
+  "capability": "br1_legacy_content_rebuild_v1",
+  "source": {
+    "title": "BLUE REFLECTION (2017)",
+    "installed_copy_required": true,
+    "dlc_entitlement_required": false,
+    "selection_modes": [
+      "automatic_steam_manifest",
+      "explicit_game_folder",
+      "explicit_steam_or_library_folder"
+    ],
+    "case_aware_data_directory_resolution": true,
+    "character_catalog_discovery": [
+      "case_insensitive_loose_member",
+      "a18_archive_member"
+    ],
+    "archive_backed_character_catalog": true
+  },
+  "target": {
+    "title": "BLUE REFLECTION Quartet / BLUE REFLECTION module",
+    "modified_files": [
+      "B1.dll",
+      "Data/PACK10_02.PAK",
+      "Data/PACK10_03.PAK",
+      "Data/PACK11.PAK",
+      "Data/PACK12.PAK"
+    ]
+  },
+  "content": {
+    "source_wardrobe_records": 120,
+    "quartet_wardrobe_records": 56,
+    "missing_records": 90,
+    "restorable_pc_records": 66,
+    "unavailable_pc_records": 24,
+    "final_records": 122,
+    "tropical_island": true
+  },
+  "implementation": {
+    "language": "Go",
+    "native_archive_a18_read": true,
+    "native_archive_a22_read_write": true,
+    "native_text_envelope_codec": true,
+    "streaming_cross_format_copy": true,
+    "temporary_plaintext_game_assets": false,
+    "external_text_codec_required": false
+  },
+  "binary_layout": {
+    "output_section": ".b1cos",
+    "existing_records_preserved": 56,
+    "table_sites": 10,
+    "scoped_limit_sites": 36,
+    "field_party_limit_sites": 18,
+    "widened_checks_total": 54,
+    "dressing_room_array_relocated": true,
+    "embedded_array_extended_in_place": false,
+    "old_scoped_55_56_bounds_after_rewrite": 0
+  },
+  "composition": {
+    "order": [
+      "quartet_legacy_dlc",
+      "quartet_restoration",
+      "blue_reflection_translation"
+    ],
+    "translation_last": true,
+    "shared_string_key": "String_No",
+    "encrypted_aggregate_after_final_merge": true
+  },
+  "transaction": {
+    "all_candidates_built_before_prepare": true,
+    "all_candidates_reopened_before_prepare": true,
+    "persistent_baseline_required": true,
+    "all_or_none": true,
+    "explicit_apply_required": true,
+    "rollback_supported": true
+  },
+  "save_sync": {
+    "separate_explicit_operation": true,
+    "per_save_backup": true,
+    "wardrobe_flags": 122,
+    "island_event": "EVENT_YY04_020"
+  }
+}

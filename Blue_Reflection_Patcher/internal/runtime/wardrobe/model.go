@@ -10,10 +10,12 @@ import (
 const (
 	ProfileType          = "br_runtime_wardrobe_target_profile"
 	RecordsType          = "br_runtime_wardrobe_records"
-	ProfileFormatVersion = 2
+	ProfileFormatVersion = 4
 	RecordsFormatVersion = 1
 	CapabilityIDV1       = "wardrobe_registry_append_v1"
-	CapabilityID         = "wardrobe_registry_append_v2"
+	CapabilityIDV2       = "wardrobe_registry_append_v2"
+	CapabilityIDV3       = "wardrobe_registry_append_v3"
+	CapabilityID         = "wardrobe_registry_append_v4"
 )
 
 type TargetProfile struct {
@@ -26,6 +28,7 @@ type TargetProfile struct {
 	Registry           RegistryProfile       `json:"registry"`
 	RuntimeStorage     RuntimeStorageProfile `json:"runtime_storage"`
 	CacheSurface       CacheSurfaceProfile   `json:"cache_surface"`
+	SeenState          SeenStateProfile      `json:"seen_state"`
 	TableReferences    []TableReferencePatch `json:"table_references"`
 	Bounds             []BoundPatch          `json:"bounds"`
 }
@@ -57,7 +60,15 @@ type CacheSurfaceProfile struct {
 	LabelFieldOffset      int              `json:"label_field_offset"`
 	VisibilityFieldOffset int              `json:"visibility_field_offset"`
 	PointerHook           CodeHookPatch    `json:"pointer_hook"`
+	ContextSlotCount      int              `json:"context_slot_count"`
 	ValidationOnlySites   []ValidationSite `json:"validation_only_sites"`
+}
+
+type SeenStateProfile struct {
+	ForwarderHook    CodeHookPatch  `json:"forwarder_hook"`
+	NativeSetterRVA  uint32         `json:"native_setter_rva"`
+	NativeMaxIndex   int            `json:"native_max_index"`
+	NativeSetterSite ValidationSite `json:"native_setter_site"`
 }
 
 type CodeHookPatch struct {
@@ -172,6 +183,15 @@ type PlanReport struct {
 	DisableSemantics             string         `json:"disable_semantics"`
 	Patches                      []PlannedPatch `json:"patches"`
 	ValidationOnlyInvariantCount int            `json:"validation_only_invariant_count"`
+	PerObjectSyntheticCache      bool           `json:"per_object_synthetic_cache"`
+	ContextSlotCount             int            `json:"context_slot_count"`
+	NativePointerFormulaExact    bool           `json:"native_pointer_formula_exact"`
+	HookRegisterTransparent      bool           `json:"hook_register_transparent"`
+	NativeBranchTargetVerified   bool           `json:"native_branch_target_verified"`
+	ProcessLocalSyntheticSeen    bool           `json:"process_local_synthetic_seen_state"`
+	SyntheticSeenSurvivesRebuild bool           `json:"synthetic_seen_survives_cache_rebuild"`
+	NativeSeenBehaviorPreserved  bool           `json:"native_seen_behavior_preserved"`
+	SeenValidationSiteCount      int            `json:"seen_validation_site_count"`
 	Errors                       []string       `json:"errors"`
 }
 
@@ -247,6 +267,26 @@ func (p TargetProfile) Validate() error {
 	if c.PointerHook.RVA == 0 || c.PointerHook.OverwriteLen != len(hookExpected) || c.PointerHook.OverwriteLen < 5 {
 		return fmt.Errorf("invalid cache pointer hook")
 	}
+	if c.ContextSlotCount < 64 || c.ContextSlotCount > 65536 {
+		return fmt.Errorf("context_slot_count must be 64..65536")
+	}
+	s := p.SeenState
+	seenHookExpected, err := decodeExpected(s.ForwarderHook.ExpectedHex)
+	if err != nil {
+		return err
+	}
+	if s.ForwarderHook.RVA == 0 || s.ForwarderHook.OverwriteLen != len(seenHookExpected) || s.ForwarderHook.OverwriteLen < 5 {
+		return fmt.Errorf("invalid seen-state forwarder hook")
+	}
+	if s.NativeMaxIndex != p.Registry.BaselineRecordCount-1 {
+		return fmt.Errorf("seen-state native max index must match baseline registry domain")
+	}
+	if s.NativeSetterRVA == 0 || s.NativeSetterSite.RVA != s.NativeSetterRVA {
+		return fmt.Errorf("invalid seen-state native setter identity")
+	}
+	if _, err := decodeExpected(s.NativeSetterSite.ExpectedHex); err != nil {
+		return err
+	}
 	if len(p.TableReferences) == 0 || len(p.Bounds) == 0 || len(c.ValidationOnlySites) == 0 {
 		return fmt.Errorf("target profile patch/validation surface is incomplete")
 	}
@@ -288,6 +328,12 @@ func (p TargetProfile) Validate() error {
 	if err := add(c.PointerHook.RVA, c.PointerHook.Name); err != nil {
 		return err
 	}
+	if err := add(p.SeenState.ForwarderHook.RVA, p.SeenState.ForwarderHook.Name); err != nil {
+		return err
+	}
+	if err := add(p.SeenState.NativeSetterSite.RVA, p.SeenState.NativeSetterSite.Name); err != nil {
+		return err
+	}
 	for _, s := range c.ValidationOnlySites {
 		if err := add(s.RVA, s.Name); err != nil {
 			return err
@@ -300,7 +346,7 @@ func (p TargetProfile) Validate() error {
 }
 
 func (r RecordSet) Validate(p TargetProfile) error {
-	if r.Type != RecordsType || r.FormatVersion != RecordsFormatVersion || (r.Capability != CapabilityID && r.Capability != CapabilityIDV1) {
+	if r.Type != RecordsType || r.FormatVersion != RecordsFormatVersion || (r.Capability != CapabilityID && r.Capability != CapabilityIDV3 && r.Capability != CapabilityIDV2 && r.Capability != CapabilityIDV1) {
 		return fmt.Errorf("unsupported wardrobe record set type/version/capability")
 	}
 	if len(r.Records) == 0 || len(r.Records) > p.Registry.MaxAppendRecords {

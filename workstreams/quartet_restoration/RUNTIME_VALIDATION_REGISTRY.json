@@ -45,6 +45,34 @@
       },
       "visible_effect_confirmed": false
     },
+    "fast_test_pc00_scl_w_school_entry23_target_native_alpha43_568fc2f9a095": {
+      "activation_evidence_sha256": "b7638a714e5b1e035f7541435980e1f2f9e6bfc3e305ccee17560dfec98e468f",
+      "confirmed_runtime_effects": {
+        "canonical_smaller_blue_neck_component_present": true,
+        "entry23_wet_skin_or_droplet_effect_observed": true,
+        "wet_shirt_transparency_changed_vs_stage158": false,
+        "wet_shirt_transparency_restored": false
+      },
+      "entry43_interpretation": {
+        "repeat_variant_without_new_evidence_forbidden": true,
+        "runtime_supported_as_visible_transparency_component": false,
+        "target_native_alpha_candidate_runtime_tested": true,
+        "visible_effect_observed": false
+      },
+      "exact_pack10_02_baseline_restored": true,
+      "model_integrity_preserved": true,
+      "observation": "The stage-161 profile remained stable and preserved the expected School_Wet geometry and entry23 droplet/wet-surface effect. Adding target-native entry43 alpha produced no visible wet-shirt transparency difference versus stage158. Other observed behavior remained as expected.",
+      "pack10_02_baseline_sha256": "e798f39c3bcdbb11381197bddf9bd3ad8de6ccf5d7c0c78b22613046d47f5302",
+      "production_eligible": false,
+      "profile_sha256": "d668efa94906e68fc62cf3ace854f20ab3cd39a1424b2dccb1057bd49a4aaa39",
+      "promotion_note": "Do not promote or iterate entry43 alpha as a transparency restoration without new independent evidence. Preserve entry23 only as the separate runtime-supported wet-surface/droplet component and move to selector/runtime-state tracing.",
+      "rollback_evidence_sha256": "3720f8c1ac589456ad491816cf4ce8ace894e383ce44c51e1b65242cd96ec89c",
+      "runtime_stable": true,
+      "runtime_status": "runtime_stable_entry23_droplets_persist_entry43_alpha_transparency_negative",
+      "runtime_tested": true,
+      "runtime_validated": false,
+      "target_relative_path": "Data/PACK10_02.PAK"
+    },
     "fast_test_pc00_scl_w_school_partial_plus_default_g1mm_c74bc813e41": {
       "activation_evidence_sha256": "3012b003ec1fa1892b215745e9abc3bb8b8f52bfcdb3a85b3c987eb9f9e05d3d",
       "crash_observed": false,
@@ -130,6 +158,7 @@
   },
   "format_version": 1,
   "policy": {
+    "bathroom_water_profile_runtime_validated_state_must_not_be_reverted_for_historical_stage119_tests": true,
     "core_modified": false,
     "event_profiles_remain_individually_unvalidated": true,
     "gamma_fast_test_profile_remains_nonproduction": true,
@@ -144,6 +173,7 @@
     "runtime_stability_does_not_imply_visual_validation": true,
     "runtime_validation_is_not_inferred": true,
     "shader_failures_remain_excluded_from_production": true,
+    "stage167_pointer_or_numeric_semantics_require_independent_binding_evidence": true,
     "translation_modified": false,
     "uniform_geometry_and_wet_material_restoration_must_be_tracked_separately": true,
     "wet_skin_droplet_effect_requires_independent_binding": true
@@ -179,6 +209,41 @@
       "target_relative_path": "Data/PACK10_01.PAK"
     }
   },
+  "read_only_runtime_traces": {
+    "wet_character_compound_state_stage166": {
+      "bounded_zero_rows_do_not_prove_global_absence": true,
+      "evidence_sha256": "7426be534a10ae601c0934ca2c36fd001d1edcae2a11d0d900df2173edd53e7a",
+      "fresh_anchor_site_rows": 3,
+      "installed_game_modified": false,
+      "material_binding_confirmed": false,
+      "process_memory_written": false,
+      "recurrent_wet_pointer_candidate_rows": 229,
+      "recurrent_wet_scalar_candidate_rows": 113,
+      "shader_binding_confirmed": false,
+      "stage": 166,
+      "status": "complete_read_only",
+      "tool_version": "0.1.89",
+      "wet_recurrent_body_skin_component_token_rows": 0,
+      "wet_recurrent_face_rig_component_token_rows": 0,
+      "wet_recurrent_school_component_token_rows": 34,
+      "wet_transparency_mechanism_confirmed": false
+    },
+    "wet_render_resource_material_binding_stage167": {
+      "fresh_process_reacquisition_required": true,
+      "historical_pid_or_absolute_address_reuse_forbidden": true,
+      "installed_game_modified": false,
+      "material_binding_confirmed": false,
+      "process_memory_written": false,
+      "requires_stage166_evidence_sha256": "7426be534a10ae601c0934ca2c36fd001d1edcae2a11d0d900df2173edd53e7a",
+      "shader_binding_confirmed": false,
+      "stage": 167,
+      "stage166_broad_scan_repeated": false,
+      "status": "prepared_pending_user_capture",
+      "texture_binding_confirmed": false,
+      "tool_version": "0.1.90",
+      "wet_transparency_mechanism_confirmed": false
+    }
+  },
   "shader_failure_investigation": {
     "hypothesis": "The transplanted source DXBC executable code may assume source-side registers, constant buffers, resource bindings or signatures that do not match the Quartet target layout.",
     "required_next_steps": [
@@ -203,6 +268,8 @@
     "runtime_report_path": "01_RESULTS/RUNTIME_VALIDATION_REPORT.md",
     "runtime_results_path": "01_RESULTS/RUNTIME_VALIDATION_RESULTS.json",
     "shader_fix_directions_path": "03_POSSIBLE_FIX/POSSIBLE_SHADER_FIX_DIRECTIONS.md",
+    "wet_character_compound_state_stage166_path": ".local/reports/quartet_restoration/BR_quartet_restoration_wet_character_compound_state_neighborhood_evidence.tar.zst",
+    "wet_character_compound_state_stage166_sha256": "7426be534a10ae601c0934ca2c36fd001d1edcae2a11d0d900df2173edd53e7a",
     "wet_school_activation_evidence_path": ".local/reports/quartet_restoration/BR_quartet_restoration_hinako_wet_school_uniform_fast_test_lab_activation_evidence.tar.zst",
     "wet_school_activation_evidence_sha256": "9c6e9431e23a6fd0e96aa5ff08dc897ac003584bfaf4fdd4e20babd08f4f3e49",
     "wet_school_composite_g1mm_activation_evidence_path": ".local/reports/quartet_restoration/BR_quartet_restoration_hinako_wet_school_composite_g1mm_fast_test_lab_activation_evidence.tar.zst",
@@ -218,5 +285,5 @@
     "wet_school_runtime_observation_path": "workstreams/quartet_restoration/WET_SCHOOL_RUNTIME_OBSERVATION.json"
   },
   "type": "br_quartet_restoration_runtime_validation_registry",
-  "updated_utc": "2026-08-07T18:56:00Z"
+  "updated_utc": "2026-08-07T23:36:13Z"
 }

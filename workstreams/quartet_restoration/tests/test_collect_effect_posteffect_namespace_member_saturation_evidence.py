@@ -83,6 +83,7 @@ class EffectPosteffectNamespaceMemberSaturationTests(unittest.TestCase):
                 if index == 1 and side == "target":
                     members.append(("swater_binding.bin", b"target-only"))
                 write_gust_chunked(local, make_earc(members))
+        cls.profile_manifest_root = Path(__file__).resolve().parent / "fixtures" / "stage119_historical_core_profile_manifests"
         cls.archive, cls.summary = TOOL.build_report(
             PROJECT,
             report_root=cls.report_root,
@@ -90,6 +91,7 @@ class EffectPosteffectNamespaceMemberSaturationTests(unittest.TestCase):
             workspace_root=cls.workspace,
             create_archive=True,
             verify_payload_hashes=False,
+            profile_manifest_root=cls.profile_manifest_root,
         )
         cls.report = cls.root / "reports" / TOOL.REPORT_DIR
         cls.paths = read_tsv(cls.report / "EFFECT_POSTEFFECT_PATH_SUMMARY.tsv")

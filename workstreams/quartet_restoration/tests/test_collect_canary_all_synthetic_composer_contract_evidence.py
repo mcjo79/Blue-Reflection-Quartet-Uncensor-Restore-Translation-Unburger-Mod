@@ -30,13 +30,16 @@ class CanaryAllSyntheticComposerContractTests(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls.tmp = tempfile.TemporaryDirectory(prefix="stage120-tests-")
         cls.root = Path(cls.tmp.name)
-        cls.before = TOOL.manifest_hashes(PROJECT)
+        cls.fixture_report_root = Path(__file__).resolve().parent / "fixtures" / "stage119_historical_reports"
+        cls.manifest_root = Path(__file__).resolve().parent / "fixtures" / "stage119_historical_core_profile_manifests"
+        cls.before = TOOL.manifest_hashes(PROJECT, cls.manifest_root)
         cls.archive, cls.summary = TOOL.build_report(
             PROJECT,
-            report_root=PROJECT / ".local/reports/quartet_restoration",
+            report_root=cls.fixture_report_root,
             output_report_root=cls.root / "reports",
             gust_pak=PROJECT / TOOL.GUST_PAK_REL,
             create_archive=True,
+            manifest_root=cls.manifest_root,
         )
         cls.report = cls.root / "reports" / TOOL.REPORT_DIR
 
@@ -88,12 +91,12 @@ class CanaryAllSyntheticComposerContractTests(unittest.TestCase):
         self.assertFalse(self.summary["policy"]["installation_transaction_created"])
 
     def test_real_and_fixture_manifests_remain_immutable(self):
-        self.assertEqual(TOOL.manifest_hashes(PROJECT), self.before)
+        self.assertEqual(TOOL.manifest_hashes(PROJECT, self.manifest_root), self.before)
         self.assertEqual(self.summary["real_profile_manifest_unchanged_rows"], 15)
         self.assertFalse(self.summary["policy"]["real_profile_manifests_modified"])
 
     def test_stage119_report_hash_is_fail_closed(self):
-        source = PROJECT / ".local/reports/quartet_restoration" / TOOL.STAGE119_ARCHIVE
+        source = self.fixture_report_root / TOOL.STAGE119_ARCHIVE
         bad = self.root / "bad-stage119.tar.zst"
         shutil.copy2(source, bad)
         bad.write_bytes(bad.read_bytes() + b"drift")

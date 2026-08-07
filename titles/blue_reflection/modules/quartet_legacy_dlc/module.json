@@ -3,65 +3,38 @@
   "format_version": 1,
   "module_id": "quartet_legacy_dlc",
   "project": "blue_reflection",
-  "module_type": "dlc_adapter",
-  "status": "scenario_nonscenario_technical_registry_exact_and_nested_closure_metadata_audit_active",
+  "module_type": "dlc_restoration",
+  "status": "implementation_ready_live_validation_pending",
   "default_enabled": false,
   "targets": [
-    "blue_reflection_quartet",
-    "blue_reflection_quartet_switch"
+    "blue_reflection_quartet"
   ],
   "dependencies": [],
   "source_requirements": [
     "selected_blue_reflection_original_installation",
     "blue_reflection_quartet_installation"
   ],
-  "registries": {
-    "content": "titles/blue_reflection/modules/quartet_legacy_dlc/registry/content_registry.json"
-  },
-  "mapping_sources": [
-    "titles/blue_reflection/modules/quartet_legacy_dlc/mappings/content_bindings.json",
-    "titles/blue_reflection/modules/quartet_legacy_dlc/mappings/legacy_dlc_families.tsv",
-    "titles/blue_reflection/modules/quartet_legacy_dlc/mappings/text_candidate_units.tsv"
-  ],
   "distribution_policy": {
     "contains_raw_game_assets": false,
-    "local_source_description": "transfer DLC from a selected first-game installation",
-    "public_package": "metadata_mappings_audit_tools_and_converters_only",
-    "contains_paid_dlc_assets": false
+    "source_files_read_locally": true,
+    "large_game_archives_distributed": false,
+    "public_payload": "patcher_logic_manifests_and_small_authored_content_only"
   },
-  "build_namespace": "quartet_legacy_dlc",
-  "audit_tools": {
-    "scenario_inventory": "Blue_Reflection_Text_Tool/br_dlc_tool.py",
-    "nonscenario_inventory": "workstreams/quartet_legacy_dlc/br_dlc_nonscenario_tool.py",
-    "technical_registry": "workstreams/quartet_legacy_dlc/br_dlc_technical_registry_tool.py",
-    "exact_closure": "workstreams/quartet_legacy_dlc/br_dlc_exact_closure_tool.py",
-    "nested_container_inventory": "workstreams/quartet_legacy_dlc/br_dlc_nested_container_tool.py"
+  "content_scope": {
+    "restored_pc_costumes": 66,
+    "unavailable_pc_costumes": 24,
+    "final_wardrobe_records": 122,
+    "tropical_island": true,
+    "save_access_sync": "separate_explicit_step"
   },
-  "scope_policy": {
-    "text_and_scene_candidate_list_is_complete_catalog": false,
-    "discover_nonscenario_dlc_from_full_first_game_inventory": true,
-    "mapping_level": "pak_member_and_system_record",
-    "translation_owned_by": "titles/blue_reflection/translation",
-    "br1_fallback_asset_allowed": true,
-    "fallback_requires_explicit_documentation_and_validation": true,
-    "seed_independent_technical_registry": true,
-    "text_candidate_units_required_for_technical_registry": false,
-    "technical_registry_types": [
-      "costume_or_outfit",
-      "accessory",
-      "item_or_reward",
-      "recipe_or_system_bonus",
-      "theme_or_ui_content",
-      "unlock_or_entitlement",
-      "shared_asset_dependency",
-      "unknown_legacy_dlc_candidate"
+  "composition": {
+    "order": [
+      "quartet_legacy_dlc",
+      "quartet_restoration",
+      "blue_reflection_translation"
     ],
-    "canonical_owner_triage": true,
-    "technical_registry_0_0_3_preserved": true,
-    "profile_build_allowed_after_closure_audit": false,
-    "selective_parent_container_inventory": true,
-    "full_pak_extraction_required": false,
-    "nested_raw_payload_exported": false,
-    "profile_build_allowed_after_nested_inventory": false
-  }
+    "translation_last": true,
+    "shared_string_tables": "merge_changed_rows_by_String_No_then_rebuild_encrypted_aggregate"
+  },
+  "core_capability": "br1_legacy_content_rebuild_v1"
 }

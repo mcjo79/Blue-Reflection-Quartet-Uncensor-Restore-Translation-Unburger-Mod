@@ -167,19 +167,23 @@ class CanaryCompositionInputContractTests(unittest.TestCase):
         return project, reports
 
     def test_immutable_core_profile_report_hash(self) -> None:
-        project_root = Path(__file__).resolve().parents[3]
-        archive = project_root / ".local/reports/quartet_restoration" / C.CORE_REPORT_ARCHIVE
+        fixture_root = Path(__file__).resolve().parent / "fixtures" / "stage119_historical_reports"
+        archive = fixture_root / C.CORE_REPORT_ARCHIVE
         self.assertEqual(C.sha256_file(archive), C.CORE_REPORT_SHA256)
 
     def test_real_tree_metadata_contract_is_15_profiles_split_12_2_1(self) -> None:
         project_root = Path(__file__).resolve().parents[3]
         with tempfile.TemporaryDirectory(prefix="canary-real-metadata-") as tmp_name:
+            fixture_root = Path(__file__).resolve().parent / "fixtures" / "stage119_historical_reports"
+            frozen_manifest_root = Path(__file__).resolve().parent / "fixtures" / "stage119_historical_core_profile_manifests"
             _, archive, summary = C.build_report(
                 project_root,
+                core_source_report_root=fixture_root,
                 output_report_root=Path(tmp_name),
                 verify_payloads=False,
                 enforce_core_archive_hash=True,
                 create_archive=False,
+                manifest_root=frozen_manifest_root,
             )
             self.assertIsNone(archive)
             self.assertEqual(summary["profile_rows"], 15)

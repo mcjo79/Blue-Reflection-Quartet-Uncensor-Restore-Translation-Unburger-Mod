@@ -488,8 +488,10 @@ def load_profiles(
     project_root: Path,
     core_rows_by_id: Mapping[str, Mapping[str, Any]],
     verify_payloads: bool,
+    *,
+    manifest_root: Path | None = None,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
-    manifest_root = project_root / MANIFEST_ROOT_REL
+    manifest_root = (manifest_root or (project_root / MANIFEST_ROOT_REL)).resolve()
     require(manifest_root.is_dir(), f"missing manifest root: {manifest_root}")
     manifest_paths = sorted(manifest_root.glob("*.json"))
     require(len(manifest_paths) == EXPECTED_PROFILE_ROWS, f"expected {EXPECTED_PROFILE_ROWS} manifest files, found {len(manifest_paths)}")
@@ -516,23 +518,26 @@ def build_report(
     project_root: Path,
     *,
     source_report_root: Path | None = None,
+    core_source_report_root: Path | None = None,
     output_report_root: Path | None = None,
     verify_payloads: bool = True,
     enforce_core_archive_hash: bool = True,
     create_archive: bool = True,
+    manifest_root: Path | None = None,
 ) -> tuple[Path, Path | None, dict[str, Any]]:
     project_root = project_root.resolve()
     source_report_root = (source_report_root or project_root / ".local/reports/quartet_restoration").resolve()
+    core_source_report_root = (core_source_report_root or source_report_root).resolve()
     output_report_root = (output_report_root or project_root / ".local/reports/quartet_restoration").resolve()
 
     with tempfile.TemporaryDirectory(prefix="br-canary-contract-") as temporary_name:
         temporary = Path(temporary_name)
         if enforce_core_archive_hash:
-            core_archive = source_report_root / CORE_REPORT_ARCHIVE
+            core_archive = core_source_report_root / CORE_REPORT_ARCHIVE
             require(core_archive.is_file(), f"missing immutable core profile report: {core_archive}")
             require(sha256_file(core_archive) == CORE_REPORT_SHA256, "core profile report SHA-256 drift")
 
-        core_root = locate_report(source_report_root, CORE_REPORT_DIR, CORE_REPORT_ARCHIVE, temporary / "core")
+        core_root = locate_report(core_source_report_root, CORE_REPORT_DIR, CORE_REPORT_ARCHIVE, temporary / "core")
         freeze_root = locate_report(source_report_root, FREEZE_REPORT_DIR, FREEZE_REPORT_ARCHIVE, temporary / "freeze")
         core_summary = load_json(core_root / "SUMMARY.json")
         core_rows = read_tsv(core_root / "CORE_PROFILE_MANIFESTS.tsv")
@@ -544,6 +549,7 @@ def build_report(
             project_root,
             core_rows_by_id,
             verify_payloads,
+            manifest_root=manifest_root,
         )
         payload_pass_rows = sum(1 for row in payload_checks if row["validation_status"] == "passed")
         if verify_payloads:

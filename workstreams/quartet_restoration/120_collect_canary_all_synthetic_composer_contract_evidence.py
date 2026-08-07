@@ -209,10 +209,11 @@ def pack_and_extract(gust_pak: Path, work: Path, label: str, output_name: str, p
     return pak, observed
 
 
-def manifest_hashes(project_root: Path) -> dict[str, str]:
-    paths = sorted((project_root / MANIFEST_ROOT_REL).glob("*.json"))
+def manifest_hashes(project_root: Path, manifest_root: Path | None = None) -> dict[str, str]:
+    root = (manifest_root or (project_root / MANIFEST_ROOT_REL)).resolve()
+    paths = sorted(root.glob("*.json"))
     require(len(paths) == EXPECTED_PROFILES, f"expected 15 real profile manifests, found {len(paths)}")
-    return {str(p.relative_to(project_root)): sha256_file(p) for p in paths}
+    return {p.name: sha256_file(p) for p in paths}
 
 
 def make_archive(source: Path, output: Path) -> None:
@@ -224,7 +225,7 @@ def make_archive(source: Path, output: Path) -> None:
     os.replace(temp, output)
 
 
-def build_report(project_root: Path, report_root: Path | None = None, output_report_root: Path | None = None, gust_pak: Path | None = None, create_archive: bool = True) -> tuple[Path, dict[str, Any]]:
+def build_report(project_root: Path, report_root: Path | None = None, output_report_root: Path | None = None, gust_pak: Path | None = None, create_archive: bool = True, manifest_root: Path | None = None) -> tuple[Path, dict[str, Any]]:
     project_root = project_root.resolve()
     report_root = (report_root or project_root / ".local/reports/quartet_restoration").resolve()
     output_report_root = (output_report_root or report_root).resolve()
@@ -233,7 +234,7 @@ def build_report(project_root: Path, report_root: Path | None = None, output_rep
     require(gust_pak.stat().st_size == GUST_PAK_SIZE, "gust_pak size drift")
     require(sha256_file(gust_pak) == GUST_PAK_SHA256, "gust_pak SHA-256 drift")
     stage119_archive = report_root / STAGE119_ARCHIVE
-    manifests_before = manifest_hashes(project_root)
+    manifests_before = manifest_hashes(project_root, manifest_root)
 
     output_dir = output_report_root / REPORT_DIR
     if output_dir.exists():
@@ -316,7 +317,7 @@ def build_report(project_root: Path, report_root: Path | None = None, output_rep
         runtime = [dict(r) for r in profiles]; runtime[0] = dict(runtime[0]); runtime[0]["runtime_validated"] = "true"
         gate("runtime_validation_drift", lambda: validate_profile_snapshot(runtime))
 
-    manifests_after = manifest_hashes(project_root)
+    manifests_after = manifest_hashes(project_root, manifest_root)
     require(manifests_after == manifests_before, "real profile manifests changed")
     require(len(overlay_rows) == EXPECTED_MEMBERS, "verified overlay count drift")
     require(synthetic_profile_count == EXPECTED_PROFILES, "synthetic profile count drift")

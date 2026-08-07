@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/hex"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -43,7 +44,7 @@ func loadInputs(pp, rp string) (wardrobe.TargetProfile, wardrobe.RecordSet) {
 }
 func usage() {
 	fmt.Fprintln(os.Stderr, "br_wardrobe_runtime - generic bounded runtime wardrobe registry + cache virtualization")
-	fmt.Fprintln(os.Stderr, "commands: capabilities | validate-module | plan | attach")
+	fmt.Fprintln(os.Stderr, "commands: capabilities | validate-module | stub-audit | seen-stub-audit | plan | attach")
 }
 func main() {
 	if len(os.Args) < 2 {
@@ -52,7 +53,55 @@ func main() {
 	}
 	switch os.Args[1] {
 	case "capabilities":
-		emit(map[string]any{"type": "br_runtime_capabilities", "format_version": 1, "capabilities": []string{wardrobe.CapabilityIDV1, wardrobe.CapabilityID}, "wardrobe_registry_append_v1": map[string]any{"memory_only": true, "global_show_all": false, "max_append_records": 8, "on_disk_game_binary_patch": false, "save_mutation": false, "superseded_by": wardrobe.CapabilityID}, "wardrobe_registry_append_v2": map[string]any{"memory_only": true, "global_show_all": false, "max_append_records": 8, "on_disk_game_binary_patch": false, "save_mutation": false, "registry_virtualization": true, "external_shadow_cache": true, "preserve_embedded_cache_0_55": true, "embedded_cache_in_place_extension": false, "object_writes_past_original_cache": false, "record_input_v1_compatible": true}})
+		emit(map[string]any{
+			"type": "br_runtime_capabilities", "format_version": 1,
+			"capabilities":                []string{wardrobe.CapabilityIDV1, wardrobe.CapabilityIDV2, wardrobe.CapabilityIDV3, wardrobe.CapabilityID},
+			"wardrobe_registry_append_v1": map[string]any{"memory_only": true, "global_show_all": false, "max_append_records": 8, "on_disk_game_binary_patch": false, "save_mutation": false, "superseded_by": wardrobe.CapabilityID},
+			"wardrobe_registry_append_v2": map[string]any{"memory_only": true, "global_show_all": false, "max_append_records": 8, "on_disk_game_binary_patch": false, "save_mutation": false, "superseded_by": wardrobe.CapabilityID, "known_runtime_native_preservation_bug": true},
+			"wardrobe_registry_append_v3": map[string]any{"memory_only": true, "global_show_all": false, "max_append_records": 8, "on_disk_game_binary_patch": false, "save_mutation": false, "registry_virtualization": true, "external_shadow_cache": true, "per_object_synthetic_cache": true, "context_slot_count": 4096, "preserve_embedded_cache_0_55": true, "embedded_cache_in_place_extension": false, "object_writes_past_original_cache": false, "record_input_v1_compatible": true, "native_pointer_formula_exact": true, "native_branch_target_verified": true, "hook_register_transparent": true, "rdx_preserved": true, "superseded_by": wardrobe.CapabilityID},
+			"wardrobe_registry_append_v4": map[string]any{"memory_only": true, "global_show_all": false, "max_append_records": 8, "on_disk_game_binary_patch": false, "save_mutation": false, "registry_virtualization": true, "external_shadow_cache": true, "per_object_synthetic_cache": true, "context_slot_count": 4096, "preserve_embedded_cache_0_55": true, "embedded_cache_in_place_extension": false, "object_writes_past_original_cache": false, "record_input_v1_compatible": true, "native_pointer_formula_exact": true, "native_branch_target_verified": true, "hook_register_transparent": true, "rdx_preserved": true, "process_local_synthetic_seen_state": true, "synthetic_seen_survives_cache_rebuild": true, "native_seen_behavior_preserved": true, "native_seen_backing_widened": false},
+		})
+	case "stub-audit":
+		fs := flag.NewFlagSet("stub-audit", flag.ExitOnError)
+		profile := fs.String("profile", "", "target profile JSON")
+		template := fs.String("template-address", "0x1111111122222222", "hypothetical immutable template address")
+		contexts := fs.String("context-table-address", "0x3333333344444444", "hypothetical per-object context table")
+		overflow := fs.String("overflow-context-address", "0x5555555566666666", "hypothetical safe overflow context")
+		_ = fs.Parse(os.Args[2:])
+		if *profile == "" {
+			fatalf("--profile required")
+		}
+		p, err := wardrobe.LoadProfile(*profile)
+		if err != nil {
+			fatalf("load profile: %v", err)
+		}
+		b, audit, err := wardrobe.BuildCachePointerStub(p, parseAddress(*template), parseAddress(*contexts), parseAddress(*overflow))
+		if err != nil {
+			fatalf("build stub: %v", err)
+		}
+		emit(map[string]any{"status": "pass", "audit": audit, "stub_hex": hex.EncodeToString(b)})
+	case "seen-stub-audit":
+		fs := flag.NewFlagSet("seen-stub-audit", flag.ExitOnError)
+		profile := fs.String("profile", "", "target profile JSON")
+		template := fs.String("template-address", "0x1111111122222222", "hypothetical process-local synthetic template address")
+		nativeSetter := fs.String("native-setter-address", "", "optional absolute native setter address; defaults to preferred image base + profile RVA")
+		_ = fs.Parse(os.Args[2:])
+		if *profile == "" {
+			fatalf("--profile required")
+		}
+		p, err := wardrobe.LoadProfile(*profile)
+		if err != nil {
+			fatalf("load profile: %v", err)
+		}
+		ns := parseAddress(*nativeSetter)
+		if ns == 0 {
+			ns = p.PreferredImageBase + uint64(p.SeenState.NativeSetterRVA)
+		}
+		b, audit, err := wardrobe.BuildSeenStateStub(p, parseAddress(*template), ns)
+		if err != nil {
+			fatalf("build seen-state stub: %v", err)
+		}
+		emit(map[string]any{"status": "pass", "audit": audit, "stub_hex": hex.EncodeToString(b)})
 	case "validate-module":
 		fs := flag.NewFlagSet("validate-module", flag.ExitOnError)
 		module := fs.String("module", "", "path to B1.dll")
@@ -79,8 +128,11 @@ func main() {
 		profile := fs.String("profile", "", "profile")
 		records := fs.String("records", "", "records")
 		table := fs.String("new-table-address", "", "hypothetical table")
-		cache := fs.String("shadow-cache-address", "", "hypothetical cache")
-		stub := fs.String("hook-stub-address", "", "hypothetical stub")
+		cache := fs.String("shadow-cache-address", "", "hypothetical synthetic cache template")
+		contexts := fs.String("context-table-address", "", "hypothetical per-object context table")
+		overflow := fs.String("overflow-context-address", "", "hypothetical safe overflow context")
+		stub := fs.String("hook-stub-address", "", "hypothetical pointer stub")
+		seenStub := fs.String("seen-stub-address", "", "hypothetical seen-state stub")
 		_ = fs.Parse(os.Args[2:])
 		if *module == "" || *profile == "" || *records == "" {
 			fatalf("--module --profile --records required")
@@ -103,11 +155,23 @@ func main() {
 		if c == 0 {
 			c = t + 0x10000
 		}
+		cx := parseAddress(*contexts)
+		if cx == 0 {
+			cx = c + 0x10000
+		}
+		o := parseAddress(*overflow)
+		if o == 0 {
+			o = cx + 0x100000
+		}
 		s := parseAddress(*stub)
 		if s == 0 {
 			s = base + 0x50000000
 		}
-		pl, err := wardrobe.BuildPlan(p, r, base, t, c, s)
+		ss := parseAddress(*seenStub)
+		if ss == 0 {
+			ss = base + 0x50010000
+		}
+		pl, err := wardrobe.BuildPlan(p, r, base, t, c, cx, o, s, ss)
 		if err != nil {
 			fatalf("build plan: %v", err)
 		}

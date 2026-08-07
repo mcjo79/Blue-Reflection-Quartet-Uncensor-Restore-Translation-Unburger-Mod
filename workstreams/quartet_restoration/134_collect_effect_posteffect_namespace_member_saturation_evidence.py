@@ -300,8 +300,8 @@ def normalize_profile_member(value: str) -> str:
     return path
 
 
-def load_profile_bindings(project_root: Path) -> dict[str, list[str]]:
-    root = project_root / ".local/build/quartet_restoration/core_profiles/generated"
+def load_profile_bindings(project_root: Path, profile_manifest_root: Path | None = None) -> dict[str, list[str]]:
+    root = (profile_manifest_root or (project_root / ".local/build/quartet_restoration/core_profiles/generated")).resolve()
     result: dict[str, list[str]] = defaultdict(list)
     if not root.is_dir():
         return result
@@ -366,6 +366,7 @@ def build_report(
     create_archive: bool = True,
     timeout_seconds: int = 1800,
     verify_payload_hashes: bool = True,
+    profile_manifest_root: Path | None = None,
 ) -> tuple[Path | None, dict[str, Any]]:
     project_root = project_root.resolve()
     version_path = project_root / "workstreams/quartet_restoration/VERSION"
@@ -514,7 +515,7 @@ def build_report(
             })
 
         field_rows = read_tsv(stage131 / "FIELD_ARCHIVE_MEMBER_DELTAS.tsv")
-        profile_bindings = load_profile_bindings(project_root)
+        profile_bindings = load_profile_bindings(project_root, profile_manifest_root)
         program_rows = read_tsv(stage133 / "DXBC_PROGRAM_CLASSIFICATION.tsv")
         shader_dependency_rows: list[dict[str, Any]] = []
         for shader in sorted(shader_rows, key=lambda row: row["normalized_path"]):

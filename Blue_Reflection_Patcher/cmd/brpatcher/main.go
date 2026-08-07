@@ -123,6 +123,8 @@ func commandStart(args []string) error {
 	var noPrompt bool
 	var moduleList, output, projectRoot, payloadOutput string
 	var guidedPrepare, guidedInstall, guidedRemove, confirmed, buildLocal bool
+	var legacySource, legacySteam, legacySCLabels, legacySaveRoot string
+	var legacyNoAuto, legacySyncSaves bool
 	flags.Var(&roots, "game-dir", "game directory; may be repeated")
 	flags.Var(&roots, "root", "alias for --game-dir")
 	flags.BoolVar(&noPrompt, "no-prompt", false, "use default modules and fail instead of prompting for a game directory")
@@ -135,6 +137,12 @@ func commandStart(args []string) error {
 	flags.BoolVar(&guidedRemove, "remove", false, "remove all patcher-installed modules and restore the persistent baseline")
 	flags.BoolVar(&confirmed, "yes", false, "confirm game-file modification for non-interactive --install or --remove")
 	flags.BoolVar(&buildLocal, "build-local", false, "rebuild current local Translation payloads before guided preparation or installation")
+	flags.StringVar(&legacySource, "legacy-source", "", "BLUE REFLECTION (2017) game folder used when legacy content is selected")
+	flags.StringVar(&legacySteam, "legacy-steam", "", "Steam installation or Steam library folder used to locate BLUE REFLECTION (2017)")
+	flags.BoolVar(&legacyNoAuto, "legacy-no-auto", false, "disable automatic Steam discovery for the BLUE REFLECTION (2017) source")
+	flags.StringVar(&legacySCLabels, "legacy-sc-labels", "blank", "Simplified Chinese restored labels: blank or hant")
+	flags.StringVar(&legacySaveRoot, "legacy-save-root", "", "folder containing .pcsave files for optional legacy-content access synchronization")
+	flags.BoolVar(&legacySyncSaves, "legacy-sync-saves", false, "update existing .pcsave access flags after a successful legacy-content install")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
@@ -201,6 +209,27 @@ func commandStart(args []string) error {
 	printHumanSelection(os.Stdout, chosen)
 	if err := printTransactionFoundation(os.Stdout, chosen); err != nil {
 		return err
+	}
+	if _, requested, legacyErr := selectionUsesIntegratedQuartetContent(chosen); legacyErr != nil {
+		return legacyErr
+	} else if requested {
+		legacyResult, runErr := runQuartetContentGuided(chosen, legacyContentStartOptions{
+			ProjectRoot: projectRoot, SourceRoot: legacySource, SteamRoot: legacySteam, DisableAutoSource: legacyNoAuto,
+			SimplifiedLabels: legacySCLabels,
+			SaveRoot:         legacySaveRoot, SyncSaves: legacySyncSaves, BuildLocal: buildLocal,
+			Prepare: guidedPrepare, Install: guidedInstall, Confirmed: confirmed, Prompt: prompt,
+		}, os.Stdout)
+		if output != "" {
+			if emitErr := emit(chosen, output); emitErr != nil {
+				return emitErr
+			}
+		}
+		if payloadOutput != "" {
+			if emitErr := emit(legacyResult, payloadOutput); emitErr != nil {
+				return emitErr
+			}
+		}
+		return runErr
 	}
 	preview, previewErr := buildPayloadPreview(projectRoot, chosen)
 	if previewErr != nil {
@@ -422,7 +451,7 @@ func usage() {
 	fmt.Print(`Blue Reflection unified PC patcher planner
 
 Commands:
-  start [--game-dir PATH] [--modules ID,ID|none] [--project-root PATH] [--build-local] [--prepare|--install --yes|--remove --yes] [--no-prompt] [--json FILE]
+  start [--game-dir PATH] [--modules ID,ID|none] [--project-root PATH] [--build-local] [--prepare|--install --yes|--remove --yes] [legacy-content source options] [--no-prompt] [--json FILE]
   version
   detect [--game-dir PATH] [--prompt] [--json FILE]
   inspect-bundle --bundle FILE

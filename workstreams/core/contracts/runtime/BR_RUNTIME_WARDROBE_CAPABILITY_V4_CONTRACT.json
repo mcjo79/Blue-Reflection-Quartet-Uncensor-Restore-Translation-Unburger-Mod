@@ -1,0 +1,46 @@
+{
+  "type": "br_runtime_wardrobe_capability_contract",
+  "format_version": 4,
+  "capability": "wardrobe_registry_append_v4",
+  "supersedes": "wardrobe_registry_append_v3",
+  "semantics": {
+    "memory_only": true,
+    "registry_virtualization": true,
+    "per_object_synthetic_cache": true,
+    "context_slot_count": 4096,
+    "native_pointer_formula_exact": true,
+    "native_branch_target_verified": true,
+    "hook_register_transparent": true,
+    "rdx_preserved": true,
+    "preserve_existing_records_0_55": true,
+    "preserve_existing_embedded_cache_0_55": true,
+    "embedded_cache_in_place_extension": false,
+    "object_writes_past_original_cache": false,
+    "global_show_all": false,
+    "save_mutation": false,
+    "on_disk_game_binary_patch": false,
+    "max_append_records": 8,
+    "record_input_v1_compatible": true,
+    "process_local_synthetic_seen_state": true,
+    "synthetic_seen_survives_cache_rebuild": true,
+    "native_seen_behavior_preserved": true,
+    "native_seen_backing_widened": false,
+    "character_level_new_aggregation_widened": false
+  },
+  "new_seen_causal_basis": {
+    "selection_clear_path": "0x18002d480",
+    "guarded_forwarder_rva": "0x2ff40",
+    "native_setter_rva": "0x2ed620",
+    "native_max_index": 55,
+    "synthetic_domain": "56..63",
+    "mechanism": "synthetic cache +8 clear is mirrored into the process-local synthetic template; subsequent per-object cache rebuilds copy the cleared byte",
+    "native_path": "indices 0..55 tail-jump to the original native setter unchanged",
+    "out_of_domain_path": "indices >63 remain no-op",
+    "direct_save_file_mutation": false
+  },
+  "label_scope": {
+    "blank_synthetic_label_fix_in_core_v4": false,
+    "reason": "exact runtime text-domain owner is not proven; project evidence indicates packed aggregate strcombineall may be selected at runtime, so label closure is separated from core v4"
+  },
+  "disable_semantics": "process exit/restart removes all runtime patches, external allocations, and synthetic seen state"
+}

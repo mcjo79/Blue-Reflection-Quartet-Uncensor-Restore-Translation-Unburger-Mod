@@ -242,14 +242,14 @@ def build_coverage_rows(report_root: Path) -> list[dict[str, Any]]:
     return sorted(result, key=lambda item: (item["family"], item["token"]))
 
 
-def build_render_rows(project_root: Path, report_root: Path) -> list[dict[str, Any]]:
+def build_render_rows(project_root: Path, report_root: Path, profile_manifest_root: Path | None = None) -> list[dict[str, Any]]:
     path_rows = read_tsv(report_root / "scene_effect_member_family_binding_audit/SCENE_EFFECT_PATH_BINDING_SUMMARY.tsv")
     payload_rows = read_tsv(report_root / "shader_effect_evidence/RENDER_PAYLOADS.tsv")
     dxbc_rows = read_tsv(report_root / "shader_effect_evidence/DXBC_PROGRAM_DIFF.tsv")
     token_rows = read_tsv(report_root / "shader_effect_evidence/RENDER_TECHNICAL_TOKEN_DIFF.tsv")
     prototypes = read_tsv(report_root / "g1s_prototype_evidence/G1S_PROTOTYPES.tsv")
 
-    profiles_root = project_root / ".local/build/quartet_restoration/core_profiles"
+    profiles_root = (profile_manifest_root or (project_root / ".local/build/quartet_restoration/core_profiles")).resolve()
     manifests: list[dict[str, Any]] = []
     if profiles_root.is_dir():
         for path in sorted(profiles_root.rglob("*.json")):
@@ -326,6 +326,7 @@ def build_report(
     report_root: Path | None = None,
     output_report_root: Path | None = None,
     create_archive: bool = True,
+    profile_manifest_root: Path | None = None,
 ) -> tuple[Path | None, dict[str, Any]]:
     project_root = project_root.resolve()
     workstream = project_root / "workstreams/quartet_restoration"
@@ -343,7 +344,7 @@ def build_report(
 
     coverage_rows = build_coverage_rows(report_root)
     require(len(coverage_rows) == 19, f"expected 19 unbound coverage families, found {len(coverage_rows)}")
-    render_rows = build_render_rows(project_root, report_root)
+    render_rows = build_render_rows(project_root, report_root, profile_manifest_root)
     require(len(render_rows) == 5, f"expected 5 standalone render paths, found {len(render_rows)}")
 
     scanned_files, path_hits = path_hygiene_hits(workstream)

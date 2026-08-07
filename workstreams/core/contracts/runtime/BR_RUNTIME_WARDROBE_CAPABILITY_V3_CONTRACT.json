@@ -1,0 +1,31 @@
+{
+  "type": "br_runtime_wardrobe_capability_contract",
+  "format_version": 3,
+  "capability": "wardrobe_registry_append_v3",
+  "supersedes": "wardrobe_registry_append_v2",
+  "semantics": {
+    "memory_only": true,
+    "registry_virtualization": true,
+    "per_object_synthetic_cache": true,
+    "context_slot_count": 4096,
+    "native_pointer_formula_exact": true,
+    "native_branch_target_verified": true,
+    "hook_register_transparent": true,
+    "rdx_preserved": true,
+    "preserve_existing_records_0_55": true,
+    "preserve_existing_embedded_cache_0_55": true,
+    "embedded_cache_in_place_extension": false,
+    "object_writes_past_original_cache": false,
+    "global_show_all": false,
+    "save_mutation": false,
+    "on_disk_game_binary_patch": false,
+    "max_append_records": 8,
+    "record_input_v1_compatible": true
+  },
+  "known_v2_root_cause": {
+    "native_branch_displacement": "0x1f",
+    "actual_native_path_relative_distance": "0x1d",
+    "effect": "native branch landed on RET byte inside original movsxd instruction, so RAX retained record_lookup pointer instead of native cache pointer"
+  },
+  "disable_semantics": "process exit/restart removes all runtime patches and external allocations"
+}
