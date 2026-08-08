@@ -18,6 +18,7 @@ type legacyContentStartOptions struct {
 	ProjectRoot       string
 	SourceRoot        string
 	SteamRoot         string
+	AssetRoot         string
 	DisableAutoSource bool
 	SimplifiedLabels  string
 	SaveRoot          string
@@ -86,6 +87,7 @@ func runQuartetContentGuided(selection model.SelectionResult, opts legacyContent
 	restorationSelected := contains(target.SelectedModuleIDs, quartetRestorationModule)
 	translationSelected := contains(target.SelectedModuleIDs, quartetTranslationModule)
 	source := br1rebuild.SourceLocator{
+		AssetRoot: opts.AssetRoot,
 		LooseRoot: opts.SourceRoot,
 		SteamRoot: opts.SteamRoot,
 		AutoSteam: !opts.DisableAutoSource,
@@ -100,7 +102,7 @@ func runQuartetContentGuided(selection model.SelectionResult, opts legacyContent
 	surveyOptions := br1rebuild.SurveyOptions{TargetRoot: target.Root, UseHantForHans: simplified == "hant", RequireFreeSpace: true}
 	result := legacyContentResult{Status: "ready", GameModified: false}
 	if legacySelected {
-		if opts.Prompt && strings.TrimSpace(source.LooseRoot) == "" && strings.TrimSpace(source.SteamRoot) == "" && !opts.DisableAutoSource {
+		if opts.Prompt && strings.TrimSpace(source.AssetRoot) == "" && strings.TrimSpace(source.LooseRoot) == "" && strings.TrimSpace(source.SteamRoot) == "" && !opts.DisableAutoSource {
 			source, err = chooseLegacySourceLocation(os.Stdin, os.Stdout)
 			if err != nil {
 				return legacyContentResult{}, err

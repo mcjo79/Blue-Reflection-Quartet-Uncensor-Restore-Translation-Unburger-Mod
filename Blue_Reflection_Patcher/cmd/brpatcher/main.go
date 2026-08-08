@@ -13,10 +13,11 @@ import (
 	"local/blue-reflection-patcher/internal/model"
 	"local/blue-reflection-patcher/internal/plan"
 	"local/blue-reflection-patcher/internal/plan/catalog"
+	"local/blue-reflection-patcher/internal/runtimebundle"
 	"local/blue-reflection-patcher/internal/targets"
 )
 
-const version = "0.0.38-dev"
+var version = "dev"
 
 type rootsFlag []string
 
@@ -117,6 +118,37 @@ func boolCount(values ...bool) int {
 	return count
 }
 
+func consumeHiddenLegacyAssets(args []string) ([]string, string, error) {
+	filtered := make([]string, 0, len(args))
+	var value string
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		if arg == "--legacy-assets" {
+			if i+1 >= len(args) || strings.TrimSpace(args[i+1]) == "" {
+				return nil, "", fmt.Errorf("--legacy-assets requires a file or directory path")
+			}
+			if value != "" {
+				return nil, "", fmt.Errorf("--legacy-assets may be supplied only once")
+			}
+			value = args[i+1]
+			i++
+			continue
+		}
+		if strings.HasPrefix(arg, "--legacy-assets=") {
+			if value != "" {
+				return nil, "", fmt.Errorf("--legacy-assets may be supplied only once")
+			}
+			value = strings.TrimSpace(strings.TrimPrefix(arg, "--legacy-assets="))
+			if value == "" {
+				return nil, "", fmt.Errorf("--legacy-assets requires a file or directory path")
+			}
+			continue
+		}
+		filtered = append(filtered, arg)
+	}
+	return filtered, value, nil
+}
+
 func commandStart(args []string) error {
 	flags := flag.NewFlagSet("start", flag.ContinueOnError)
 	var roots rootsFlag
@@ -124,6 +156,10 @@ func commandStart(args []string) error {
 	var moduleList, output, projectRoot, payloadOutput string
 	var guidedPrepare, guidedInstall, guidedRemove, confirmed, buildLocal bool
 	var legacySource, legacySteam, legacySCLabels, legacySaveRoot string
+	filteredArgs, legacyAssets, err := consumeHiddenLegacyAssets(args)
+	if err != nil {
+		return err
+	}
 	var legacyNoAuto, legacySyncSaves bool
 	flags.Var(&roots, "game-dir", "game directory; may be repeated")
 	flags.Var(&roots, "root", "alias for --game-dir")
@@ -143,8 +179,12 @@ func commandStart(args []string) error {
 	flags.StringVar(&legacySCLabels, "legacy-sc-labels", "blank", "Simplified Chinese restored labels: blank or hant")
 	flags.StringVar(&legacySaveRoot, "legacy-save-root", "", "folder containing .pcsave files for optional legacy-content access synchronization")
 	flags.BoolVar(&legacySyncSaves, "legacy-sync-saves", false, "update existing .pcsave access flags after a successful legacy-content install")
-	if err := flags.Parse(args); err != nil {
+	if err := flags.Parse(filteredArgs); err != nil {
 		return err
+	}
+	projectRoot, err = runtimebundle.ResolveProjectRoot(projectRoot)
+	if err != nil {
+		return fmt.Errorf("resolve runtime bundle: %w", err)
 	}
 	if boolCount(guidedPrepare, guidedInstall, guidedRemove) > 1 {
 		return fmt.Errorf("--prepare, --install and --remove are mutually exclusive")
@@ -214,7 +254,7 @@ func commandStart(args []string) error {
 		return legacyErr
 	} else if requested {
 		legacyResult, runErr := runQuartetContentGuided(chosen, legacyContentStartOptions{
-			ProjectRoot: projectRoot, SourceRoot: legacySource, SteamRoot: legacySteam, DisableAutoSource: legacyNoAuto,
+			ProjectRoot: projectRoot, SourceRoot: legacySource, SteamRoot: legacySteam, AssetRoot: legacyAssets, DisableAutoSource: legacyNoAuto,
 			SimplifiedLabels: legacySCLabels,
 			SaveRoot:         legacySaveRoot, SyncSaves: legacySyncSaves, BuildLocal: buildLocal,
 			Prepare: guidedPrepare, Install: guidedInstall, Confirmed: confirmed, Prompt: prompt,

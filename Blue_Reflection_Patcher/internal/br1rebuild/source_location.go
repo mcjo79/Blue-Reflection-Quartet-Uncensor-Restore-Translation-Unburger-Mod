@@ -17,6 +17,7 @@ var vdfPathLine = regexp.MustCompile(`(?i)^\s*"path"\s+"([^"]+)"`)
 var acfInstallDirLine = regexp.MustCompile(`(?i)^\s*"installdir"\s+"([^"]+)"`)
 
 type SourceLocator struct {
+	AssetRoot string
 	LooseRoot string
 	SteamRoot string
 	AutoSteam bool
@@ -28,6 +29,9 @@ type SourceLocation struct {
 }
 
 func LocateSourceInstall(locator SourceLocator) (SourceLocation, error) {
+	if strings.TrimSpace(locator.AssetRoot) != "" {
+		return locateSourceAssetBundle(locator.AssetRoot)
+	}
 	if strings.TrimSpace(locator.LooseRoot) != "" {
 		root, err := normalizeExistingDir(locator.LooseRoot)
 		if err != nil {
@@ -62,7 +66,7 @@ func LocateSourceInstall(locator SourceLocator) (SourceLocation, error) {
 		return SourceLocation{}, fmt.Errorf("BLUE REFLECTION (2017) was not found in default Steam locations")
 	}
 
-	return SourceLocation{}, fmt.Errorf("no BLUE REFLECTION (2017) source was supplied; use a game folder, a Steam/library folder, or Steam autodetection")
+	return SourceLocation{}, fmt.Errorf("no BLUE REFLECTION (2017) source was supplied; use a game folder, a Steam/library folder, Steam autodetection, or a compatible developer asset bundle")
 }
 
 func normalizeExistingDir(raw string) (string, error) {

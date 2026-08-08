@@ -194,6 +194,9 @@ func printHumanInstallationStatus(out io.Writer, report installationStatusReport
 	if report.ActiveState.Active {
 		fmt.Fprintf(out, "Active transaction: %s\n", report.ActiveState.TransactionID)
 		fmt.Fprintf(out, "Active modules: %v\n", report.ActiveState.SelectedModules)
+		if indicators := selectedContentIndicators(report.TargetID, report.ActiveState.SelectedModules); len(indicators) != 0 {
+			fmt.Fprintf(out, "Indicators: %s\n", strings.Join(indicators, " / "))
+		}
 		fmt.Fprintf(out, "Original baseline: %s\n", report.ActiveState.BaselineID)
 		if report.ActiveState.PreviousStatePath != "" {
 			fmt.Fprintf(out, "Previous managed state: %s\n", report.ActiveState.PreviousStatePath)

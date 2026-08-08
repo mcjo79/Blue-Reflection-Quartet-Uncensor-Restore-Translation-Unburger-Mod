@@ -129,6 +129,9 @@ func printHumanSelection(out io.Writer, result model.SelectionResult) {
 		} else {
 			fmt.Fprintf(out, "Desired state: enable %s\n", strings.Join(target.SelectedModuleIDs, ", "))
 		}
+		if indicators := selectedContentIndicators(target.TargetID, target.SelectedModuleIDs); len(indicators) != 0 {
+			fmt.Fprintf(out, "Indicators: %s\n", strings.Join(indicators, " / "))
+		}
 	}
 }
 
@@ -139,4 +142,21 @@ func contains(values []string, needle string) bool {
 		}
 	}
 	return false
+}
+
+func selectedContentIndicators(targetID string, modules []string) []string {
+	if targetID != "blue_reflection_quartet" {
+		return nil
+	}
+	out := []string{}
+	if contains(modules, quartetTranslationModule) {
+		out = append(out, "UNBURGER")
+	}
+	if contains(modules, quartetRestorationModule) {
+		out = append(out, "UNCENSOR")
+	}
+	if contains(modules, quartetLegacyDLCModule) {
+		out = append(out, "DLC")
+	}
+	return out
 }

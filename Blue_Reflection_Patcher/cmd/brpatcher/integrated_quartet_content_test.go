@@ -53,3 +53,22 @@ func TestIntegratedQuartetContentRejectsMixedUnknownModule(t *testing.T) {
 		t.Fatalf("mixed unknown module must not use integrated route")
 	}
 }
+
+func TestSelectedContentIndicatorsIncludeDLCOnlyWhenSelected(t *testing.T) {
+	got := selectedContentIndicators("blue_reflection_quartet", []string{quartetTranslationModule, quartetRestorationModule, quartetLegacyDLCModule})
+	want := []string{"UNBURGER", "UNCENSOR", "DLC"}
+	if len(got) != len(want) {
+		t.Fatalf("unexpected indicators: %v", got)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("unexpected indicators: %v", got)
+		}
+	}
+	without := selectedContentIndicators("blue_reflection_quartet", []string{quartetTranslationModule, quartetRestorationModule})
+	for _, value := range without {
+		if value == "DLC" {
+			t.Fatalf("DLC indicator shown without Legacy DLC selection: %v", without)
+		}
+	}
+}
