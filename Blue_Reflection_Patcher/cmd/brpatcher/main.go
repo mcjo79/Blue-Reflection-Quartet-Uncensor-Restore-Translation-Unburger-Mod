@@ -231,6 +231,24 @@ func commandStart(args []string) error {
 		}
 		return runErr
 	}
+	if _, requested, recordErr := selectionUsesRecordTranslation(chosen); recordErr != nil {
+		return recordErr
+	} else if requested {
+		if _, releaseAvailable := recordTranslationBundleRoot(projectRoot); releaseAvailable {
+			recordResult, runErr := runRecordTranslationGuided(chosen, projectRoot, guidedPrepare, guidedInstall, confirmed, prompt, os.Stdout)
+			if output != "" {
+				if emitErr := emit(chosen, output); emitErr != nil {
+					return emitErr
+				}
+			}
+			if payloadOutput != "" {
+				if emitErr := emit(recordResult, payloadOutput); emitErr != nil {
+					return emitErr
+				}
+			}
+			return runErr
+		}
+	}
 	preview, previewErr := buildPayloadPreview(projectRoot, chosen)
 	if previewErr != nil {
 		fmt.Fprintf(os.Stdout, "\nLocal payload preview unavailable: %v\n", previewErr)

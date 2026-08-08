@@ -46,6 +46,207 @@ type progressTracker struct {
 	completed int64
 }
 
+type prepareProgressPlan struct {
+	relativePath   string
+	candidateBytes int64
+	targetBytes    int64
+}
+
+type prepareProgressTracker struct {
+	callback  ProgressFunc
+	plans     []prepareProgressPlan
+	total     int64
+	completed int64
+}
+
+func newPrepareProgressTracker(gameRoot string, changes []ChangeSpec, callback ProgressFunc) *prepareProgressTracker {
+	t := &prepareProgressTracker{callback: callback, plans: make([]prepareProgressPlan, len(changes))}
+	for index, change := range changes {
+		relative := filepath.ToSlash(strings.TrimSpace(change.RelativePath))
+		target := filepath.Join(gameRoot, filepath.FromSlash(relative))
+		plan := prepareProgressPlan{
+			relativePath:   relative,
+			candidateBytes: regularFileSize(change.StagedPath),
+			targetBytes:    regularFileSize(target),
+		}
+		// Prepare performs one candidate verification, one staging transfer,
+		// one staged verification, one current-target verification, one backup
+		// transfer and one backup verification. Metadata-only clone/link phases
+		// are counted as completed instantly when no byte copy is required.
+		t.total += 3*plan.candidateBytes + 4*plan.targetBytes
+		t.plans[index] = plan
+	}
+	return t
+}
+
+func (t *prepareProgressTracker) phaseTotal(index int, phase string) int64 {
+	if t == nil || index < 0 || index >= len(t.plans) {
+		return 0
+	}
+	plan := t.plans[index]
+	switch phase {
+	case "verify_candidate", "stage", "verify_staged":
+		return plan.candidateBytes
+	case "verify_current", "verify_backup_source", "backup", "verify_backup":
+		return plan.targetBytes
+	default:
+		return 0
+	}
+}
+
+func (t *prepareProgressTracker) emit(index int, phase string, done, total int64) {
+	if t == nil || t.callback == nil {
+		return
+	}
+	if done < 0 {
+		done = 0
+	}
+	if total < 0 {
+		total = 0
+	}
+	if total > 0 && done > total {
+		done = total
+	}
+	overall := t.completed + done
+	if t.total > 0 && overall > t.total {
+		overall = t.total
+	}
+	relative := ""
+	if index >= 0 && index < len(t.plans) {
+		relative = t.plans[index].relativePath
+	}
+	t.callback(ProgressEvent{
+		Operation:         "prepare",
+		Phase:             phase,
+		FileIndex:         index + 1,
+		FileCount:         len(t.plans),
+		RelativePath:      relative,
+		FileBytesDone:     done,
+		FileBytesTotal:    total,
+		OverallBytesDone:  overall,
+		OverallBytesTotal: t.total,
+	})
+}
+
+func (t *prepareProgressTracker) finishPhase(index int, phase string) {
+	total := t.phaseTotal(index, phase)
+	t.emit(index, phase, total, total)
+	t.completed += total
+	if t.completed > t.total {
+		t.completed = t.total
+	}
+}
+
+func (t *prepareProgressTracker) skipPhase(index int, phase string) {
+	t.finishPhase(index, phase)
+}
+
+func (t *prepareProgressTracker) hashFile(index int, path, phase string) (string, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer file.Close()
+	total := t.phaseTotal(index, phase)
+	if total == 0 {
+		if info, statErr := file.Stat(); statErr == nil {
+			total = info.Size()
+		}
+	}
+	t.emit(index, phase, 0, total)
+	hash := sha256.New()
+	buffer := make([]byte, 4*1024*1024)
+	var done int64
+	for {
+		n, readErr := file.Read(buffer)
+		if n > 0 {
+			if _, err := hash.Write(buffer[:n]); err != nil {
+				return "", err
+			}
+			done += int64(n)
+			t.emit(index, phase, done, total)
+		}
+		if errors.Is(readErr, io.EOF) {
+			break
+		}
+		if readErr != nil {
+			return "", readErr
+		}
+	}
+	t.finishPhase(index, phase)
+	return hex.EncodeToString(hash.Sum(nil)), nil
+}
+
+func (t *prepareProgressTracker) copyVerified(index int, source, destination string, mode fs.FileMode, expectedSHA256, phase string) error {
+	input, err := os.Open(source)
+	if err != nil {
+		return err
+	}
+	defer input.Close()
+	if err := os.MkdirAll(filepath.Dir(destination), 0o700); err != nil {
+		return err
+	}
+	output, err := os.OpenFile(destination, os.O_CREATE|os.O_EXCL|os.O_WRONLY, mode)
+	if err != nil {
+		return err
+	}
+	ok := false
+	defer func() {
+		_ = output.Close()
+		if !ok {
+			_ = os.Remove(destination)
+		}
+	}()
+	total := t.phaseTotal(index, phase)
+	t.emit(index, phase, 0, total)
+	hash := sha256.New()
+	buffer := make([]byte, 4*1024*1024)
+	var done int64
+	for {
+		n, readErr := input.Read(buffer)
+		if n > 0 {
+			if _, err := output.Write(buffer[:n]); err != nil {
+				return err
+			}
+			if _, err := hash.Write(buffer[:n]); err != nil {
+				return err
+			}
+			done += int64(n)
+			t.emit(index, phase, done, total)
+		}
+		if errors.Is(readErr, io.EOF) {
+			break
+		}
+		if readErr != nil {
+			return readErr
+		}
+	}
+	if actual := hex.EncodeToString(hash.Sum(nil)); actual != expectedSHA256 {
+		return fmt.Errorf("copied payload hash mismatch")
+	}
+	if err := output.Sync(); err != nil {
+		return err
+	}
+	if err := output.Close(); err != nil {
+		return err
+	}
+	t.finishPhase(index, phase)
+	ok = true
+	return syncParent(destination)
+}
+
+func (t *prepareProgressTracker) finish() {
+	if t == nil || t.callback == nil {
+		return
+	}
+	index := len(t.plans) - 1
+	if index < 0 {
+		index = 0
+	}
+	t.completed = t.total
+	t.emit(index, "complete", 1, 1)
+}
+
 func newProgressTracker(operation string, journal Journal, callback ProgressFunc) *progressTracker {
 	t := &progressTracker{operation: operation, journal: journal, callback: callback, plans: make([]progressPlan, len(journal.Files))}
 	for index, record := range journal.Files {

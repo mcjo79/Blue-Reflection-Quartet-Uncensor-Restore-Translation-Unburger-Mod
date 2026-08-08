@@ -98,6 +98,36 @@ func sortStrings(s []string) {
 	}
 }
 
+func TestReadWardrobeTableUsesPESectionForNeutralCandidateFilename(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "module-layout.bin")
+	const peOff = 0x80
+	const sectionRaw = 0x200
+	const count = 122
+	blob := make([]byte, sectionRaw+(count+1)*rosterRecordSize)
+	binary.LittleEndian.PutUint32(blob[0x3c:0x40], peOff)
+	binary.LittleEndian.PutUint16(blob[peOff+6:peOff+8], 1)
+	binary.LittleEndian.PutUint16(blob[peOff+20:peOff+22], 0)
+	sect := peOff + 24
+	copy(blob[sect:sect+8], []byte(".b1cos"))
+	binary.LittleEndian.PutUint32(blob[sect+20:sect+24], sectionRaw)
+	for i := 0; i < count; i++ {
+		o := sectionRaw + i*rosterRecordSize
+		binary.LittleEndian.PutUint32(blob[o:o+4], uint32(rosterStrLo+(i%100)))
+		binary.LittleEndian.PutUint32(blob[o+4:o+8], uint32(i%15))
+	}
+	if err := os.WriteFile(path, blob, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	recs, err := readWardrobeTable(path, targetRosterOffset)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(recs) != count {
+		t.Fatalf("read %d records, expected %d", len(recs), count)
+	}
+}
+
 func TestA18ToA22SurgicalTranscodeAndVerify(t *testing.T) {
 	dir := t.TempDir()
 	a18 := filepath.Join(dir, "src.pak")
@@ -410,5 +440,43 @@ func TestLocateSourceInstallLooseFolderUppercaseDATA(t *testing.T) {
 	sourceFiles, _ := ResolveContentFiles(found.Root, t.TempDir())
 	if got := filepath.Base(filepath.Dir(sourceFiles["pack00_02"])); got != "DATA" {
 		t.Fatalf("expected resolved DATA directory, got %q (%s)", got, sourceFiles["pack00_02"])
+	}
+}
+
+func TestA18SurgicalRewritePreservesUnchangedMembers(t *testing.T) {
+	dir := t.TempDir()
+	src := filepath.Join(dir, "src.pak")
+	p := writeA18Fixture(t, src, map[string][]byte{`\event\event_en\a.ebm`: []byte("aaa"), `\event\event_en\b.ebm`: []byte("bbb")})
+	_ = p.Close()
+	out := filepath.Join(dir, "out.pak")
+	repl := map[string]ArchiveInput{`\event\event_en\a.ebm`: MemoryEntry{Data: []byte("translated")}}
+	if _, err := RewriteA18(src, out, ArchiveEdits{Replacements: repl}, nil); err != nil {
+		t.Fatal(err)
+	}
+	audit, err := AuditA18Rewrite(src, out, nil, repl, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(audit.Problems) != 0 {
+		t.Fatalf("audit problems: %v", audit.Problems)
+	}
+	if audit.Changed != 1 || audit.Unchanged != 1 {
+		t.Fatalf("audit=%+v", audit)
+	}
+	opened, err := OpenA18(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer opened.Close()
+	entry, ok := opened.Find(`\event\event_en\a.ebm`)
+	if !ok {
+		t.Fatal("replacement missing")
+	}
+	blob, err := opened.Read(entry)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(blob) != "translated" {
+		t.Fatalf("replacement=%q", blob)
 	}
 }

@@ -4,7 +4,7 @@
   "module_id": "quartet_legacy_dlc",
   "project": "blue_reflection",
   "module_type": "dlc_restoration",
-  "status": "implementation_ready_live_validation_pending",
+  "status": "runtime_validated",
   "default_enabled": false,
   "targets": [
     "blue_reflection_quartet"
@@ -25,7 +25,7 @@
     "unavailable_pc_costumes": 24,
     "final_wardrobe_records": 122,
     "tropical_island": true,
-    "save_access_sync": "separate_explicit_step"
+    "save_access_sync": "optional_guided_step_with_per_save_backup"
   },
   "composition": {
     "order": [
@@ -36,5 +36,16 @@
     "translation_last": true,
     "shared_string_tables": "merge_changed_rows_by_String_No_then_rebuild_encrypted_aggregate"
   },
-  "core_capability": "br1_legacy_content_rebuild_v1"
+  "core_capability": "br1_legacy_content_rebuild_v1",
+  "runtime_validation": {
+    "restored_costumes_visible": true,
+    "restored_costume_names_visible": true,
+    "restored_costume_model_switching": true,
+    "tropical_island_invite": true,
+    "tropical_island_map_render": true,
+    "save_access": true,
+    "tropical_island_short_scene_voice_acting_expected": false
+  },
+  "workstream_version": "0.1.0",
+  "workstream_status": "runtime_validated_closed"
 }

@@ -193,7 +193,7 @@ func BuildCandidateSet(opts ReconstructionBuildOptions, progress BuildProgressFu
 	}
 	markComplete("Data/PACK11.PAK")
 
-	report.CrossFileAudit, err = AuditCrossFileWardrobe(moduleCandidate, pack10Candidate, pack12Candidate, wardrobePlan, opts.Survey.TextTool, report.Metadata)
+	report.CrossFileAudit, err = AuditCrossFileWardrobe(moduleCandidate, pack10Candidate, pack12Candidate, wardrobePlan, opts.Survey.TextTool)
 	if err != nil {
 		return report, fmt.Errorf("cross-file candidate audit: %w", err)
 	}
@@ -220,6 +220,14 @@ func BuildCandidateSet(opts ReconstructionBuildOptions, progress BuildProgressFu
 }
 
 func PrepareArtifacts(gameRoot, stateRoot string, artifacts []OutputArtifact, selectedModules []string, metadata map[string]string) (string, string, error) {
+	return PrepareArtifactsForTarget(gameRoot, stateRoot, "blue_reflection_quartet", artifacts, selectedModules, metadata)
+}
+
+func PrepareArtifactsForTarget(gameRoot, stateRoot, targetID string, artifacts []OutputArtifact, selectedModules []string, metadata map[string]string) (string, string, error) {
+	return PrepareArtifactsForTargetWithProgress(gameRoot, stateRoot, targetID, artifacts, selectedModules, metadata, nil)
+}
+
+func PrepareArtifactsForTargetWithProgress(gameRoot, stateRoot, targetID string, artifacts []OutputArtifact, selectedModules []string, metadata map[string]string, progress transaction.ProgressFunc) (string, string, error) {
 	if len(artifacts) == 0 {
 		return "", "", fmt.Errorf("no verified artifacts were supplied")
 	}
@@ -249,16 +257,20 @@ func PrepareArtifacts(gameRoot, stateRoot string, artifacts []OutputArtifact, se
 		ordered = append(ordered, relative)
 	}
 	sort.Strings(ordered)
-	base, err := baseline.Ensure(gameRoot, stateRoot, "blue_reflection_quartet", ordered)
+	base, err := baseline.Ensure(gameRoot, stateRoot, targetID, ordered)
 	if err != nil {
 		return "", "", err
 	}
 	changes := make([]transaction.ChangeSpec, 0, len(ordered))
 	for _, relative := range ordered {
 		artifact := byPath[strings.ToLower(relative)]
-		changes = append(changes, transaction.ChangeSpec{RelativePath: relative, StagedPath: artifact.Path, VerifiedBackupPath: base.StoredFiles[relative]})
+		changes = append(changes, transaction.ChangeSpec{RelativePath: relative, StagedPath: artifact.Path})
 	}
-	prepared, err := transaction.Prepare(gameRoot, stateRoot, changes, selectedModules, metadata)
+	prepared, err := transaction.PrepareWithOptions(gameRoot, stateRoot, changes, selectedModules, metadata, transaction.PrepareOptions{
+		Progress:                        progress,
+		RequireHardlinkBackup:           true,
+		UseSiblingFilesystemBackupStore: true,
+	})
 	if err != nil {
 		return "", "", err
 	}

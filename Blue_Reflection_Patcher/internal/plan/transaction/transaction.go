@@ -64,6 +64,7 @@ type Journal struct {
 	UpdatedUTC      time.Time         `json:"updated_utc"`
 	GameRoot        string            `json:"game_root"`
 	TransactionRoot string            `json:"transaction_root"`
+	BackupRoot      string            `json:"backup_root,omitempty"`
 	SelectedModules []string          `json:"selected_modules"`
 	Files           []FileRecord      `json:"files"`
 	Metadata        map[string]string `json:"metadata,omitempty"`
@@ -72,6 +73,14 @@ type Journal struct {
 type Prepared struct {
 	JournalPath string
 	Journal     Journal
+}
+
+type PrepareOptions struct {
+	Progress                        ProgressFunc
+	RequireReflinkStaging           bool
+	RequireHardlinkBackup           bool
+	UseGameFilesystemBackupStore    bool
+	UseSiblingFilesystemBackupStore bool
 }
 
 func NewID(now time.Time) (string, error) {
@@ -83,6 +92,15 @@ func NewID(now time.Time) (string, error) {
 }
 
 func Prepare(gameRoot, stateRoot string, changes []ChangeSpec, selectedModules []string, metadata map[string]string) (Prepared, error) {
+	return PrepareWithOptions(gameRoot, stateRoot, changes, selectedModules, metadata, PrepareOptions{})
+}
+
+func PrepareWithProgress(gameRoot, stateRoot string, changes []ChangeSpec, selectedModules []string, metadata map[string]string, progress ProgressFunc) (Prepared, error) {
+	return PrepareWithOptions(gameRoot, stateRoot, changes, selectedModules, metadata, PrepareOptions{Progress: progress})
+}
+
+func PrepareWithOptions(gameRoot, stateRoot string, changes []ChangeSpec, selectedModules []string, metadata map[string]string, options PrepareOptions) (Prepared, error) {
+	progress := options.Progress
 	if len(changes) == 0 {
 		return Prepared{}, fmt.Errorf("transaction requires at least one file change")
 	}
@@ -105,18 +123,53 @@ func Prepare(gameRoot, stateRoot string, changes []ChangeSpec, selectedModules [
 	if err := os.Mkdir(transactionRoot, 0o700); err != nil {
 		return Prepared{}, fmt.Errorf("create transaction root: %w", err)
 	}
+	backupRoot := ""
+	if options.UseGameFilesystemBackupStore && options.UseSiblingFilesystemBackupStore {
+		_ = os.RemoveAll(transactionRoot)
+		return Prepared{}, fmt.Errorf("multiple external backup store policies requested")
+	}
+	if options.UseGameFilesystemBackupStore {
+		backupRoot = legacyGameFilesystemBackupRoot(gameRoot, id)
+	}
+	if options.UseSiblingFilesystemBackupStore {
+		backupRoot = siblingFilesystemBackupRoot(gameRoot, id)
+	}
+	if backupRoot != "" {
+		backupParent := filepath.Dir(backupRoot)
+		if err := os.MkdirAll(backupParent, 0o700); err != nil {
+			_ = os.RemoveAll(transactionRoot)
+			return Prepared{}, fmt.Errorf("create external backup parent: %w", err)
+		}
+		info, err := os.Lstat(backupParent)
+		if err != nil {
+			_ = os.RemoveAll(transactionRoot)
+			return Prepared{}, fmt.Errorf("inspect external backup parent: %w", err)
+		}
+		if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
+			_ = os.RemoveAll(transactionRoot)
+			return Prepared{}, fmt.Errorf("external backup parent must be a real directory: %s", backupParent)
+		}
+		if err := os.Mkdir(backupRoot, 0o700); err != nil {
+			_ = os.RemoveAll(transactionRoot)
+			return Prepared{}, fmt.Errorf("create external backup root: %w", err)
+		}
+	}
 	cleanup := true
 	defer func() {
 		if cleanup {
 			_ = os.RemoveAll(transactionRoot)
+			if backupRoot != "" {
+				_ = os.RemoveAll(backupRoot)
+			}
 		}
 	}()
 
 	ordered := append([]ChangeSpec(nil), changes...)
 	sort.Slice(ordered, func(i, j int) bool { return ordered[i].RelativePath < ordered[j].RelativePath })
+	tracker := newPrepareProgressTracker(gameRoot, ordered, progress)
 	seen := map[string]bool{}
 	records := make([]FileRecord, 0, len(ordered))
-	for _, change := range ordered {
+	for index, change := range ordered {
 		relative, err := cleanRelativePath(change.RelativePath)
 		if err != nil {
 			return Prepared{}, err
@@ -134,17 +187,32 @@ func Prepare(gameRoot, stateRoot string, changes []ChangeSpec, selectedModules [
 		if err != nil {
 			return Prepared{}, err
 		}
-		desiredHash, err := hashFile(stagedSource)
+		desiredHash, err := tracker.hashFile(index, stagedSource, "verify_candidate")
 		if err != nil {
 			return Prepared{}, err
 		}
 		stagedRelative := filepath.Join("staged", relative)
 		stagedCopy := filepath.Join(transactionRoot, stagedRelative)
-		stagedStorageMethod, err := cloneOrCopyRegularFile(stagedSource, stagedCopy, 0o600)
+		if err := os.MkdirAll(filepath.Dir(stagedCopy), 0o700); err != nil {
+			return Prepared{}, fmt.Errorf("stage %s: %w", relative, err)
+		}
+		cloned, err := tryReflinkRegularFile(stagedSource, stagedCopy, 0o600)
 		if err != nil {
 			return Prepared{}, fmt.Errorf("stage %s: %w", relative, err)
 		}
-		if hash, err := hashFile(stagedCopy); err != nil || hash != desiredHash {
+		stagedStorageMethod := "reflink"
+		if cloned {
+			tracker.skipPhase(index, "stage")
+		} else {
+			if options.RequireReflinkStaging {
+				return Prepared{}, fmt.Errorf("stage %s: reflink is required by prepare policy", relative)
+			}
+			stagedStorageMethod = "copy"
+			if err := tracker.copyVerified(index, stagedSource, stagedCopy, 0o600, desiredHash, "stage"); err != nil {
+				return Prepared{}, fmt.Errorf("stage %s: %w", relative, err)
+			}
+		}
+		if hash, err := tracker.hashFile(index, stagedCopy, "verify_staged"); err != nil || hash != desiredHash {
 			if err == nil {
 				err = fmt.Errorf("staged hash mismatch")
 			}
@@ -167,19 +235,23 @@ func Prepare(gameRoot, stateRoot string, changes []ChangeSpec, selectedModules [
 			}
 			record.OriginalExisted = true
 			record.OriginalMode = uint32(info.Mode().Perm())
-			record.OriginalSHA256, err = hashFile(target)
+			record.OriginalSHA256, err = tracker.hashFile(index, target, "verify_current")
 			if err != nil {
 				return Prepared{}, err
 			}
 			backupRelative := filepath.Join("backup", relative)
-			backup := filepath.Join(transactionRoot, backupRelative)
+			backupBase := transactionRoot
+			if backupRoot != "" {
+				backupBase = backupRoot
+			}
+			backup := filepath.Join(backupBase, backupRelative)
 			backupSource := target
 			if strings.TrimSpace(change.VerifiedBackupPath) != "" {
 				verified, verifyErr := regularFile(change.VerifiedBackupPath, "verified persistent baseline")
 				if verifyErr != nil {
 					return Prepared{}, verifyErr
 				}
-				verifiedHash, verifyErr := hashFile(verified)
+				verifiedHash, verifyErr := tracker.hashFile(index, verified, "verify_backup_source")
 				if verifyErr != nil {
 					return Prepared{}, verifyErr
 				}
@@ -187,12 +259,34 @@ func Prepare(gameRoot, stateRoot string, changes []ChangeSpec, selectedModules [
 					return Prepared{}, fmt.Errorf("persistent baseline does not match current target: %s", relative)
 				}
 				backupSource = verified
+			} else {
+				tracker.skipPhase(index, "verify_backup_source")
 			}
-			backupStorageMethod, err := linkCloneOrCopyRegularFile(backupSource, backup, info.Mode().Perm())
-			if err != nil {
+			if err := os.MkdirAll(filepath.Dir(backup), 0o700); err != nil {
 				return Prepared{}, fmt.Errorf("backup %s: %w", relative, err)
 			}
-			if hash, err := hashFile(backup); err != nil || hash != record.OriginalSHA256 {
+			backupStorageMethod := "hardlink"
+			if err := os.Link(backupSource, backup); err == nil {
+				tracker.skipPhase(index, "backup")
+			} else {
+				if options.RequireHardlinkBackup {
+					return Prepared{}, fmt.Errorf("backup %s: hardlink is required by prepare policy", relative)
+				}
+				cloned, cloneErr := tryReflinkRegularFile(backupSource, backup, info.Mode().Perm())
+				if cloneErr != nil {
+					return Prepared{}, fmt.Errorf("backup %s: %w", relative, cloneErr)
+				}
+				backupStorageMethod = "reflink"
+				if cloned {
+					tracker.skipPhase(index, "backup")
+				} else {
+					backupStorageMethod = "copy"
+					if err := tracker.copyVerified(index, backupSource, backup, info.Mode().Perm(), record.OriginalSHA256, "backup"); err != nil {
+						return Prepared{}, fmt.Errorf("backup %s: %w", relative, err)
+					}
+				}
+			}
+			if hash, err := tracker.hashFile(index, backup, "verify_backup"); err != nil || hash != record.OriginalSHA256 {
 				if err == nil {
 					err = fmt.Errorf("backup hash mismatch")
 				}
@@ -202,6 +296,10 @@ func Prepare(gameRoot, stateRoot string, changes []ChangeSpec, selectedModules [
 			record.BackupStorageMethod = backupStorageMethod
 		case errors.Is(statErr, os.ErrNotExist):
 			record.OriginalExisted = false
+			tracker.skipPhase(index, "verify_current")
+			tracker.skipPhase(index, "verify_backup_source")
+			tracker.skipPhase(index, "backup")
+			tracker.skipPhase(index, "verify_backup")
 		case statErr != nil:
 			return Prepared{}, fmt.Errorf("inspect target %s: %w", target, statErr)
 		}
@@ -212,7 +310,7 @@ func Prepare(gameRoot, stateRoot string, changes []ChangeSpec, selectedModules [
 	journal := Journal{
 		Type: JournalType, FormatVersion: JournalFormatVersion,
 		TransactionID: id, Status: StatusPrepared, CreatedUTC: now, UpdatedUTC: now,
-		GameRoot: gameRoot, TransactionRoot: transactionRoot,
+		GameRoot: gameRoot, TransactionRoot: transactionRoot, BackupRoot: backupRoot,
 		SelectedModules: sortedUnique(selectedModules), Files: records,
 		Metadata: cloneMetadata(metadata),
 	}
@@ -221,6 +319,7 @@ func Prepare(gameRoot, stateRoot string, changes []ChangeSpec, selectedModules [
 		return Prepared{}, err
 	}
 	cleanup = false
+	tracker.finish()
 	return Prepared{JournalPath: journalPath, Journal: journal}, nil
 }
 
@@ -271,13 +370,24 @@ func DiscardPrepared(journalPath string) (Journal, error) {
 	if err != nil {
 		return Journal{}, err
 	}
-	for _, directory := range []string{"staged", "backup"} {
-		path, err := secureJoin(journal.TransactionRoot, directory)
+	staged, err := secureJoin(journal.TransactionRoot, "staged")
+	if err != nil {
+		return Journal{}, err
+	}
+	if err := os.RemoveAll(staged); err != nil {
+		return Journal{}, fmt.Errorf("remove transaction staged payloads: %w", err)
+	}
+	if journal.BackupRoot != "" {
+		if err := os.RemoveAll(journal.BackupRoot); err != nil {
+			return Journal{}, fmt.Errorf("remove external transaction backups: %w", err)
+		}
+	} else {
+		backup, err := secureJoin(journal.TransactionRoot, "backup")
 		if err != nil {
 			return Journal{}, err
 		}
-		if err := os.RemoveAll(path); err != nil {
-			return Journal{}, fmt.Errorf("remove transaction %s: %w", directory, err)
+		if err := os.RemoveAll(backup); err != nil {
+			return Journal{}, fmt.Errorf("remove transaction backups: %w", err)
 		}
 	}
 	for index := range journal.Files {
@@ -498,12 +608,39 @@ func Load(journalPath string) (Journal, error) {
 	}
 	journal.GameRoot = gameRoot
 	journal.TransactionRoot = root
+	if journal.BackupRoot != "" {
+		actualBackupRoot, err := filepath.Abs(journal.BackupRoot)
+		if err != nil {
+			return Journal{}, err
+		}
+		legacyRoot, err := filepath.Abs(legacyGameFilesystemBackupRoot(gameRoot, journal.TransactionID))
+		if err != nil {
+			return Journal{}, err
+		}
+		siblingRoot, err := filepath.Abs(siblingFilesystemBackupRoot(gameRoot, journal.TransactionID))
+		if err != nil {
+			return Journal{}, err
+		}
+		actualBackupRoot = filepath.Clean(actualBackupRoot)
+		if actualBackupRoot != filepath.Clean(legacyRoot) && actualBackupRoot != filepath.Clean(siblingRoot) {
+			return Journal{}, fmt.Errorf("journal backup root mismatch")
+		}
+		journal.BackupRoot = actualBackupRoot
+	}
 	for _, record := range journal.Files {
 		if _, err := cleanRelativePath(record.RelativePath); err != nil {
 			return Journal{}, err
 		}
 	}
 	return journal, nil
+}
+
+func legacyGameFilesystemBackupRoot(gameRoot, transactionID string) string {
+	return filepath.Join(gameRoot, ".unburger-patcher", "transaction-backups", transactionID)
+}
+
+func siblingFilesystemBackupRoot(gameRoot, transactionID string) string {
+	return filepath.Join(filepath.Dir(gameRoot), ".unburger-patcher-transaction-backups", filepath.Base(gameRoot), transactionID)
 }
 
 func resolveRecordPaths(journal Journal, record FileRecord) (string, string, string, error) {
@@ -517,7 +654,11 @@ func resolveRecordPaths(journal Journal, record FileRecord) (string, string, str
 	}
 	backup := ""
 	if record.BackupPath != "" {
-		backup, err = secureJoin(journal.TransactionRoot, record.BackupPath)
+		backupBase := journal.TransactionRoot
+		if journal.BackupRoot != "" {
+			backupBase = journal.BackupRoot
+		}
+		backup, err = secureJoin(backupBase, record.BackupPath)
 		if err != nil {
 			return "", "", "", err
 		}

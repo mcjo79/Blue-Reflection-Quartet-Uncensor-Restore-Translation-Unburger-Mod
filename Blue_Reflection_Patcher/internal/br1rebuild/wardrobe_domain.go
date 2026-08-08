@@ -117,10 +117,11 @@ func readWardrobeTable(path string, offset int) ([]WardrobeRecord, error) {
 		return nil, err
 	}
 	o := offset
-	if strings.HasSuffix(strings.ToLower(path), "b1.dll") {
-		if raw, ok := peSectionRaw(data, ".b1cos"); ok {
-			o = raw
-		}
+	// Prefer the reconstructed wardrobe section whenever the PE contains it.
+	// Candidate files are intentionally stored under neutral workspace names,
+	// so section discovery must depend on file content rather than the filename.
+	if raw, ok := peSectionRaw(data, ".b1cos"); ok {
+		o = raw
 	}
 	if o < 0 || o+rosterRecordSize > len(data) {
 		return nil, fmt.Errorf("roster offset 0x%x outside %s", o, path)

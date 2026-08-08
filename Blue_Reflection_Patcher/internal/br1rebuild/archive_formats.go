@@ -420,7 +420,8 @@ type ArchiveAuditResult struct {
 	Problems                    []string
 }
 
-type byteProgress func(phase, name string, done, total int64)
+type ByteProgressFunc func(phase, name string, done, total int64)
+type byteProgress = ByteProgressFunc
 
 func RewriteA22(srcPath, dstPath string, patch ArchiveEdits, progress byteProgress) (ArchiveRewriteStats, error) {
 	p, err := OpenA22(srcPath)
@@ -712,6 +713,303 @@ func AuditA22Rewrite(srcPath, dstPath string, expectedAdded map[string]string, r
 			if !ok {
 				continue
 			}
+			if ae.Size != be.Size {
+				res.Problems = append(res.Problems, "unintended size change: "+be.Name)
+			} else if bytesEqual(ae.Key, be.Key) && ae.Encoded == be.Encoded {
+				ha, e := a.RawDigest(ae)
+				if e != nil {
+					return res, e
+				}
+				hb, e := b.RawDigest(be)
+				if e != nil {
+					return res, e
+				}
+				if ha != hb {
+					res.Problems = append(res.Problems, "unintended raw change: "+be.Name)
+				} else {
+					res.Unchanged++
+				}
+			} else {
+				ha, e := a.PlainDigest(ae)
+				if e != nil {
+					return res, e
+				}
+				hb, e := b.PlainDigest(be)
+				if e != nil {
+					return res, e
+				}
+				if ha != hb {
+					res.Problems = append(res.Problems, "unintended plaintext change: "+be.Name)
+				} else {
+					res.Unchanged++
+				}
+			}
+		}
+		done += int64(be.Size)
+		if progress != nil {
+			progress("verify", be.Name, done, total)
+		}
+		res.Checked++
+	}
+	return res, nil
+}
+
+// RewriteA18 performs the same member-preserving surgical rewrite as RewriteA22
+// while retaining the A18 entry-table layout used by the first BLUE REFLECTION.
+func RewriteA18(srcPath, dstPath string, patch ArchiveEdits, progress byteProgress) (ArchiveRewriteStats, error) {
+	p, err := OpenA18(srcPath)
+	if err != nil {
+		return ArchiveRewriteStats{}, err
+	}
+	defer p.Close()
+	if patch.Replacements == nil {
+		patch.Replacements = map[string]ArchiveInput{}
+	}
+	if patch.Additions == nil {
+		patch.Additions = map[string]ArchiveInput{}
+	}
+	by := map[string]ArchiveEntry{}
+	for _, e := range p.Entries {
+		by[strings.ToLower(e.Name)] = e
+	}
+	repl := map[string]ArchiveInput{}
+	for n, s := range patch.Replacements {
+		k := strings.ToLower(n)
+		e, ok := by[k]
+		if !ok {
+			return ArchiveRewriteStats{}, fmt.Errorf("no such entry to replace: %s", n)
+		}
+		repl[e.Name] = s
+	}
+	adds := map[string]ArchiveInput{}
+	for n, s := range patch.Additions {
+		if _, ok := by[strings.ToLower(n)]; ok {
+			return ArchiveRewriteStats{}, fmt.Errorf("entry already exists: %s", n)
+		}
+		adds[n] = s
+	}
+	if len(p.Entries) == 0 {
+		return ArchiveRewriteStats{}, fmt.Errorf("empty A18 archive")
+	}
+	template := p.Entries[0]
+	newRawTemplate := append([]byte(nil), template.rawHeader...)
+	newKey := effectiveKey(template.Key, nil)
+	type item struct {
+		src    *ArchiveEntry
+		name   string
+		source ArchiveInput
+		size   int64
+		key    []byte
+		off    uint64
+		raw    []byte
+	}
+	plan := make([]item, 0, len(p.Entries)+len(adds))
+	var dataOff uint64
+	for i := range p.Entries {
+		e := p.Entries[i]
+		it := item{src: &e, name: e.Name, size: int64(e.Size), raw: append([]byte(nil), e.rawHeader...)}
+		if s, ok := repl[e.Name]; ok {
+			it.source = s
+			it.size = s.Size()
+			if e.Encoded {
+				it.key = effectiveKey(e.Key, nil)
+			} else {
+				it.key = make([]byte, a18KeySize)
+			}
+		}
+		it.off = dataOff
+		dataOff += uint64(it.size)
+		plan = append(plan, it)
+	}
+	names := make([]string, 0, len(adds))
+	for n := range adds {
+		names = append(names, n)
+	}
+	sort.Slice(names, func(i, j int) bool { return strings.ToLower(names[i]) < strings.ToLower(names[j]) })
+	for _, n := range names {
+		s := adds[n]
+		raw := append([]byte(nil), newRawTemplate...)
+		encodedName := make([]byte, a18NameSize)
+		copy(encodedName, []byte(n))
+		if template.Encoded {
+			xorInPlace(encodedName, newKey, 0)
+		}
+		copy(raw[:a18NameSize], encodedName)
+		binary.LittleEndian.PutUint32(raw[128:132], uint32(s.Size()))
+		binary.LittleEndian.PutUint64(raw[152:160], dataOff)
+		plan = append(plan, item{name: n, source: s, size: s.Size(), key: newKey, off: dataOff, raw: raw})
+		dataOff += uint64(s.Size())
+	}
+	for i := range plan {
+		binary.LittleEndian.PutUint32(plan[i].raw[128:132], uint32(plan[i].size))
+		binary.LittleEndian.PutUint64(plan[i].raw[152:160], plan[i].off)
+	}
+	out, err := os.Create(dstPath)
+	if err != nil {
+		return ArchiveRewriteStats{}, err
+	}
+	ok := false
+	defer func() {
+		out.Close()
+		if !ok {
+			os.Remove(dstPath)
+		}
+	}()
+	bw := bufio.NewWriterSize(out, 8<<20)
+	hdr := make([]byte, pakHeaderSize)
+	binary.LittleEndian.PutUint32(hdr[0:4], 0x20000)
+	binary.LittleEndian.PutUint32(hdr[4:8], uint32(len(plan)))
+	binary.LittleEndian.PutUint32(hdr[8:12], pakHeaderSize)
+	binary.LittleEndian.PutUint32(hdr[12:16], p.Flags)
+	if _, err := bw.Write(hdr); err != nil {
+		return ArchiveRewriteStats{}, err
+	}
+	for _, it := range plan {
+		if _, err := bw.Write(it.raw); err != nil {
+			return ArchiveRewriteStats{}, err
+		}
+	}
+	var total int64
+	for _, it := range plan {
+		total += it.size
+	}
+	var done int64
+	for _, it := range plan {
+		if it.source == nil {
+			if err := copyRaw(p, it.src, bw, func(n int) {
+				done += int64(n)
+				if progress != nil {
+					progress("build", it.name, done, total)
+				}
+			}); err != nil {
+				return ArchiveRewriteStats{}, err
+			}
+		} else {
+			cw := &countWriter{w: bw, onWrite: func(n int) {
+				done += int64(n)
+				if progress != nil {
+					progress("build", it.name, done, total)
+				}
+			}}
+			if err := it.source.WriteEncrypted(cw, it.key); err != nil {
+				return ArchiveRewriteStats{}, err
+			}
+		}
+	}
+	if err := bw.Flush(); err != nil {
+		return ArchiveRewriteStats{}, err
+	}
+	if err := out.Sync(); err != nil {
+		return ArchiveRewriteStats{}, err
+	}
+	if err := out.Close(); err != nil {
+		return ArchiveRewriteStats{}, err
+	}
+	ok = true
+	st1, _ := os.Stat(srcPath)
+	st2, _ := os.Stat(dstPath)
+	return ArchiveRewriteStats{len(p.Entries), len(plan), len(repl), len(adds), st1.Size(), st2.Size()}, nil
+}
+
+func AuditA18Rewrite(srcPath, dstPath string, expectedAdded map[string]string, replacements map[string]ArchiveInput, progress byteProgress) (ArchiveAuditResult, error) {
+	return auditArchiveRewrite(srcPath, dstPath, expectedAdded, replacements, progress, OpenA18)
+}
+
+func auditArchiveRewrite(srcPath, dstPath string, expectedAdded map[string]string, replacements map[string]ArchiveInput, progress byteProgress, opener func(string) (*ArchiveReader, error)) (ArchiveAuditResult, error) {
+	a, err := opener(srcPath)
+	if err != nil {
+		return ArchiveAuditResult{}, err
+	}
+	defer a.Close()
+	b, err := opener(dstPath)
+	if err != nil {
+		return ArchiveAuditResult{}, err
+	}
+	defer b.Close()
+	am, bm := map[string]ArchiveEntry{}, map[string]ArchiveEntry{}
+	for _, e := range a.Entries {
+		am[strings.ToLower(e.Name)] = e
+	}
+	for _, e := range b.Entries {
+		bm[strings.ToLower(e.Name)] = e
+	}
+	res := ArchiveAuditResult{}
+	for n := range expectedAdded {
+		if _, ok := bm[strings.ToLower(n)]; !ok {
+			res.Problems = append(res.Problems, "missing added entry: "+n)
+		}
+	}
+	for k, e := range bm {
+		if _, ok := am[k]; !ok {
+			found := false
+			for n := range expectedAdded {
+				if strings.EqualFold(n, e.Name) {
+					found = true
+					break
+				}
+			}
+			if !found {
+				res.Problems = append(res.Problems, "unexpected added entry: "+e.Name)
+			}
+		}
+	}
+	for k, e := range am {
+		if _, ok := bm[k]; !ok {
+			res.Problems = append(res.Problems, "entry lost: "+e.Name)
+		}
+	}
+	names := make([]string, 0, len(bm))
+	for k := range bm {
+		names = append(names, k)
+	}
+	sort.Strings(names)
+	var done, total int64
+	for _, k := range names {
+		total += int64(bm[k].Size)
+	}
+	for _, k := range names {
+		be := bm[k]
+		isAdded := false
+		wantAdd := ""
+		for n, d := range expectedAdded {
+			if strings.EqualFold(n, be.Name) {
+				isAdded = true
+				wantAdd = d
+				break
+			}
+		}
+		isRepl := false
+		var repl ArchiveInput
+		for n, s := range replacements {
+			if strings.EqualFold(n, be.Name) {
+				isRepl = true
+				repl = s
+				break
+			}
+		}
+		if isAdded {
+			got, e := b.PlainDigest(be)
+			if e != nil {
+				return res, e
+			}
+			if got != wantAdd {
+				res.Problems = append(res.Problems, "added entry digest mismatch: "+be.Name)
+			}
+			res.Changed++
+		} else if isRepl {
+			want, e := repl.PlainSHA256()
+			if e != nil {
+				return res, e
+			}
+			got, e := b.PlainDigest(be)
+			if e != nil {
+				return res, e
+			}
+			if got != want {
+				res.Problems = append(res.Problems, "replaced entry digest mismatch: "+be.Name)
+			}
+			res.Changed++
+		} else if ae, ok := am[k]; ok {
 			if ae.Size != be.Size {
 				res.Problems = append(res.Problems, "unintended size change: "+be.Name)
 			} else if bytesEqual(ae.Key, be.Key) && ae.Encoded == be.Encoded {

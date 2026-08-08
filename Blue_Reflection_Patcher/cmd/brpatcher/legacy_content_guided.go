@@ -11,6 +11,7 @@ import (
 
 	"local/blue-reflection-patcher/internal/br1rebuild"
 	"local/blue-reflection-patcher/internal/model"
+	"local/blue-reflection-patcher/internal/translationbundle"
 )
 
 type legacyContentStartOptions struct {
@@ -29,15 +30,16 @@ type legacyContentStartOptions struct {
 }
 
 type legacyContentResult struct {
-	Survey        br1rebuild.SurveyReport              `json:"survey"`
-	Build         br1rebuild.ReconstructionBuildReport `json:"build,omitempty"`
-	Restoration   *br1rebuild.RestorationLayerAudit    `json:"restoration,omitempty"`
-	Translation   *br1rebuild.TranslationLayerAudit    `json:"translation,omitempty"`
-	FinalAudit    *br1rebuild.CrossFileAudit           `json:"final_cross_file_audit,omitempty"`
-	JournalPath   string                               `json:"journal_path,omitempty"`
-	TransactionID string                               `json:"transaction_id,omitempty"`
-	Status        string                               `json:"status"`
-	GameModified  bool                                 `json:"game_modified"`
+	Survey             br1rebuild.SurveyReport              `json:"survey"`
+	Build              br1rebuild.ReconstructionBuildReport `json:"build,omitempty"`
+	Restoration        *br1rebuild.RestorationLayerAudit    `json:"restoration,omitempty"`
+	Translation        *br1rebuild.TranslationLayerAudit    `json:"translation,omitempty"`
+	TranslationRecords *translationbundle.ApplyAudit        `json:"translation_records,omitempty"`
+	FinalAudit         *br1rebuild.CrossFileAudit           `json:"final_cross_file_audit,omitempty"`
+	JournalPath        string                               `json:"journal_path,omitempty"`
+	TransactionID      string                               `json:"transaction_id,omitempty"`
+	Status             string                               `json:"status"`
+	GameModified       bool                                 `json:"game_modified"`
 }
 
 func selectionUsesIntegratedQuartetContent(selection model.SelectionResult) (model.TargetSelection, bool, error) {
@@ -199,27 +201,42 @@ func runQuartetContentGuided(selection model.SelectionResult, opts legacyContent
 		result.Restoration = &audit
 	}
 	if translationSelected {
-		looseReport := filepath.Join(projectRoot, ".local", "reports", "translation", "BR_TRANSLATION_LOOSE_BUILD_REPORT.json")
-		translationArchives, err := br1rebuild.TranslationChangedArchives(projectRoot, looseReport)
-		if err != nil {
-			return result, err
-		}
-		for _, relative := range translationArchives {
-			if _, exists := candidates[relative]; !exists {
-				path := filepath.Join(target.Root, filepath.FromSlash(relative))
-				if info, statErr := os.Stat(path); statErr != nil || !info.Mode().IsRegular() {
-					return result, fmt.Errorf("Translation baseline archive missing: %s", relative)
-				}
-				candidates[relative] = path
+		bundlePath := filepath.Join(projectRoot, "content", "translation", "records.v1.json")
+		if _, statErr := os.Stat(bundlePath); statErr == nil {
+			bundle, loadErr := translationbundle.Load(bundlePath)
+			if loadErr != nil {
+				return result, loadErr
 			}
+			audit, updated, applyErr := translationbundle.ApplyInstallation(bundle, target.TargetID, target.Root, overlayDir, candidates, textCodec, renderer.Callback)
+			renderer.Finish()
+			if applyErr != nil {
+				return result, applyErr
+			}
+			candidates = updated
+			result.TranslationRecords = &audit
+		} else {
+			looseReport := filepath.Join(projectRoot, ".local", "reports", "translation", "BR_TRANSLATION_LOOSE_BUILD_REPORT.json")
+			translationArchives, err := br1rebuild.TranslationChangedArchives(projectRoot, looseReport)
+			if err != nil {
+				return result, err
+			}
+			for _, relative := range translationArchives {
+				if _, exists := candidates[relative]; !exists {
+					path := filepath.Join(target.Root, filepath.FromSlash(relative))
+					if info, statErr := os.Stat(path); statErr != nil || !info.Mode().IsRegular() {
+						return result, fmt.Errorf("Translation baseline archive missing: %s", relative)
+					}
+					candidates[relative] = path
+				}
+			}
+			audit, updated, err := br1rebuild.ApplyTranslationLast(projectRoot, looseReport, overlayDir, candidates, textCodec, renderer.Callback)
+			renderer.Finish()
+			if err != nil {
+				return result, err
+			}
+			candidates = updated
+			result.Translation = &audit
 		}
-		audit, updated, err := br1rebuild.ApplyTranslationLast(projectRoot, looseReport, overlayDir, candidates, textCodec, renderer.Callback)
-		renderer.Finish()
-		if err != nil {
-			return result, err
-		}
-		candidates = updated
-		result.Translation = &audit
 	}
 
 	if legacySelected {
@@ -228,7 +245,7 @@ func runQuartetContentGuided(selection model.SelectionResult, opts legacyContent
 		if err != nil {
 			return result, err
 		}
-		finalAudit, err := br1rebuild.AuditCrossFileWardrobe(candidates["B1.dll"], candidates["Data/PACK10_02.PAK"], candidates["Data/PACK12.PAK"], wardrobePlan, textCodec, build.Metadata)
+		finalAudit, err := br1rebuild.AuditCrossFileWardrobe(candidates["B1.dll"], candidates["Data/PACK10_02.PAK"], candidates["Data/PACK12.PAK"], wardrobePlan, textCodec)
 		if err != nil {
 			return result, fmt.Errorf("final integrated content audit: %w", err)
 		}
@@ -245,15 +262,18 @@ func runQuartetContentGuided(selection model.SelectionResult, opts legacyContent
 		finalArtifacts = append(finalArtifacts, br1rebuild.OutputArtifact{RelativePath: relative, Path: candidates[relative]})
 	}
 	if translationSelected {
-		excluded := map[string]bool{}
-		for relative := range candidates {
-			excluded[filepath.ToSlash(relative)] = true
+		bundlePath := filepath.Join(projectRoot, "content", "translation", "records.v1.json")
+		if _, statErr := os.Stat(bundlePath); os.IsNotExist(statErr) {
+			excluded := map[string]bool{}
+			for relative := range candidates {
+				excluded[filepath.ToSlash(relative)] = true
+			}
+			extras, err := br1rebuild.TranslationStandaloneArtifacts(projectRoot, filepath.Join(projectRoot, ".local", "reports", "translation", "BR_TRANSLATION_PAK_REPACK_REPORT.json"), target.Root, overlayDir, excluded, renderer.Callback)
+			if err != nil {
+				return result, err
+			}
+			finalArtifacts = append(finalArtifacts, extras...)
 		}
-		extras, err := br1rebuild.TranslationStandaloneArtifacts(projectRoot, filepath.Join(projectRoot, ".local", "reports", "translation", "BR_TRANSLATION_PAK_REPACK_REPORT.json"), target.Root, overlayDir, excluded, renderer.Callback)
-		if err != nil {
-			return result, err
-		}
-		finalArtifacts = append(finalArtifacts, extras...)
 	}
 
 	metadata := map[string]string{
@@ -293,7 +313,14 @@ func runQuartetContentGuided(selection model.SelectionResult, opts legacyContent
 	result.GameModified = true
 
 	if legacySelected && (opts.SyncSaves || (opts.Prompt && chooseLegacySaveSync(os.Stdin, os.Stdout))) {
-		if err := syncLegacySaveAccess(opts.SaveRoot, target.Root, candidates["B1.dll"], out); err != nil {
+		saveRoot := opts.SaveRoot
+		if strings.TrimSpace(saveRoot) == "" && opts.Prompt {
+			saveRoot, err = promptLegacySaveRoot(os.Stdin, os.Stdout)
+			if err != nil {
+				return result, err
+			}
+		}
+		if err := syncLegacySaveAccess(saveRoot, target.Root, candidates["B1.dll"], out); err != nil {
 			return result, err
 		}
 	}
@@ -324,6 +351,10 @@ func resolveTranslationContentRoot(explicit string) (string, error) {
 		for {
 			if !seen[current] {
 				seen[current] = true
+				releaseBundle := filepath.Join(current, "content", "translation", "records.v1.json")
+				if info, statErr := os.Stat(releaseBundle); statErr == nil && info.Mode().IsRegular() {
+					return current, nil
+				}
 				needed := []string{
 					"workstreams/translation/VERSION",
 					"workstreams/translation_tooling/VERSION",
@@ -521,6 +552,32 @@ func chooseLegacySaveSync(in io.Reader, out io.Writer) bool {
 	line, _ := bufio.NewReader(in).ReadString('\n')
 	value := strings.ToLower(strings.TrimSpace(line))
 	return value == "y" || value == "yes"
+}
+
+func promptLegacySaveRoot(in io.Reader, out io.Writer) (string, error) {
+	if local := strings.TrimSpace(os.Getenv("LOCALAPPDATA")); local != "" {
+		candidate := filepath.Join(local, "KoeiTecmo", "BLUE REFLECTION Quartet", "BLUE REFLECTION")
+		if info, err := os.Stat(candidate); err == nil && info.IsDir() {
+			fmt.Fprintf(out, "Detected save folder: %s\n", candidate)
+			fmt.Fprint(out, "Use this folder [Y/n]: ")
+			line, _ := bufio.NewReader(in).ReadString('\n')
+			value := strings.ToLower(strings.TrimSpace(line))
+			if value == "" || value == "y" || value == "yes" {
+				return candidate, nil
+			}
+		}
+	}
+	fmt.Fprintln(out, "Paste the folder containing the Quartet .pcsave files.")
+	fmt.Fprint(out, "Save folder: ")
+	line, err := bufio.NewReader(in).ReadString('\n')
+	if err != nil && strings.TrimSpace(line) == "" {
+		return "", err
+	}
+	value := strings.Trim(strings.TrimSpace(line), `"`)
+	if value == "" {
+		return "", fmt.Errorf("save folder was not provided")
+	}
+	return value, nil
 }
 
 func syncLegacySaveAccess(explicitRoot, gameRoot, dllPath string, out io.Writer) error {

@@ -21,7 +21,7 @@ type CrossFileAudit struct {
 	Status                                string `json:"status"`
 }
 
-func AuditCrossFileWardrobe(dllPath, pack10Path, pack12Path string, cs *WardrobePlan, enc EncryptedTextTool, p12 MetadataBuildReport) (CrossFileAudit, error) {
+func AuditCrossFileWardrobe(dllPath, pack10Path, pack12Path string, cs *WardrobePlan, enc EncryptedTextTool) (CrossFileAudit, error) {
 	rep := CrossFileAudit{Status: "blocked"}
 
 	recs, err := readWardrobeTable(dllPath, targetRosterOffset)
@@ -110,13 +110,10 @@ func AuditCrossFileWardrobe(dllPath, pack10Path, pack12Path string, cs *Wardrobe
 		rep.ImportableCharacterCatalogRowsChecked++
 	}
 
-	// Read the encrypted tables back out of the completed archive.  Comparing
-	// their decryption to the plaintext sibling proves the bytes the engine loads
-	// represent the same table that was verified above.
-	for loc, changes := range p12.LocaleStringChanges {
-		if changes["strcombineall.xml"] == 0 {
-			continue
-		}
+	// Read the required encrypted locale tables back out of the completed archive.
+	// The audit derives its expectations from the title contract rather than the
+	// builder report so it can validate an existing candidate set independently.
+	for _, loc := range []string{"en", "jp", "tc"} {
 		plainName := `\saves\b1\text_` + loc + `\strcombineall.xml`
 		plain, err := readArchiveEntry(p12r, plainName)
 		if err != nil {
@@ -130,9 +127,6 @@ func AuditCrossFileWardrobe(dllPath, pack10Path, pack12Path string, cs *Wardrobe
 			return rep, fmt.Errorf("candidate encrypted table readback %s: %w", loc, err)
 		}
 		rep.EncryptedLocaleTablesChecked++
-	}
-	if rep.EncryptedLocaleTablesChecked < 3 {
-		return rep, fmt.Errorf("candidate encrypted table readback checked %d locales, expected at least en/jp/tc", rep.EncryptedLocaleTablesChecked)
 	}
 
 	// RewriteBR1Module already performs this check in-memory; repeat it on the file we

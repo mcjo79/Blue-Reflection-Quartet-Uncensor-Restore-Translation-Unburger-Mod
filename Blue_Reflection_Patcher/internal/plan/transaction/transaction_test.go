@@ -1,8 +1,10 @@
 package transaction
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -361,5 +363,278 @@ func assertProgressComplete(t *testing.T, events []ProgressEvent, operation, rel
 	}
 	if !seenPath || !seenPositiveTotal {
 		t.Fatalf("%s progress lacks path or byte totals: %+v", operation, events)
+	}
+}
+
+func TestPrepareWithProgressReportsByteAccuratePhases(t *testing.T) {
+	root := t.TempDir()
+	game := filepath.Join(root, "game")
+	state := filepath.Join(root, "state")
+	payload := filepath.Join(root, "payload")
+	if err := os.MkdirAll(game, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	write(t, filepath.Join(game, "Data", "A.PAK"), "original-a")
+	write(t, filepath.Join(payload, "A.PAK"), "patched-a-with-more-bytes")
+
+	var events []ProgressEvent
+	prepared, err := PrepareWithProgress(game, state, []ChangeSpec{{
+		RelativePath: "Data/A.PAK",
+		StagedPath:   filepath.Join(payload, "A.PAK"),
+	}}, []string{"quartet_legacy_dlc"}, map[string]string{"target_id": "blue_reflection_quartet"}, func(event ProgressEvent) {
+		events = append(events, event)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if prepared.Journal.Status != StatusPrepared {
+		t.Fatalf("unexpected prepared status: %s", prepared.Journal.Status)
+	}
+	if len(events) == 0 {
+		t.Fatal("prepare progress emitted no events")
+	}
+	seen := map[string]bool{}
+	for _, event := range events {
+		if event.Operation != "prepare" {
+			t.Fatalf("unexpected operation %q", event.Operation)
+		}
+		if event.RelativePath != "Data/A.PAK" {
+			t.Fatalf("unexpected path %q", event.RelativePath)
+		}
+		if event.OverallBytesDone < 0 || event.OverallBytesTotal < 0 || event.OverallBytesDone > event.OverallBytesTotal {
+			t.Fatalf("invalid overall progress: %+v", event)
+		}
+		seen[event.Phase] = true
+	}
+	for _, phase := range []string{"verify_candidate", "stage", "verify_staged", "verify_current", "verify_backup_source", "backup", "verify_backup", "complete"} {
+		if !seen[phase] {
+			t.Fatalf("missing prepare phase %q", phase)
+		}
+	}
+	last := events[len(events)-1]
+	if last.Phase != "complete" || last.OverallBytesDone != last.OverallBytesTotal {
+		t.Fatalf("prepare progress did not finish at 100%%: %+v", last)
+	}
+}
+
+func TestPrepareCanKeepHardlinkBackupsOnGameFilesystem(t *testing.T) {
+	root := t.TempDir()
+	game := filepath.Join(root, "game")
+	state := filepath.Join(root, "state")
+	payload := filepath.Join(root, "payload", "A.PAK")
+	target := filepath.Join(game, "Data", "A.PAK")
+	write(t, target, "original")
+	write(t, payload, "patched")
+
+	prepared, err := PrepareWithOptions(game, state, []ChangeSpec{{
+		RelativePath: "Data/A.PAK",
+		StagedPath:   payload,
+	}}, []string{"quartet_legacy_dlc"}, nil, PrepareOptions{
+		RequireHardlinkBackup:        true,
+		UseGameFilesystemBackupStore: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if prepared.Journal.BackupRoot == "" {
+		t.Fatal("external backup root was not recorded")
+	}
+	expectedRoot := filepath.Join(game, ".unburger-patcher", "transaction-backups", prepared.Journal.TransactionID)
+	if prepared.Journal.BackupRoot != expectedRoot {
+		t.Fatalf("backup root = %q, expected %q", prepared.Journal.BackupRoot, expectedRoot)
+	}
+	record := prepared.Journal.Files[0]
+	if record.BackupStorageMethod != "hardlink" {
+		t.Fatalf("backup storage method = %q", record.BackupStorageMethod)
+	}
+	backup := filepath.Join(prepared.Journal.BackupRoot, filepath.FromSlash(record.BackupPath))
+	backupInfo, err := os.Stat(backup)
+	if err != nil {
+		t.Fatal(err)
+	}
+	targetInfo, err := os.Stat(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !os.SameFile(backupInfo, targetInfo) {
+		t.Fatal("backup is not a hardlink to the original target")
+	}
+	if _, err := ValidatePrepared(prepared.JournalPath); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := DiscardPrepared(prepared.JournalPath); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(expectedRoot); !os.IsNotExist(err) {
+		t.Fatal("discard retained game-filesystem backup root")
+	}
+	if got := read(t, target); got != "original" {
+		t.Fatalf("discard changed target to %q", got)
+	}
+}
+
+func TestLoadRejectsTamperedExternalBackupRoot(t *testing.T) {
+	root := t.TempDir()
+	game := filepath.Join(root, "game")
+	state := filepath.Join(root, "state")
+	payload := filepath.Join(root, "payload", "A.PAK")
+	write(t, filepath.Join(game, "Data", "A.PAK"), "original")
+	write(t, payload, "patched")
+	prepared, err := PrepareWithOptions(game, state, []ChangeSpec{{
+		RelativePath: "Data/A.PAK",
+		StagedPath:   payload,
+	}}, nil, nil, PrepareOptions{UseGameFilesystemBackupStore: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(prepared.JournalPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var journal Journal
+	if err := json.Unmarshal(data, &journal); err != nil {
+		t.Fatal(err)
+	}
+	journal.BackupRoot = filepath.Join(root, "unrelated")
+	data, err = json.MarshalIndent(journal, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	data = append(data, '\n')
+	if err := os.WriteFile(prepared.JournalPath, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Load(prepared.JournalPath); err == nil {
+		t.Fatal("tampered backup root was accepted")
+	}
+}
+
+func TestGameFilesystemBackupSupportsCommitAndRollback(t *testing.T) {
+	root := t.TempDir()
+	game := filepath.Join(root, "game")
+	state := filepath.Join(root, "state")
+	payload := filepath.Join(root, "payload", "A.PAK")
+	target := filepath.Join(game, "Data", "A.PAK")
+	write(t, target, "original")
+	write(t, payload, "patched")
+
+	prepared, err := PrepareWithOptions(game, state, []ChangeSpec{{
+		RelativePath: "Data/A.PAK",
+		StagedPath:   payload,
+	}}, []string{"quartet_legacy_dlc"}, nil, PrepareOptions{
+		RequireHardlinkBackup:        true,
+		UseGameFilesystemBackupStore: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Commit(prepared.JournalPath); err != nil {
+		t.Fatal(err)
+	}
+	if got := read(t, target); got != "patched" {
+		t.Fatalf("commit installed %q", got)
+	}
+	journal, err := Rollback(prepared.JournalPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if journal.Status != StatusRolledBack {
+		t.Fatalf("rollback status = %q", journal.Status)
+	}
+	if got := read(t, target); got != "original" {
+		t.Fatalf("rollback restored %q", got)
+	}
+}
+
+func TestPrepareCanKeepHardlinkBackupsBesideGameRoot(t *testing.T) {
+	root := t.TempDir()
+	game := filepath.Join(root, "games", "Quartet")
+	state := filepath.Join(root, "state")
+	payload := filepath.Join(root, "payload", "A.PAK")
+	target := filepath.Join(game, "Data", "A.PAK")
+	write(t, target, "original")
+	write(t, payload, "patched")
+
+	prepared, err := PrepareWithOptions(game, state, []ChangeSpec{{
+		RelativePath: "Data/A.PAK",
+		StagedPath:   payload,
+	}}, []string{"quartet_legacy_dlc"}, nil, PrepareOptions{
+		RequireHardlinkBackup:           true,
+		UseSiblingFilesystemBackupStore: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	expectedRoot := siblingFilesystemBackupRoot(game, prepared.Journal.TransactionID)
+	if prepared.Journal.BackupRoot != expectedRoot {
+		t.Fatalf("backup root = %q, expected %q", prepared.Journal.BackupRoot, expectedRoot)
+	}
+	if strings.HasPrefix(filepath.Clean(prepared.Journal.BackupRoot)+string(os.PathSeparator), filepath.Clean(game)+string(os.PathSeparator)) {
+		t.Fatal("sibling backup store was placed inside game root")
+	}
+	record := prepared.Journal.Files[0]
+	if record.BackupStorageMethod != "hardlink" {
+		t.Fatalf("backup storage method = %q", record.BackupStorageMethod)
+	}
+	backup := filepath.Join(prepared.Journal.BackupRoot, filepath.FromSlash(record.BackupPath))
+	backupInfo, err := os.Stat(backup)
+	if err != nil {
+		t.Fatal(err)
+	}
+	targetInfo, err := os.Stat(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !os.SameFile(backupInfo, targetInfo) {
+		t.Fatal("sibling backup is not a hardlink to the original target")
+	}
+	if _, err := ValidatePrepared(prepared.JournalPath); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := DiscardPrepared(prepared.JournalPath); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(expectedRoot); !os.IsNotExist(err) {
+		t.Fatal("discard retained sibling backup root")
+	}
+	if got := read(t, target); got != "original" {
+		t.Fatalf("discard changed target to %q", got)
+	}
+}
+
+func TestSiblingFilesystemBackupSupportsCommitAndRollback(t *testing.T) {
+	root := t.TempDir()
+	game := filepath.Join(root, "games", "Quartet")
+	state := filepath.Join(root, "state")
+	payload := filepath.Join(root, "payload", "A.PAK")
+	target := filepath.Join(game, "Data", "A.PAK")
+	write(t, target, "original")
+	write(t, payload, "patched")
+
+	prepared, err := PrepareWithOptions(game, state, []ChangeSpec{{
+		RelativePath: "Data/A.PAK",
+		StagedPath:   payload,
+	}}, []string{"quartet_legacy_dlc"}, nil, PrepareOptions{
+		RequireHardlinkBackup:           true,
+		UseSiblingFilesystemBackupStore: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Commit(prepared.JournalPath); err != nil {
+		t.Fatal(err)
+	}
+	if got := read(t, target); got != "patched" {
+		t.Fatalf("commit installed %q", got)
+	}
+	journal, err := Rollback(prepared.JournalPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if journal.Status != StatusRolledBack {
+		t.Fatalf("rollback status = %q", journal.Status)
+	}
+	if got := read(t, target); got != "original" {
+		t.Fatalf("rollback restored %q", got)
 	}
 }
