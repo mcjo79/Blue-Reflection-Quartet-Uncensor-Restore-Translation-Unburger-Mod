@@ -81,7 +81,7 @@ func TestRemoveManagedInstallationClearsDisplacedStateWithoutRewritingGame(t *te
 	if err != nil {
 		t.Fatal(err)
 	}
-	if report.Status != "removed" || report.RollbackCount != 0 || !report.StaleStateRecordCleared || report.GameFilesModified {
+	if report.Status != "removed" || report.RollbackCount != 1 || report.StaleStateRecordCleared || report.GameFilesModified {
 		t.Fatalf("unexpected displaced removal report: %+v", report)
 	}
 	if got, _ := os.ReadFile(target); string(got) != "original" {

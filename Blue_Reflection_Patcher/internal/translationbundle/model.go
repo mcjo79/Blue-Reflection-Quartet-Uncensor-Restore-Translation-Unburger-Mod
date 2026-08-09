@@ -1,5 +1,7 @@
 package translationbundle
 
+import "local/blue-reflection-patcher/internal/managedstate"
+
 // Bundle is the distributable, target-aware Translation payload. It contains
 // only edited text plus stable structural keys. Game archive/container data is
 // always read from the user's installation at apply time.
@@ -19,6 +21,7 @@ type Member struct {
 	ArchiveRelativePath string   `json:"archive_relative_path"`
 	InternalPath        string   `json:"internal_path"`
 	Kind                string   `json:"kind"` // ebm or xml
+	TargetRecordCount   int      `json:"target_record_count,omitempty"`
 	Records             []Record `json:"records"`
 }
 
@@ -54,13 +57,14 @@ type BuildStats struct {
 }
 
 type ApplyAudit struct {
-	TranslationVersion  string            `json:"translation_version"`
-	TargetID            string            `json:"target_id"`
-	Archives            map[string]int    `json:"archives"`
-	Members             int               `json:"members"`
-	Records             int               `json:"records"`
-	AlreadyDesired      int               `json:"already_desired"`
-	StructuralRebases   int               `json:"structural_rebases"`
-	EncryptedAggregates int               `json:"encrypted_aggregates"`
-	OutputSHA256        map[string]string `json:"output_sha256"`
+	ManagedMembers      []managedstate.TranslationMember `json:"-"`
+	TranslationVersion  string                           `json:"translation_version"`
+	TargetID            string                           `json:"target_id"`
+	Archives            map[string]int                   `json:"archives"`
+	Members             int                              `json:"members"`
+	Records             int                              `json:"records"`
+	AlreadyDesired      int                              `json:"already_desired"`
+	StructuralRebases   int                              `json:"structural_rebases"`
+	EncryptedAggregates int                              `json:"encrypted_aggregates"`
+	OutputSHA256        map[string]string                `json:"output_sha256"`
 }

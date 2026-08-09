@@ -181,23 +181,21 @@ func renderGuidedPayloadActionMenu(out io.Writer, preview payloadpreview.Preview
 	target := preview.Targets[0]
 	changes, noops := previewActionCounts(preview)
 	fmt.Fprint(out, ansiClear)
-	fmt.Fprintf(out, "%s%sBLUE REFLECTION unified patcher%s\n", ansiBold, ansiCyan, ansiReset)
-	fmt.Fprintf(out, "%sReady:%s %s%s%s\n", ansiBold, ansiReset, ansiBold, target.DisplayName, ansiReset)
-	fmt.Fprintf(out, "%sGame directory:%s %s\n", ansiGray, ansiReset, target.GameRoot)
-	fmt.Fprintf(out, "%sModules:%s %s\n", ansiGray, ansiReset, strings.Join(target.SelectedModules, ", "))
-	fmt.Fprintf(out, "%sPayload source:%s %s\n", ansiGray, ansiReset, guidedPayloadSourceSummary(preview))
-	fmt.Fprintf(out, "%sPlanned changes:%s %d   %sAlready current:%s %d\n\n", ansiGray, ansiReset, changes, ansiGray, ansiReset, noops)
-	fmt.Fprintf(out, "%sChoose action%s\n", ansiBold, ansiReset)
-	fmt.Fprintf(out, "%s↑/↓ move   Enter confirms   Q cancels%s\n\n", ansiDim, ansiReset)
+	renderTUIFrameTop(out, "READY TO APPLY")
+	renderTUIFrameRow(out, "%sGame%s      %s%s%s", ansiGray, ansiReset, ansiBold, target.DisplayName, ansiReset)
+	renderTUIFrameRow(out, "%sDirectory%s %s", ansiGray, ansiReset, target.GameRoot)
+	renderTUIFrameRow(out, "%sModules%s   %s", ansiGray, ansiReset, strings.Join(target.SelectedModules, ", "))
+	renderTUIFrameRow(out, "%sPayload%s   %s", ansiGray, ansiReset, guidedPayloadSourceSummary(preview))
+	renderTUIFrameRow(out, "%sChanges%s   %d planned · %d already current", ansiGray, ansiReset, changes, noops)
+	renderTUIFrameRow(out, "%sControls%s  ↑/↓ move · Enter confirms · Q cancels", ansiGray, ansiReset)
+	renderTUIFrameBlank(out)
+	renderTUIFrameRow(out, "%sChoose action%s", ansiBold, ansiReset)
+	renderTUIFrameBlank(out)
 
-	labels := []string{
-		"Install / update now",
-		"Prepare only",
-		"Cancel",
-	}
+	labels := []string{"Install / update now", "Prepare only", "Cancel"}
 	descriptions := []string{
-		"Rebuild and compare the canonical preview, revalidate the composition report and current game files, create or reuse the persistent baseline, then atomically install one deduplicated transaction.",
-		"Rebuild and compare the canonical preview, then create the verified baseline, staging, backups and one journal while leaving all game files unchanged.",
+		"Revalidate the plan and current files with visible progress, preserve rollback state and install one atomic transaction.",
+		"Create verified staging, rollback data and a journal while leaving game files unchanged.",
 		"Exit without preparing or modifying anything.",
 	}
 	for index, label := range labels {
@@ -211,8 +209,10 @@ func renderGuidedPayloadActionMenu(out io.Writer, preview payloadpreview.Preview
 		if index == 0 {
 			labelStyle = ansiGreen + ansiBold
 		}
-		fmt.Fprintf(out, "%s%s%s%s%s%s\n", style, pointer, ansiReset, labelStyle, label, ansiReset)
-		fmt.Fprintf(out, "     %s%s%s\n\n", ansiDim, descriptions[index], ansiReset)
+		renderTUIFrameRow(out, "%s%s%s%s%s%s", style, pointer, ansiReset, labelStyle, label, ansiReset)
+		renderTUIFrameRow(out, "    %s%s%s", ansiDim, descriptions[index], ansiReset)
+		renderTUIFrameBlank(out)
 	}
-	fmt.Fprintf(out, "%sSelecting Install / update now is the explicit confirmation that game files may be changed. The operation remains hash-guarded and rollback-capable.%s\n", ansiDim, ansiReset)
+	renderTUIFrameRow(out, "%sInstall / update now is the explicit confirmation that game files may change. The operation remains hash-guarded and rollback-capable.%s", ansiDim, ansiReset)
+	renderTUIFrameBottom(out)
 }

@@ -11,19 +11,22 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 	"time"
 
 	"local/blue-reflection-patcher/internal/plan/archivepolicy"
 	"local/blue-reflection-patcher/internal/plan/gamepath"
+	"local/blue-reflection-patcher/internal/plan/transaction"
 )
 
 const (
-	ManifestType          = "br_installation_baseline"
-	ManifestFormatVersion = 1
-	IndexType             = "br_installation_baseline_index"
-	IndexFormatVersion    = 1
+	ManifestType                = "br_installation_baseline"
+	ManifestFormatVersion       = 2
+	LegacyManifestFormatVersion = 1
+	IndexType                   = "br_installation_baseline_index"
+	IndexFormatVersion          = 1
 )
 
 const (
@@ -59,6 +62,7 @@ type Manifest struct {
 	SourceClassification string       `json:"source_classification,omitempty"`
 	AdoptionID           string       `json:"adoption_id,omitempty"`
 	PreviousStateArchive string       `json:"previous_state_archive,omitempty"`
+	StorageRoot          string       `json:"storage_root,omitempty"`
 	Files                []FileRecord `json:"files"`
 }
 
@@ -187,15 +191,8 @@ func Ensure(gameRoot, stateRoot, targetID string, relativePaths []string) (Ensur
 		}
 		storedRelative := filepath.ToSlash(filepath.Join("files", filepath.FromSlash(record.RelativePath)))
 		destination := filepath.Join(tempRoot, filepath.FromSlash(storedRelative))
-		if err := copyRegularFile(source, destination, 0o444); err != nil {
+		if err := copyRegularFileExpected(source, destination, 0o444, record.SHA256, record.Bytes); err != nil {
 			return EnsureResult{}, fmt.Errorf("capture baseline %s: %w", record.RelativePath, err)
-		}
-		hash, size, err := hashAndSize(destination)
-		if err != nil {
-			return EnsureResult{}, err
-		}
-		if hash != record.SHA256 || size != record.Bytes {
-			return EnsureResult{}, fmt.Errorf("baseline verification mismatch: %s", record.RelativePath)
 		}
 		record.StoredPath = storedRelative
 		stored[record.RelativePath] = destination
@@ -234,7 +231,11 @@ func Ensure(gameRoot, stateRoot, targetID string, relativePaths []string) (Ensur
 	if err := syncParent(finalRoot); err != nil {
 		return EnsureResult{}, err
 	}
-	manifest, stored, err = LoadAndVerify(manifestPath)
+	manifest, err = LoadManifest(manifestPath)
+	if err != nil {
+		return EnsureResult{}, err
+	}
+	stored, err = storedPathsForManifest(manifestPath, manifest)
 	if err != nil {
 		return EnsureResult{}, err
 	}
@@ -242,6 +243,140 @@ func Ensure(gameRoot, stateRoot, targetID string, relativePaths []string) (Ensur
 		return EnsureResult{}, err
 	}
 	return EnsureResult{Action: ActionCreated, ManifestPath: manifestPath, Manifest: manifest, StoredFiles: stored}, nil
+}
+
+// EnsureFromPreparedTransaction publishes a persistent baseline manifest whose
+// bytes are the already-verified rollback backups created by transaction.Prepare.
+// The manifest remains in per-user state, while the multi-gigabyte data stays on
+// the game filesystem. No second baseline copy is created in AppData/XDG state.
+func EnsureFromPreparedTransaction(stateRoot, targetID string, journal transaction.Journal) (EnsureResult, error) {
+	if journal.Status != transaction.StatusPrepared {
+		return EnsureResult{}, fmt.Errorf("baseline-from-transaction requires prepared status; got %s", journal.Status)
+	}
+	gameRoot, err := cleanExistingDirectory(journal.GameRoot, "game root")
+	if err != nil {
+		return EnsureResult{}, err
+	}
+	stateRoot, err = filepath.Abs(stateRoot)
+	if err != nil {
+		return EnsureResult{}, fmt.Errorf("resolve state root: %w", err)
+	}
+	if strings.TrimSpace(targetID) == "" {
+		return EnsureResult{}, fmt.Errorf("target id is required")
+	}
+	backupRoot := strings.TrimSpace(journal.BackupRoot)
+	if backupRoot == "" {
+		return EnsureResult{}, fmt.Errorf("prepared transaction has no game-side rollback store")
+	}
+	backupRoot, err = filepath.Abs(backupRoot)
+	if err != nil {
+		return EnsureResult{}, fmt.Errorf("resolve transaction rollback store: %w", err)
+	}
+	backupRoot = filepath.Clean(backupRoot)
+	if !trustedExternalStorageRoot(gameRoot, backupRoot) {
+		return EnsureResult{}, fmt.Errorf("prepared transaction rollback store is outside the trusted game-side location: %s", backupRoot)
+	}
+	info, err := os.Lstat(backupRoot)
+	if err != nil {
+		return EnsureResult{}, fmt.Errorf("inspect prepared transaction rollback store: %w", err)
+	}
+	if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
+		return EnsureResult{}, fmt.Errorf("prepared transaction rollback store must be a real directory: %s", backupRoot)
+	}
+
+	files := make([]FileRecord, 0, len(journal.Files))
+	stored := map[string]string{}
+	for _, item := range journal.Files {
+		relative, err := cleanRelativePath(item.RelativePath)
+		if err != nil {
+			return EnsureResult{}, err
+		}
+		record := FileRecord{
+			RelativePath:         filepath.ToSlash(relative),
+			Existed:              item.OriginalExisted,
+			SHA256:               strings.ToLower(strings.TrimSpace(item.OriginalSHA256)),
+			Mode:                 item.OriginalMode,
+			SourceClassification: SourceCurrentInstallation,
+		}
+		if item.OriginalExisted {
+			if len(record.SHA256) != 64 || strings.TrimSpace(item.BackupPath) == "" {
+				return EnsureResult{}, fmt.Errorf("prepared rollback metadata is incomplete: %s", relative)
+			}
+			backupPath, err := secureJoin(backupRoot, item.BackupPath)
+			if err != nil {
+				return EnsureResult{}, err
+			}
+			backupInfo, err := os.Lstat(backupPath)
+			if err != nil {
+				return EnsureResult{}, fmt.Errorf("inspect prepared rollback file %s: %w", relative, err)
+			}
+			if backupInfo.Mode()&os.ModeSymlink != 0 || !backupInfo.Mode().IsRegular() {
+				return EnsureResult{}, fmt.Errorf("prepared rollback file is not regular: %s", relative)
+			}
+			record.Bytes = backupInfo.Size()
+			record.StoredPath = filepath.ToSlash(item.BackupPath)
+			stored[record.RelativePath] = backupPath
+		} else {
+			record.SHA256 = ""
+			record.Mode = 0
+		}
+		files = append(files, record)
+	}
+	sort.Slice(files, func(i, j int) bool { return files[i].RelativePath < files[j].RelativePath })
+	fingerprint, err := fingerprint(targetID, files)
+	if err != nil {
+		return EnsureResult{}, err
+	}
+	baselineID := fingerprint[:24]
+	manifest := Manifest{
+		Type: ManifestType, FormatVersion: ManifestFormatVersion,
+		BaselineID: baselineID, Fingerprint: fingerprint, TargetID: targetID,
+		GameRoot: gameRoot, CapturedUTC: time.Now().UTC(),
+		Classification:       ClassificationObservedPreinstall,
+		Verification:         "original target SHA-256 was verified during transaction prepare; rollback storage identity/copy was verified before publication",
+		CaptureMethod:        "prepared_transaction_game_side_rollback_store",
+		SourceClassification: SourceCurrentInstallation,
+		StorageRoot:          backupRoot,
+		Files:                files,
+	}
+	baselinesRoot := filepath.Join(stateRoot, "baselines")
+	finalRoot := filepath.Join(baselinesRoot, fingerprint)
+	manifestPath := filepath.Join(finalRoot, "manifest.json")
+	if err := os.MkdirAll(finalRoot, 0o700); err != nil {
+		return EnsureResult{}, fmt.Errorf("create baseline metadata directory: %w", err)
+	}
+	action := ActionCreated
+	var legacyLocalPayload string
+	if _, statErr := os.Stat(manifestPath); statErr == nil {
+		existing, loadErr := LoadManifest(manifestPath)
+		if loadErr == nil && existing.Fingerprint == fingerprint && existing.TargetID == targetID && filepath.Clean(existing.GameRoot) == gameRoot {
+			if existing.FormatVersion == ManifestFormatVersion {
+				if existingVerified, existingStored, verifyErr := LoadAndVerify(manifestPath); verifyErr == nil {
+					if err := rebuildIndex(stateRoot, targetID, gameRoot); err != nil {
+						return EnsureResult{}, err
+					}
+					return EnsureResult{Action: ActionReused, ManifestPath: manifestPath, Manifest: existingVerified, StoredFiles: existingStored}, nil
+				}
+			}
+			if existing.FormatVersion == LegacyManifestFormatVersion {
+				legacyLocalPayload = filepath.Join(finalRoot, "files")
+			}
+		}
+	} else if !errors.Is(statErr, os.ErrNotExist) {
+		return EnsureResult{}, fmt.Errorf("inspect baseline manifest: %w", statErr)
+	}
+	if err := atomicJSON(manifestPath, manifest, 0o600); err != nil {
+		return EnsureResult{}, err
+	}
+	if legacyLocalPayload != "" {
+		if err := os.RemoveAll(legacyLocalPayload); err != nil {
+			return EnsureResult{}, fmt.Errorf("remove superseded AppData baseline payload: %w", err)
+		}
+	}
+	if err := rebuildIndex(stateRoot, targetID, gameRoot); err != nil {
+		return EnsureResult{}, err
+	}
+	return EnsureResult{Action: action, ManifestPath: manifestPath, Manifest: manifest, StoredFiles: stored}, nil
 }
 
 // EnsureWithInherited preserves records from an already verified baseline and only
@@ -377,15 +512,8 @@ func ensureRecords(gameRoot, stateRoot, targetID string, files []FileRecord, sou
 		}
 		storedRelative := filepath.ToSlash(filepath.Join("files", filepath.FromSlash(record.RelativePath)))
 		destination := filepath.Join(tempRoot, filepath.FromSlash(storedRelative))
-		if err := copyRegularFile(source, destination, 0o444); err != nil {
+		if err := copyRegularFileExpected(source, destination, 0o444, record.SHA256, record.Bytes); err != nil {
 			return EnsureResult{}, fmt.Errorf("capture baseline %s: %w", record.RelativePath, err)
-		}
-		hash, size, err := hashAndSize(destination)
-		if err != nil {
-			return EnsureResult{}, err
-		}
-		if hash != record.SHA256 || size != record.Bytes {
-			return EnsureResult{}, fmt.Errorf("baseline verification mismatch: %s", record.RelativePath)
 		}
 		record.StoredPath = storedRelative
 		stored[record.RelativePath] = destination
@@ -421,7 +549,11 @@ func ensureRecords(gameRoot, stateRoot, targetID string, files []FileRecord, sou
 	if err := syncParent(finalRoot); err != nil {
 		return EnsureResult{}, err
 	}
-	manifest, stored, err = LoadAndVerify(manifestPath)
+	manifest, err = LoadManifest(manifestPath)
+	if err != nil {
+		return EnsureResult{}, err
+	}
+	stored, err = storedPathsForManifest(manifestPath, manifest)
 	if err != nil {
 		return EnsureResult{}, err
 	}
@@ -477,48 +609,158 @@ func AdoptCurrent(gameRoot, stateRoot, targetID string, relativePaths []string, 
 	)
 }
 
-func LoadAndVerify(manifestPath string) (Manifest, map[string]string, error) {
+func LoadManifest(manifestPath string) (Manifest, error) {
 	absolute, err := regularFile(manifestPath, "baseline manifest")
 	if err != nil {
-		return Manifest{}, nil, err
+		return Manifest{}, err
 	}
 	data, err := os.ReadFile(absolute)
 	if err != nil {
-		return Manifest{}, nil, err
+		return Manifest{}, err
 	}
 	var manifest Manifest
 	if err := json.Unmarshal(data, &manifest); err != nil {
-		return Manifest{}, nil, fmt.Errorf("decode baseline manifest: %w", err)
+		return Manifest{}, fmt.Errorf("decode baseline manifest: %w", err)
 	}
-	if manifest.Type != ManifestType || manifest.FormatVersion != ManifestFormatVersion {
-		return Manifest{}, nil, fmt.Errorf("unsupported baseline manifest type/version")
+	if manifest.Type != ManifestType || (manifest.FormatVersion != ManifestFormatVersion && manifest.FormatVersion != LegacyManifestFormatVersion) {
+		return Manifest{}, fmt.Errorf("unsupported baseline manifest type/version")
 	}
 	root := filepath.Dir(absolute)
 	if filepath.Base(root) != manifest.Fingerprint {
-		return Manifest{}, nil, fmt.Errorf("baseline directory fingerprint mismatch")
+		return Manifest{}, fmt.Errorf("baseline directory fingerprint mismatch")
 	}
 	expected, err := fingerprint(manifest.TargetID, manifest.Files)
 	if err != nil {
-		return Manifest{}, nil, err
+		return Manifest{}, err
 	}
-	if expected != manifest.Fingerprint || manifest.BaselineID != manifest.Fingerprint[:24] {
-		return Manifest{}, nil, fmt.Errorf("baseline manifest fingerprint mismatch")
+	if expected != manifest.Fingerprint || len(manifest.Fingerprint) < 24 || manifest.BaselineID != manifest.Fingerprint[:24] {
+		return Manifest{}, fmt.Errorf("baseline manifest fingerprint mismatch")
 	}
-	stored := map[string]string{}
 	for _, record := range manifest.Files {
 		if _, err := cleanRelativePath(record.RelativePath); err != nil {
-			return Manifest{}, nil, err
+			return Manifest{}, err
 		}
 		if !record.Existed {
 			if record.StoredPath != "" || record.SHA256 != "" || record.Bytes != 0 {
-				return Manifest{}, nil, fmt.Errorf("absent baseline record carries file data: %s", record.RelativePath)
+				return Manifest{}, fmt.Errorf("absent baseline record carries file data: %s", record.RelativePath)
 			}
+			continue
+		}
+		if len(record.SHA256) != 64 || record.Bytes < 0 || strings.TrimSpace(record.StoredPath) == "" {
+			return Manifest{}, fmt.Errorf("incomplete stored baseline record: %s", record.RelativePath)
+		}
+		storageRoot, err := storageRootForManifest(absolute, manifest)
+		if err != nil {
+			return Manifest{}, err
+		}
+		path, err := secureJoin(storageRoot, record.StoredPath)
+		if err != nil {
+			return Manifest{}, err
+		}
+		info, err := os.Lstat(path)
+		if err != nil {
+			return Manifest{}, fmt.Errorf("inspect baseline %s: %w", record.RelativePath, err)
+		}
+		if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() || info.Size() != record.Bytes {
+			return Manifest{}, fmt.Errorf("stored baseline metadata changed: %s", record.RelativePath)
+		}
+	}
+	return manifest, nil
+}
+
+func storageRootForManifest(manifestPath string, manifest Manifest) (string, error) {
+	if manifest.FormatVersion == LegacyManifestFormatVersion || strings.TrimSpace(manifest.StorageRoot) == "" {
+		return filepath.Dir(filepath.Clean(manifestPath)), nil
+	}
+	root, err := filepath.Abs(manifest.StorageRoot)
+	if err != nil {
+		return "", fmt.Errorf("resolve external baseline storage root: %w", err)
+	}
+	root = filepath.Clean(root)
+	if !trustedExternalStorageRoot(manifest.GameRoot, root) {
+		return "", fmt.Errorf("external baseline storage root is outside the trusted game-side rollback store: %s", root)
+	}
+	info, err := os.Lstat(root)
+	if err != nil {
+		return "", fmt.Errorf("inspect external baseline storage root: %w", err)
+	}
+	if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
+		return "", fmt.Errorf("external baseline storage root must be a real directory: %s", root)
+	}
+	return root, nil
+}
+
+func trustedExternalStorageRoot(gameRoot, root string) bool {
+	gameRoot = filepath.Clean(gameRoot)
+	candidates := []string{
+		filepath.Join(filepath.Dir(gameRoot), ".unburger-patcher-transaction-backups", filepath.Base(gameRoot)),
+		filepath.Join(gameRoot, ".unburger-patcher", "transaction-backups"),
+	}
+	for _, parent := range candidates {
+		parentAbs, err := filepath.Abs(parent)
+		if err != nil {
+			continue
+		}
+		rel, err := filepath.Rel(filepath.Clean(parentAbs), root)
+		if err != nil || rel == "." || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			continue
+		}
+		parts := strings.Split(filepath.Clean(rel), string(filepath.Separator))
+		if len(parts) == 1 && strings.TrimSpace(parts[0]) != "" {
+			return true
+		}
+	}
+	return false
+}
+
+func storedPathsForManifest(manifestPath string, manifest Manifest) (map[string]string, error) {
+	root, err := storageRootForManifest(manifestPath, manifest)
+	if err != nil {
+		return nil, err
+	}
+	stored := map[string]string{}
+	for _, record := range manifest.Files {
+		if !record.Existed {
 			continue
 		}
 		path, err := secureJoin(root, record.StoredPath)
 		if err != nil {
-			return Manifest{}, nil, err
+			return nil, err
 		}
+		stored[record.RelativePath] = path
+	}
+	return stored, nil
+}
+
+// LoadStoredPaths validates baseline metadata and resolves the immutable stored
+// file paths without rereading every stored byte. Callers that only need a
+// build source may defer the full SHA-256 gate to the transaction boundary.
+func LoadStoredPaths(manifestPath string) (Manifest, map[string]string, error) {
+	manifest, err := LoadManifest(manifestPath)
+	if err != nil {
+		return Manifest{}, nil, err
+	}
+	stored, err := storedPathsForManifest(manifestPath, manifest)
+	if err != nil {
+		return Manifest{}, nil, err
+	}
+	return manifest, stored, nil
+}
+
+func LoadAndVerify(manifestPath string) (Manifest, map[string]string, error) {
+	manifest, err := LoadManifest(manifestPath)
+	if err != nil {
+		return Manifest{}, nil, err
+	}
+	stored, err := storedPathsForManifest(manifestPath, manifest)
+	if err != nil {
+		return Manifest{}, nil, err
+	}
+	for _, record := range manifest.Files {
+		if !record.Existed {
+			continue
+		}
+		path := stored[record.RelativePath]
 		hash, size, err := hashAndSize(path)
 		if err != nil {
 			return Manifest{}, nil, fmt.Errorf("verify baseline %s: %w", record.RelativePath, err)
@@ -526,7 +768,6 @@ func LoadAndVerify(manifestPath string) (Manifest, map[string]string, error) {
 		if hash != record.SHA256 || size != record.Bytes {
 			return Manifest{}, nil, fmt.Errorf("stored baseline changed: %s", record.RelativePath)
 		}
-		stored[record.RelativePath] = path
 	}
 	return manifest, stored, nil
 }
@@ -592,6 +833,37 @@ func Inspect(gameRoot, stateRoot, targetID string) (Inspection, error) {
 	}
 	result.Warnings = append(result.Warnings, "Current files do not match a stored baseline. This may be a game update or an external modification; no automatic cleanliness claim is made.")
 	return result, nil
+}
+
+func loadAllMetadata(stateRoot, targetID, gameRoot string) ([]Manifest, []Summary, error) {
+	root := filepath.Join(stateRoot, "baselines")
+	entries, err := os.ReadDir(root)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, nil, nil
+	}
+	if err != nil {
+		return nil, nil, err
+	}
+	var manifests []Manifest
+	var summaries []Summary
+	for _, entry := range entries {
+		if !entry.IsDir() || strings.HasPrefix(entry.Name(), ".tmp-") {
+			continue
+		}
+		path := filepath.Join(root, entry.Name(), "manifest.json")
+		manifest, err := LoadManifest(path)
+		if err != nil {
+			return nil, nil, err
+		}
+		if manifest.TargetID != targetID || manifest.GameRoot != gameRoot {
+			return nil, nil, fmt.Errorf("baseline registry identity mismatch: %s", path)
+		}
+		manifests = append(manifests, manifest)
+		summaries = append(summaries, Summary{BaselineID: manifest.BaselineID, Fingerprint: manifest.Fingerprint, ManifestPath: path, CapturedUTC: manifest.CapturedUTC, Classification: manifest.Classification, CaptureMethod: manifest.CaptureMethod, SourceClassification: manifest.SourceClassification, AdoptionID: manifest.AdoptionID, PreviousStateArchive: manifest.PreviousStateArchive, FileCount: len(manifest.Files)})
+	}
+	sort.SliceStable(manifests, func(i, j int) bool { return manifests[i].CapturedUTC.Before(manifests[j].CapturedUTC) })
+	sort.SliceStable(summaries, func(i, j int) bool { return summaries[i].CapturedUTC.Before(summaries[j].CapturedUTC) })
+	return manifests, summaries, nil
 }
 
 func loadAll(stateRoot, targetID, gameRoot string) ([]Manifest, []Summary, error) {
@@ -718,7 +990,7 @@ func fingerprint(targetID string, files []FileRecord) (string, error) {
 }
 
 func rebuildIndex(stateRoot, targetID, gameRoot string) error {
-	_, summaries, err := loadAll(stateRoot, targetID, gameRoot)
+	_, summaries, err := loadAllMetadata(stateRoot, targetID, gameRoot)
 	if err != nil {
 		return err
 	}
@@ -852,6 +1124,10 @@ func hashAndSize(path string) (string, int64, error) {
 }
 
 func copyRegularFile(source, destination string, mode fs.FileMode) error {
+	return copyRegularFileExpected(source, destination, mode, "", -1)
+}
+
+func copyRegularFileExpected(source, destination string, mode fs.FileMode, expectedSHA256 string, expectedBytes int64) error {
 	input, err := regularFile(source, "baseline source")
 	if err != nil {
 		return err
@@ -875,8 +1151,17 @@ func copyRegularFile(source, destination string, mode fs.FileMode) error {
 			_ = os.Remove(destination)
 		}
 	}()
-	if _, err := io.Copy(out, in); err != nil {
+	hash := sha256.New()
+	written, err := io.Copy(io.MultiWriter(out, hash), in)
+	if err != nil {
 		return err
+	}
+	if expectedBytes >= 0 && written != expectedBytes {
+		return fmt.Errorf("baseline source size changed during capture")
+	}
+	actual := hex.EncodeToString(hash.Sum(nil))
+	if strings.TrimSpace(expectedSHA256) != "" && !strings.EqualFold(actual, expectedSHA256) {
+		return fmt.Errorf("baseline source hash changed during capture")
 	}
 	if err := out.Sync(); err != nil {
 		return err
@@ -939,6 +1224,20 @@ func atomicWrite(path string, data []byte, mode fs.FileMode) error {
 }
 
 func syncTree(root string) error {
+	return syncTreeForPlatform(root, runtime.GOOS)
+}
+
+func syncTreeForPlatform(root, goos string) error {
+	// Every baseline payload file is already flushed while it is open for
+	// writing in copyRegularFile, and manifest writes are flushed in
+	// atomicWrite. This second durability pass reopens files read-only. On
+	// Windows, os.File.Sync maps to FlushFileBuffers, which may return
+	// ERROR_ACCESS_DENIED for a read-only handle even though the earlier
+	// writable-handle flush succeeded. Skip only this redundant second pass
+	// on Windows; the actual file flushes remain mandatory on all platforms.
+	if goos == "windows" {
+		return nil
+	}
 	return filepath.WalkDir(root, func(path string, entry fs.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -960,10 +1259,24 @@ func syncTree(root string) error {
 }
 
 func syncParent(path string) error {
+	// Go cannot reliably fsync directory handles on Windows. os.File.Sync on
+	// an opened directory commonly returns ERROR_ACCESS_DENIED even though the
+	// file data itself was already flushed before the atomic rename. Treat
+	// directory fsync as a Unix durability barrier only; never turn a valid
+	// Windows baseline capture into an installation failure because of it.
+	if runtime.GOOS == "windows" {
+		return nil
+	}
 	directory, err := os.Open(filepath.Dir(path))
 	if err != nil {
 		return err
 	}
 	defer directory.Close()
-	return directory.Sync()
+	if err := directory.Sync(); err != nil {
+		if errors.Is(err, os.ErrInvalid) {
+			return nil
+		}
+		return err
+	}
+	return nil
 }

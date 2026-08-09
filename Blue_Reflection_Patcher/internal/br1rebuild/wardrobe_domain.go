@@ -326,6 +326,14 @@ func catalogSourceModels(pack00 string) (map[string]bool, error) {
 }
 
 func DeriveWardrobePlan(sourceRoot, targetRoot, pack12Override string) (*WardrobePlan, error) {
+	targetFiles := map[string]string{}
+	if strings.TrimSpace(pack12Override) != "" {
+		targetFiles["pack12"] = pack12Override
+	}
+	return DeriveWardrobePlanWithTargetFiles(sourceRoot, targetRoot, targetFiles)
+}
+
+func DeriveWardrobePlanWithTargetFiles(sourceRoot, targetRoot string, targetFiles map[string]string) (*WardrobePlan, error) {
 	vexe := casePath(sourceRoot, "BLUE_REFLECTION.exe")
 	vd, err := sourceDataDirectory(sourceRoot)
 	if err != nil {
@@ -333,6 +341,10 @@ func DeriveWardrobePlan(sourceRoot, targetRoot, pack12Override string) (*Wardrob
 	}
 	qd := filepath.Join(targetRoot, "Data")
 	qdll := filepath.Join(targetRoot, "B1.dll")
+	if override := strings.TrimSpace(targetFiles["dll"]); override != "" {
+		qdll = override
+	}
+	pack12Override := strings.TrimSpace(targetFiles["pack12"])
 	if pack12Override == "" {
 		pack12Override = casePath(qd, "PACK12.PAK")
 	}

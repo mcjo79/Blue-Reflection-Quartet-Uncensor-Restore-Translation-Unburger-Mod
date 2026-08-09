@@ -102,14 +102,33 @@ func BuildCandidateSet(opts ReconstructionBuildOptions, progress BuildProgressFu
 		return report, fmt.Errorf("state root and candidate workspace are required")
 	}
 
-	active, err := installstate.Inspect(opts.StateRoot, "blue_reflection_quartet", survey.TargetRoot)
+	active, activeExists, err := installstate.Load(opts.StateRoot, "blue_reflection_quartet", survey.TargetRoot)
 	if err != nil {
 		return report, fmt.Errorf("inspect active installation state: %w", err)
 	}
-	if active.Active {
-		return report, fmt.Errorf("candidate build requires a clean patcher state; current status=%s transaction=%s", active.Status, active.TransactionID)
+	if activeExists {
+		for _, item := range active.Files {
+			relative := filepath.ToSlash(item.RelativePath)
+			switch strings.ToLower(relative) {
+			case "b1.dll", "data/pack10_02.pak", "data/pack10_03.pak", "data/pack11.pak", "data/pack12.pak":
+				if strings.TrimSpace(opts.Survey.TargetFileOverrides[relative]) == "" {
+					// Lookup case-insensitively because active-state paths are canonical
+					// but callers may populate overrides from older metadata.
+					found := false
+					for key := range opts.Survey.TargetFileOverrides {
+						if strings.EqualFold(filepath.ToSlash(key), relative) {
+							found = true
+							break
+						}
+					}
+					if !found {
+						return report, fmt.Errorf("active managed build source is missing preserved baseline override for %s", relative)
+					}
+				}
+			}
+		}
 	}
-	if err := rejectNonTerminalTransactions(opts.StateRoot); err != nil {
+	if err := rejectNonTerminalTransactions(opts.StateRoot, progress); err != nil {
 		return report, err
 	}
 	if err := os.MkdirAll(opts.Workspace, 0o755); err != nil {
@@ -123,8 +142,8 @@ func BuildCandidateSet(opts ReconstructionBuildOptions, progress BuildProgressFu
 		defer os.RemoveAll(buildDir)
 	}
 
-	sourceFiles, targetFiles := ResolveContentFiles(survey.Source.Root, survey.TargetRoot)
-	wardrobePlan, err := DeriveWardrobePlan(survey.Source.Root, survey.TargetRoot, targetFiles["pack12"])
+	sourceFiles, targetFiles := ResolveContentFilesWithTargetOverrides(survey.Source.Root, survey.TargetRoot, opts.Survey.TargetFileOverrides)
+	wardrobePlan, err := DeriveWardrobePlanWithTargetFiles(survey.Source.Root, survey.TargetRoot, targetFiles)
 	if err != nil {
 		return report, err
 	}
@@ -257,16 +276,37 @@ func PrepareArtifactsForTargetWithProgress(gameRoot, stateRoot, targetID string,
 		ordered = append(ordered, relative)
 	}
 	sort.Strings(ordered)
-	base, err := baseline.Ensure(gameRoot, stateRoot, targetID, ordered)
-	if err != nil {
-		return "", "", err
+	transactionMetadata := map[string]string{}
+	for key, value := range metadata {
+		transactionMetadata[key] = value
 	}
+	activeHashes := map[string]string{}
+	active, activeExists, err := installstate.Load(stateRoot, targetID, gameRoot)
+	if err != nil {
+		return "", "", fmt.Errorf("read active installation state before prepare: %w", err)
+	}
+	if activeExists {
+		transactionMetadata["active_transaction_id"] = active.TransactionID
+		transactionMetadata["active_state_prepare_guard"] = "expected_installed_sha256"
+		for _, item := range active.Files {
+			activeHashes[strings.ToLower(filepath.ToSlash(item.RelativePath))] = strings.ToLower(item.InstalledSHA256)
+		}
+	}
+	if existing := strings.TrimSpace(transactionMetadata["target_id"]); existing != "" && existing != targetID {
+		return "", "", fmt.Errorf("transaction target metadata mismatch: got %s, expected %s", existing, targetID)
+	}
+	transactionMetadata["target_id"] = targetID
+	transactionMetadata["baseline_pending"] = "true"
 	changes := make([]transaction.ChangeSpec, 0, len(ordered))
 	for _, relative := range ordered {
-		artifact := byPath[strings.ToLower(relative)]
-		changes = append(changes, transaction.ChangeSpec{RelativePath: relative, StagedPath: artifact.Path})
+		key := strings.ToLower(relative)
+		artifact := byPath[key]
+		changes = append(changes, transaction.ChangeSpec{
+			RelativePath: relative, StagedPath: artifact.Path, DesiredSHA256: artifact.SHA256, DesiredBytes: artifact.Size,
+			ExpectedOriginalSHA256: activeHashes[key],
+		})
 	}
-	prepared, err := transaction.PrepareWithOptions(gameRoot, stateRoot, changes, selectedModules, metadata, transaction.PrepareOptions{
+	prepared, err := transaction.PrepareWithOptions(gameRoot, stateRoot, changes, selectedModules, transactionMetadata, transaction.PrepareOptions{
 		Progress:                        progress,
 		RequireHardlinkBackup:           true,
 		UseSiblingFilesystemBackupStore: true,
@@ -274,6 +314,24 @@ func PrepareArtifactsForTargetWithProgress(gameRoot, stateRoot, targetID string,
 	if err != nil {
 		return "", "", err
 	}
+	base, err := baseline.EnsureFromPreparedTransaction(stateRoot, targetID, prepared.Journal)
+	if err != nil {
+		_, _ = transaction.DiscardPrepared(prepared.JournalPath)
+		return "", "", fmt.Errorf("publish game-side persistent baseline: %w", err)
+	}
+	preparedJournal, err := transaction.UpdatePreparedMetadata(prepared.JournalPath, map[string]string{
+		"baseline_pending":        "false",
+		"baseline_id":             base.Manifest.BaselineID,
+		"baseline_fingerprint":    base.Manifest.Fingerprint,
+		"baseline_manifest_path":  base.ManifestPath,
+		"baseline_classification": base.Manifest.Classification,
+		"baseline_action":         base.Action,
+		"baseline_storage_policy": "game_side_transaction_backup",
+	})
+	if err != nil {
+		return "", "", fmt.Errorf("attach persistent baseline metadata to prepared transaction: %w", err)
+	}
+	prepared.Journal = preparedJournal
 	return prepared.JournalPath, base.ManifestPath, nil
 }
 
@@ -318,7 +376,7 @@ func BuildReconstructionSet(opts ReconstructionBuildOptions, progress BuildProgr
 	return PrepareCandidateSet(report, opts.StateRoot, []string{ReconstructionModuleID})
 }
 
-func rejectNonTerminalTransactions(stateRoot string) error {
+func rejectNonTerminalTransactions(stateRoot string, progress BuildProgressFunc) error {
 	root := filepath.Join(stateRoot, "transactions")
 	entries, err := os.ReadDir(root)
 	if errors.Is(err, os.ErrNotExist) {
@@ -339,11 +397,35 @@ func rejectNonTerminalTransactions(stateRoot string) error {
 		switch journal.Status {
 		case transaction.StatusRolledBack, transaction.StatusDiscarded:
 			continue
-		default:
-			return fmt.Errorf("candidate build blocked by transaction %s in status %s", journal.TransactionID, journal.Status)
+		case transaction.StatusPrepared:
+			if legacyPreparedJournalNeedsMetadataRecovery(journal) {
+				if progress != nil {
+					progress(BuildProgress{Phase: "state_recovery", CurrentFile: "Discarding incomplete prepared transaction " + journal.TransactionID})
+				}
+				if _, discardErr := transaction.DiscardPrepared(journalPath); discardErr != nil {
+					return fmt.Errorf("discard incomplete prepared transaction %s: %w", journal.TransactionID, discardErr)
+				}
+				continue
+			}
 		}
+		return fmt.Errorf("candidate build blocked by transaction %s in status %s", journal.TransactionID, journal.Status)
 	}
 	return nil
+}
+
+func legacyPreparedJournalNeedsMetadataRecovery(journal transaction.Journal) bool {
+	if journal.Status != transaction.StatusPrepared {
+		return false
+	}
+	if strings.TrimSpace(journal.Metadata["target_id"]) == "" || strings.TrimSpace(journal.Metadata["baseline_manifest_path"]) != "" {
+		return false
+	}
+	switch strings.TrimSpace(journal.Metadata["purpose"]) {
+	case "br1_legacy_content", "translation_records":
+		return true
+	default:
+		return false
+	}
 }
 
 func fileSize(path string) int64 {

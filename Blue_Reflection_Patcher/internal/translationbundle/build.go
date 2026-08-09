@@ -303,6 +303,7 @@ func Build(projectRoot string) (Bundle, BuildStats, error) {
 	}
 
 	groups := map[memberKey][]Record{}
+	targetIndexSets := map[memberKey]map[int]string{}
 	for _, rule := range targetRules {
 		root := filepath.Join(projectRoot, "titles", rule.Project, "translation")
 		err := filepath.WalkDir(root, func(path string, d os.DirEntry, walkErr error) error {
@@ -328,6 +329,31 @@ func Build(projectRoot string) (Bundle, BuildStats, error) {
 				if !ok || targetIndex == nil {
 					continue
 				}
+				kind, relative, err := parseLogicalMember(sr, unit.Type)
+				if err != nil {
+					return err
+				}
+				archive := rule.SystemArchive
+				internal := rule.SystemPrefix + relative
+				if kind == "ebm" {
+					archive = rule.EventArchive
+					internal = rule.EventPrefix + relative
+				}
+				key := memberKey{rule.TargetID, filepath.ToSlash(archive), internal, kind}
+				if kind == "ebm" {
+					if *targetIndex < 0 {
+						return fmt.Errorf("negative target EBM index for %s", sr.LogicalID)
+					}
+					set := targetIndexSets[key]
+					if set == nil {
+						set = map[int]string{}
+						targetIndexSets[key] = set
+					}
+					if prior, exists := set[*targetIndex]; exists && prior != sr.LogicalID {
+						return fmt.Errorf("duplicate target EBM index %d for %s and %s", *targetIndex, prior, sr.LogicalID)
+					}
+					set[*targetIndex] = sr.LogicalID
+				}
 				desired, apply, err := desiredForTarget(sr, rule, policies, rawPolicy)
 				if err != nil {
 					return err
@@ -338,16 +364,6 @@ func Build(projectRoot string) (Bundle, BuildStats, error) {
 				baseline, baselineOK := baselineText(sr, rule)
 				if baselineOK && baseline == desired {
 					continue
-				}
-				kind, relative, err := parseLogicalMember(sr, unit.Type)
-				if err != nil {
-					return err
-				}
-				archive := rule.SystemArchive
-				internal := rule.SystemPrefix + relative
-				if kind == "ebm" {
-					archive = rule.EventArchive
-					internal = rule.EventPrefix + relative
 				}
 				rec := Record{LogicalID: sr.LogicalID, TargetIndex: *targetIndex, StringNo: sr.StringNo, StringID: sr.StringID, DesiredText: desired}
 				if baselineOK {
@@ -366,7 +382,6 @@ func Build(projectRoot string) (Bundle, BuildStats, error) {
 					}
 					rec.Metadata = meta
 				}
-				key := memberKey{rule.TargetID, filepath.ToSlash(archive), internal, kind}
 				groups[key] = append(groups[key], rec)
 			}
 			return nil
@@ -384,7 +399,23 @@ func Build(projectRoot string) (Bundle, BuildStats, error) {
 			}
 			return records[i].LogicalID < records[j].LogicalID
 		})
-		byTarget[key.target] = append(byTarget[key.target], Member{ArchiveRelativePath: key.archive, InternalPath: key.internal, Kind: key.kind, Records: records})
+		targetRecordCount := 0
+		if key.kind == "ebm" {
+			set := targetIndexSets[key]
+			if len(set) > 0 {
+				complete := true
+				for i := 0; i < len(set); i++ {
+					if _, ok := set[i]; !ok {
+						complete = false
+						break
+					}
+				}
+				if complete {
+					targetRecordCount = len(set)
+				}
+			}
+		}
+		byTarget[key.target] = append(byTarget[key.target], Member{ArchiveRelativePath: key.archive, InternalPath: key.internal, Kind: key.kind, TargetRecordCount: targetRecordCount, Records: records})
 	}
 	bundle := Bundle{Type: "unburger_translation_records", FormatVersion: 1, TranslationVersion: version}
 	stats := BuildStats{TranslationVersion: version, TargetMembers: map[string]int{}, TargetRecords: map[string]int{}}

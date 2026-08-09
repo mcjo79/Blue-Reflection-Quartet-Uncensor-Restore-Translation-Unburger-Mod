@@ -642,7 +642,7 @@
     "visual_or_censorship_semantics_confirmed_rows": 0,
     "write_authorized_rows": 0
   },
-  "current_stage": 170,
+  "current_stage": 173,
   "debug_event_checker_research_todo": {
     "blocks_static_restoration": false,
     "dll_patching_authorized": false,
@@ -1545,6 +1545,59 @@
     "tool_version": "0.1.64",
     "translation_modified": false,
     "uses_existing_core_transaction_route": true
+  },
+  "graphics_capture_capability_stage": {
+    "command": "bash workstreams/quartet_restoration/172_collect_graphics_capture_capability_evidence.sh --game-root GAME_ROOT [--pid PID]",
+    "explicit_game_root_required_by_release_launcher": true,
+    "exports_current_pid": false,
+    "exports_environment_values": false,
+    "exports_full_command_line": false,
+    "exports_full_mapping_paths": false,
+    "exports_selected_game_root": false,
+    "external_graphics_capture_started": false,
+    "focus": "selected running Quartet process renderer stack + Vulkan layer/tool availability + local-only launch context; choose RenderDoc, existing API dump, project-local explicit Vulkan layer, or blocked prerequisite",
+    "generation10_v2_dependency_forbidden": true,
+    "local_launch_context_must_not_be_packaged": true,
+    "local_launch_context_relative_path": ".local/build/quartet_restoration/graphics_capture/launch_context.json",
+    "material_binding_confirmed": false,
+    "next_action": "Run stage172 on the explicit clean Restoration game root while Quartet is running. Use its backend decision to prepare one explicit graphics-API capture stage; do not resume broad memory/callpath scans.",
+    "render_resource_binding_confirmed": false,
+    "requires_exact_pack10_02_baseline_sha256": "e798f39c3bcdbb11381197bddf9bd3ad8de6ccf5d7c0c78b22613046d47f5302",
+    "requires_stage171_report_sha256": "9fcc90452eed4bdd641da45aacdd280af4e8775c05cda2dba0589a0e5b1aebb5",
+    "shader_binding_confirmed": false,
+    "stage": 172,
+    "status": "ready_read_only",
+    "texture_binding_confirmed": false,
+    "tool_version": "0.2.00",
+    "wet_transparency_mechanism_confirmed": false,
+    "writes_installed_game": false,
+    "writes_process_memory": false
+  },
+  "graphics_capture_stage172_result": {
+    "api_dump_layer_available": false,
+    "capture_started": false,
+    "evidence_sha256": "d3844aa471b168c9fe24c21a9a08883c44c2632da8ec458f59599cc5e3357093",
+    "installed_game_modified": false,
+    "process_memory_written": false,
+    "recommended_backend": "existing_renderdoc_capture",
+    "renderdoc_layer_available": true,
+    "renderdoccmd_available": true,
+    "stage": 172,
+    "status": "complete_read_only_backend_selected"
+  },
+  "graphics_capture_stage173": {
+    "backend": "existing_renderdoc_capture",
+    "game_files_written": false,
+    "native_change_wetness_toggles": 1,
+    "process_memory_written": false,
+    "raw_rdc_must_remain_local_build": true,
+    "stable_frame_sequence": [
+      "DRY",
+      "WET"
+    ],
+    "stage": 173,
+    "status": "ready_local_only",
+    "wet_transparency_mechanism_confirmed": false
   },
   "hinako_wet_accessory_g1mm_exact_field_stage": {
     "character_id": "pc00",
@@ -3653,10 +3706,11 @@
     "writes_installed_game": false,
     "writes_process_memory": false
   },
+  "next_action": "Run stage 173 with explicit clean Restoration --game-root. The launcher uses the machine-local stage172 launch context and starts Quartet under the already-selected RenderDoc backend. Capture exactly one stable DRY frame and one stable WET frame; raw RDC files remain under .local/build only.",
   "next_commands": [
     "bash workstreams/quartet_restoration/165_trace_wet_model_pointer_roundtrip.sh"
   ],
-  "next_stage": 170,
+  "next_stage": 173,
   "next_step": "Run stage166 fresh-process reacquisition trace; no old PID or absolute address is reused.",
   "non_character_namespace_saturation_stage": {
     "asset_difference_rows": 7566,
@@ -6219,6 +6273,29 @@
     "version": "0.1.91",
     "writes_installed_game": false
   },
+  "stage170_process_disambiguation_hotfix": {
+    "dominant_thread_or_rss_tiebreaker_bounded": true,
+    "explicit_pid_runtime_override_supported": true,
+    "interactive_pid_fallback_for_true_ambiguity": true,
+    "machine_specific_path_versioned": false,
+    "pid_exported_to_evidence": false,
+    "reason": "Wine may expose multiple Quartet process candidates with identical Stage164 cmdline/cwd score; stage170 must disambiguate without reusing historical PID or storing machine-specific paths",
+    "selected_root_mapping_identity_preferred": true,
+    "stage": 170,
+    "status": "prepared",
+    "tool_version": "0.1.98"
+  },
+  "stage170_runtime_root_selection_hotfix": {
+    "exact_pack10_02_baseline_required": true,
+    "machine_specific_path_versioned": false,
+    "precedence": [
+      "explicit_cli",
+      "environment",
+      "local_paths"
+    ],
+    "reason": "parallel Quartet installations require explicit per-run game-root selection; no machine-specific path is versioned",
+    "status": "prepared"
+  },
   "stage41_correction": {
     "corrected_tool_version": "0.0.48",
     "evidence_interpretation": "report_schema_defect_not_failed_ebd_splice_or_composite_evidence",
@@ -6267,7 +6344,7 @@
     ],
     "static_gates_weakened": false
   },
-  "status": "stage170_wet_renderer_interface_vtable_provenance_ready_read_only",
+  "status": "stage173_renderdoc_dry_wet_frame_capture_ready_local_only",
   "structural_material_parameter_stage": {
     "audited_member_rows": 16,
     "conclusion": "atColor source block 5 has no safe target mapping; recurrent-only inverse of the main bathroom G1M moves 6232 bytes farther from Original; no payload authorized",
@@ -6396,7 +6473,7 @@
     "validation_failures": 0,
     "validation_rows": 9
   },
-  "version": "0.1.98",
+  "version": "0.2.01",
   "wet_blend_context_binding_trace_stage": {
     "blend_context_neighborhood_rows": 0,
     "blend_context_radius_bytes": 1536,
@@ -6597,12 +6674,17 @@
     "generation10_v2_dependency_forbidden": true,
     "historical_pid_or_absolute_address_reuse_forbidden": true,
     "independent_signal": "C/C++ object/interface vtable provenance: probable object first-qword vtable with >=2 executable function targets; compare normalized module-family/vtable-offset signatures across WET1/DRY2/WET2.",
+    "interface_observation_rows": 47,
     "material_binding_confirmed": false,
     "max_interface_rows_per_root": 64,
     "minimum_executable_vtable_entries": 2,
-    "next_action": "Run stage170 on a fresh native School Uniform DRY->WET->DRY->WET sequence. A recurrent WET-only renderer-interface signature is candidate binding evidence only, not transparency semantics.",
+    "next_action": "Close bounded pointer/object neighborhood scanning. Stage171 uses an independent read-only perf_event_open transition callpath sampler across DRY->WET / WET->DRY / DRY->WET; do not infer transparency from callpaths alone.",
     "numeric_or_pointer_field_semantics_inferred": false,
     "output_report_path": ".local/reports/quartet_restoration/BR_quartet_restoration_wet_renderer_interface_vtable_provenance_evidence.tar.zst",
+    "process_disambiguation": "selected-root executable-map identity first; then bounded thread/RSS dominance; true ambiguity prompts or accepts explicit terminal-only --pid",
+    "process_selection_mode": "dominant_thread_count",
+    "recurrent_wet_only_interface_candidate_rows": 7,
+    "recurrent_wet_only_renderer_interface_candidate_rows": 0,
     "render_resource_binding_confirmed": false,
     "renderer_module_families": [
       "d3d11",
@@ -6618,17 +6700,70 @@
     "requires_exact_pack10_02_baseline_sha256": "e798f39c3bcdbb11381197bddf9bd3ad8de6ccf5d7c0c78b22613046d47f5302",
     "requires_stage169_report_sha256": "a4d4976e7449fe41d46133e6a81f790cb66489551ee0985eafe59e33088fdf2d",
     "root_scan_radius_bytes": 1024,
+    "selected_wet_school_root_rows": 4,
     "shader_binding_confirmed": false,
     "stage": 170,
     "stage169_blend_token_branch_repeated": false,
-    "status": "ready_read_only",
+    "status": "complete_user_local_recurrent_wet_only_interfaces_without_renderer_module_provenance",
     "texture_binding_confirmed": false,
     "tool_version": "0.1.98",
+    "user_local_report_sha256": "6f73ad48d129e1215f110219bc908d02e0e37c1e9f417652cbd86ea88eb088d7",
     "vtable_entry_count": 6,
+    "wet2_recurrent_selected_root_rows": 4,
     "wet_transparency_mechanism_confirmed": false,
     "writes_installed_game": false,
-    "writes_process_memory": false,
-    "process_disambiguation": "selected-root executable-map identity first; then bounded thread/RSS dominance; true ambiguity prompts or accepts explicit terminal-only --pid"
+    "writes_process_memory": false
+  },
+  "wet_renderer_transition_callpath_stage": {
+    "api_or_call_path_binding_confirmed": false,
+    "candidate_rule": "same normalized exact or family callpath signature appears >=2 samples in each wet transition and 0 samples in dry-transition control; renderer families are candidate-only",
+    "capture_sample_rows": 1694,
+    "capture_seconds_each": 8,
+    "capture_sequence": "DRY->WET1 transition sample; WET1->DRY2 transition control; DRY2->WET2 transition recurrence",
+    "command": "bash workstreams/quartet_restoration/171_trace_wet_renderer_transition_callpath.sh --game-root GAME_ROOT --initial-ready [--pid PID]",
+    "explicit_game_root_required_by_release_launcher": true,
+    "exports_absolute_process_addresses": false,
+    "exports_current_pid": false,
+    "exports_full_mapping_paths": false,
+    "exports_raw_perf_ring": false,
+    "exports_raw_process_memory": false,
+    "generation10_v2_dependency_forbidden": true,
+    "historical_pid_or_absolute_address_reuse_forbidden": true,
+    "lost_sample_rows": 0,
+    "material_binding_confirmed": false,
+    "max_callchain_frames": 24,
+    "max_threads": 96,
+    "next_action": "Stop internal pointer/object/callpath instrumentation. Run stage172 as a read-only capability audit for an explicit graphics-API capture backend on the selected clean Restoration game root.",
+    "output_report_path": ".local/reports/quartet_restoration/BR_quartet_restoration_wet_renderer_transition_callpath_evidence.tar.zst",
+    "recurrent_wet_only_callpath_candidate_rows": 3,
+    "recurrent_wet_only_renderer_callpath_candidate_rows": 0,
+    "render_resource_binding_confirmed": false,
+    "renderer_module_families": [
+      "d3d11",
+      "d3d12",
+      "dxgi",
+      "dxvk",
+      "vkd3d",
+      "vulkan",
+      "winevulkan",
+      "opengl",
+      "wined3d"
+    ],
+    "requires_exact_pack10_02_baseline_sha256": "e798f39c3bcdbb11381197bddf9bd3ad8de6ccf5d7c0c78b22613046d47f5302",
+    "requires_stage170_report_sha256": "6f73ad48d129e1215f110219bc908d02e0e37c1e9f417652cbd86ea88eb088d7",
+    "sample_period_ns": 5000000,
+    "sampling_backend": "linux_perf_event_open software CPU clock user-callchain sampling; no external perf binary required",
+    "shader_binding_confirmed": false,
+    "stage": 171,
+    "state_sequence_acceptance_note": "User reported stage171 prompts were unclear. The three windows were technically complete with zero lost samples and the three recurrent WET-only signatures fit the intended sequence, but stage171 labels were prompt-order labels rather than independent wet-state readback.",
+    "state_sequence_independently_verified": false,
+    "status": "complete_user_local_no_recurrent_renderer_associated_callpath_candidate",
+    "texture_binding_confirmed": false,
+    "tool_version": "0.1.99",
+    "user_local_report_sha256": "9fcc90452eed4bdd641da45aacdd280af4e8775c05cda2dba0589a0e5b1aebb5",
+    "wet_transparency_mechanism_confirmed": false,
+    "writes_installed_game": false,
+    "writes_process_memory": false
   },
   "wet_restoration_new_user_observations": {
     "asset_binding_for_droplets_resolved": false,
@@ -6785,28 +6920,5 @@
     "word_delta_rows": 1,
     "writes_event_or_render_payload": false,
     "writes_installed_game": false
-  },
-  "stage170_runtime_root_selection_hotfix": {
-    "status": "prepared",
-    "reason": "parallel Quartet installations require explicit per-run game-root selection; no machine-specific path is versioned",
-    "precedence": [
-      "explicit_cli",
-      "environment",
-      "local_paths"
-    ],
-    "exact_pack10_02_baseline_required": true,
-    "machine_specific_path_versioned": false
-  },
-  "stage170_process_disambiguation_hotfix": {
-    "status": "prepared",
-    "reason": "Wine may expose multiple Quartet process candidates with identical Stage164 cmdline/cwd score; stage170 must disambiguate without reusing historical PID or storing machine-specific paths",
-    "selected_root_mapping_identity_preferred": true,
-    "dominant_thread_or_rss_tiebreaker_bounded": true,
-    "interactive_pid_fallback_for_true_ambiguity": true,
-    "explicit_pid_runtime_override_supported": true,
-    "pid_exported_to_evidence": false,
-    "machine_specific_path_versioned": false,
-    "stage": 170,
-    "tool_version": "0.1.98"
   }
 }

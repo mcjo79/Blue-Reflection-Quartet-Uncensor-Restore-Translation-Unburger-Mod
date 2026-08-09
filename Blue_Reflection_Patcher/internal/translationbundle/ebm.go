@@ -2,10 +2,13 @@ package translationbundle
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"encoding/binary"
+	"encoding/hex"
 	"fmt"
 	"math"
 	"sort"
+	"strings"
 	"unicode/utf8"
 )
 
@@ -256,11 +259,79 @@ func metadataMatches(m ebmMessage, want *EBMMetadata) bool {
 	return m.Type == want.Type && m.VoiceID == want.VoiceID && m.Unknown1 == want.Unknown1 && m.NameID == want.NameID && m.ExtraID == want.ExtraID && m.ExprID == want.ExprID && m.MsgID == want.MsgID && m.Unknown2 == want.Unknown2
 }
 
+// structuralIdentityMatches deliberately excludes MsgID and text. Some Quartet
+// targets preserve the source record order/role while assigning a different
+// target-native message ID. These fields describe the stable record role and
+// survive Translation text updates, so they can confirm a target-specific index
+// without depending on any historical text hash or external patcher state.
+func structuralIdentityMatches(m ebmMessage, want *EBMMetadata) bool {
+	if want == nil {
+		return false
+	}
+	return m.Type == want.Type && m.VoiceID == want.VoiceID && m.Unknown1 == want.Unknown1 && m.NameID == want.NameID && m.ExtraID == want.ExtraID && m.ExprID == want.ExprID && m.Unknown2 == want.Unknown2
+}
+
+func ebmStructuralSHAFromFile(f *ebmFile) string {
+	h := sha256.New()
+	write32 := func(v uint32) { _ = binary.Write(h, binary.LittleEndian, v) }
+	write32(uint32(f.SignedCount))
+	write32(uint32(f.D1))
+	write32(uint32(f.D2))
+	write32(uint32(len(f.Messages)))
+	for i, m := range f.Messages {
+		write32(uint32(i))
+		for _, v := range []uint32{m.Type, m.VoiceID, m.Unknown1, m.NameID, m.ExtraID, m.ExprID} {
+			write32(v)
+		}
+		write32(uint32(len(m.Duration1)))
+		for _, v := range m.Duration1 {
+			write32(v)
+		}
+		write32(m.MsgID)
+		write32(m.Unknown2)
+		write32(uint32(len(m.Duration2)))
+		for _, v := range m.Duration2 {
+			write32(v)
+		}
+	}
+	write32(uint32(len(f.Extra)))
+	_, _ = h.Write(f.Extra)
+	return hex.EncodeToString(h.Sum(nil))
+}
+
+func ebmStructuralSHA(data []byte) (string, error) {
+	f, err := parseEBM(data)
+	if err != nil {
+		return "", err
+	}
+	return ebmStructuralSHAFromFile(f), nil
+}
+
+func canonicalTargetBindingValid(f *ebmFile, records []Record, targetRecordCount int) bool {
+	if targetRecordCount <= 0 || len(f.Messages) != targetRecordCount {
+		return false
+	}
+	used := map[int]bool{}
+	for _, r := range records {
+		if r.TargetIndex < 0 || r.TargetIndex >= targetRecordCount || used[r.TargetIndex] {
+			return false
+		}
+		used[r.TargetIndex] = true
+	}
+	return true
+}
+
 func applyEBM(data []byte, records []Record) ([]byte, int, int, error) {
+	return applyEBMManaged(data, records, false, 0)
+}
+
+func applyEBMManaged(data []byte, records []Record, trustedManagedMember bool, targetRecordCount int) ([]byte, int, int, error) {
 	f, err := parseEBM(data)
 	if err != nil {
 		return nil, 0, 0, err
 	}
+	canonicalTarget := canonicalTargetBindingValid(f, records, targetRecordCount)
+	trustedTargetBinding := trustedManagedMember || canonicalTarget
 	byID := map[uint32][]int{}
 	for i, m := range f.Messages {
 		byID[m.MsgID] = append(byID[m.MsgID], i)
@@ -273,7 +344,28 @@ func applyEBM(data []byte, records []Record) ([]byte, int, int, error) {
 		}
 		candidates := byID[*r.MsgID]
 		idx := -1
-		if len(candidates) == 1 {
+
+		// The canonical target alignment is member-level data. It is safe to use
+		// directly only when the complete target index set proves the expected
+		// target record count, or when a prior game-root structural fingerprint
+		// proves that this member still has the same non-text structure.
+		if trustedTargetBinding {
+			if r.TargetIndex < 0 || r.TargetIndex >= len(f.Messages) {
+				return nil, 0, 0, fmt.Errorf("trusted EBM binding is out of range for %s", r.LogicalID)
+			}
+			idx = r.TargetIndex
+		}
+
+		if idx < 0 && r.TargetIndex >= 0 && r.TargetIndex < len(f.Messages) {
+			targetTextHash := textHash(f.Messages[r.TargetIndex].Text)
+			if targetTextHash == textHash(r.DesiredText) || (r.ExpectedTextSHA256 != "" && targetTextHash == r.ExpectedTextSHA256) {
+				idx = r.TargetIndex
+			}
+		}
+		if idx < 0 && r.TargetIndex >= 0 && r.TargetIndex < len(f.Messages) && structuralIdentityMatches(f.Messages[r.TargetIndex], r.Metadata) {
+			idx = r.TargetIndex
+		}
+		if idx < 0 && len(candidates) == 1 {
 			idx = candidates[0]
 		}
 		if idx < 0 && r.TargetIndex >= 0 && r.TargetIndex < len(f.Messages) && f.Messages[r.TargetIndex].MsgID == *r.MsgID {
@@ -290,8 +382,32 @@ func applyEBM(data []byte, records []Record) ([]byte, int, int, error) {
 				}
 			}
 		}
+		if idx < 0 && r.Metadata != nil {
+			metadataIdx := -1
+			for _, i := range candidates {
+				if metadataMatches(f.Messages[i], r.Metadata) {
+					if metadataIdx >= 0 {
+						metadataIdx = -2
+						break
+					}
+					metadataIdx = i
+				}
+			}
+			if metadataIdx >= 0 {
+				idx = metadataIdx
+			}
+		}
 		if idx < 0 {
-			return nil, 0, 0, fmt.Errorf("cannot uniquely resolve EBM record %s", r.LogicalID)
+			targetDetail := "out_of_range"
+			if r.TargetIndex >= 0 && r.TargetIndex < len(f.Messages) {
+				tm := f.Messages[r.TargetIndex]
+				targetDetail = fmt.Sprintf("index=%d,msg_id=%d,text_sha256=%s", r.TargetIndex, tm.MsgID, textHash(tm.Text))
+			}
+			candidateDetails := make([]string, 0, len(candidates))
+			for _, i := range candidates {
+				candidateDetails = append(candidateDetails, fmt.Sprintf("%d:%s", i, textHash(f.Messages[i].Text)))
+			}
+			return nil, 0, 0, fmt.Errorf("cannot uniquely resolve EBM record %s (target=%s source_msg_id=%d candidates=[%s])", r.LogicalID, targetDetail, *r.MsgID, strings.Join(candidateDetails, ","))
 		}
 		if used[idx] {
 			return nil, 0, 0, fmt.Errorf("multiple Translation records resolve to EBM index %d", idx)
@@ -314,7 +430,7 @@ func applyEBM(data []byte, records []Record) ([]byte, int, int, error) {
 			}
 		}
 		if r.ExpectedTextSHA256 != "" && textHash(m.Text) != r.ExpectedTextSHA256 {
-			if !metadataMatches(*m, r.Metadata) {
+			if !trustedTargetBinding && !metadataMatches(*m, r.Metadata) && !structuralIdentityMatches(*m, r.Metadata) {
 				return nil, 0, 0, fmt.Errorf("EBM record structurally changed for %s", r.LogicalID)
 			}
 			rebase++
@@ -331,6 +447,9 @@ func applyEBM(data []byte, records []Record) ([]byte, int, int, error) {
 	}
 	if len(verify.Messages) != len(f.Messages) {
 		return nil, 0, 0, fmt.Errorf("EBM round-trip record count changed")
+	}
+	if ebmStructuralSHAFromFile(verify) != ebmStructuralSHAFromFile(f) {
+		return nil, 0, 0, fmt.Errorf("EBM non-text structure changed during Translation rewrite")
 	}
 	for idx := range used {
 		if verify.Messages[idx].Text != f.Messages[idx].Text {

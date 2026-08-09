@@ -121,7 +121,10 @@ func TestActiveStateHistoryRestoresPreviousStateAcrossUpdateRollback(t *testing.
 	if _, err := transaction.Rollback(second.JournalPath); err != nil {
 		t.Fatal(err)
 	}
-	restored, exists, err := ReconcileRollback(stateRoot, "blue_reflection_original", game, second.JournalPath)
+	var secondReconcileEvents []transaction.ProgressEvent
+	restored, exists, err := ReconcileRollbackWithProgress(stateRoot, "blue_reflection_original", game, second.JournalPath, func(event transaction.ProgressEvent) {
+		secondReconcileEvents = append(secondReconcileEvents, event)
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -131,11 +134,19 @@ func TestActiveStateHistoryRestoresPreviousStateAcrossUpdateRollback(t *testing.
 	if got := readFile(t, target); got != "translated-v1" {
 		t.Fatalf("update rollback restored %q", got)
 	}
+	for _, event := range secondReconcileEvents {
+		if event.Phase == "verify_previous_state" && event.FileBytesTotal > 0 {
+			t.Fatalf("fully covered rollback reread previous-state bytes: %+v", event)
+		}
+	}
 
 	if _, err := transaction.Rollback(first.JournalPath); err != nil {
 		t.Fatal(err)
 	}
-	_, exists, err = ReconcileRollback(stateRoot, "blue_reflection_original", game, first.JournalPath)
+	var firstReconcileEvents []transaction.ProgressEvent
+	_, exists, err = ReconcileRollbackWithProgress(stateRoot, "blue_reflection_original", game, first.JournalPath, func(event transaction.ProgressEvent) {
+		firstReconcileEvents = append(firstReconcileEvents, event)
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -144,6 +155,11 @@ func TestActiveStateHistoryRestoresPreviousStateAcrossUpdateRollback(t *testing.
 	}
 	if got := readFile(t, target); got != "original" {
 		t.Fatalf("first rollback restored %q", got)
+	}
+	for _, event := range firstReconcileEvents {
+		if event.Phase == "verify_baseline_state" && event.FileBytesTotal > 0 {
+			t.Fatalf("fully covered baseline rollback reread restored bytes: %+v", event)
+		}
 	}
 }
 

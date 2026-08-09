@@ -24,12 +24,13 @@ func TestResolveProjectRootMaterializesUnburgerZip(t *testing.T) {
 	files["SHA256SUMS"] = []byte(sums)
 	bundle := filepath.Join(root, "UNBURGER_test.unburger")
 	writeZip(t, bundle, files)
-	resolved, err := ResolveProjectRoot(root)
+	resolved, cleanup, err := ResolveProjectRootTransient(root)
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer cleanup()
 	if resolved == root {
-		t.Fatal("expected a materialized cache root")
+		t.Fatal("expected a materialized temporary root")
 	}
 	if _, err := os.Stat(filepath.Join(resolved, requiredRecordPath)); err != nil {
 		t.Fatal(err)
@@ -51,7 +52,8 @@ func TestResolveProjectRootRejectsTraversal(t *testing.T) {
 	_, _ = w.Write([]byte("x"))
 	_ = zw.Close()
 	_ = f.Close()
-	if _, err := ResolveProjectRoot(root); err == nil {
+	if _, cleanup, err := ResolveProjectRootTransient(root); err == nil {
+		cleanup()
 		t.Fatal("expected unsafe entry rejection")
 	}
 }
@@ -78,4 +80,98 @@ func writeZip(t *testing.T, path string, files map[string][]byte) {
 	if err := f.Close(); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func TestResolveProjectRootTransientCleansMaterializedPayload(t *testing.T) {
+	root := t.TempDir()
+	files := map[string][]byte{
+		"RELEASE_MANIFEST.json":               []byte("{\"type\":\"unburger_release_manifest\",\"format_version\":2,\"core_version\":\"test\"}\n"),
+		"content/translation/records.v1.json": []byte("{}\n"),
+	}
+	var sums string
+	for name, data := range files {
+		h := sha256.Sum256(data)
+		sums += fmt.Sprintf("%s  ./%s\n", hex.EncodeToString(h[:]), name)
+	}
+	files["SHA256SUMS"] = []byte(sums)
+	writeZip(t, filepath.Join(root, "UNBURGER_test.unburger"), files)
+	resolved, cleanup, err := ResolveProjectRootTransient(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resolved == root {
+		t.Fatal("expected transient materialization")
+	}
+	if _, err := os.Stat(filepath.Join(resolved, requiredRecordPath)); err != nil {
+		t.Fatal(err)
+	}
+	cleanup()
+	if _, err := os.Stat(resolved); !os.IsNotExist(err) {
+		t.Fatalf("transient runtime root survived cleanup: %v", err)
+	}
+}
+
+func TestPruneOlderRuntimeBundlesKeepsUniqueNewest(t *testing.T) {
+	root := t.TempDir()
+	writeRuntimeBundleForVersion(t, filepath.Join(root, "UNBURGER_0.0.96.unburger"), "0.0.96")
+	oldSidecar := filepath.Join(root, "UNBURGER_0.0.96.unburger.sha256")
+	if err := os.WriteFile(oldSidecar, []byte("unused\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	newest := filepath.Join(root, "UNBURGER_0.0.98.unburger")
+	writeRuntimeBundleForVersion(t, newest, "0.0.98")
+
+	removed, err := PruneOlderRuntimeBundles(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(removed) != 1 || filepath.Clean(removed[0]) != filepath.Clean(filepath.Join(root, "UNBURGER_0.0.96.unburger")) {
+		t.Fatalf("unexpected removed set: %#v", removed)
+	}
+	if _, err := os.Stat(filepath.Join(root, "UNBURGER_0.0.96.unburger")); !os.IsNotExist(err) {
+		t.Fatalf("older payload survived: %v", err)
+	}
+	if _, err := os.Stat(oldSidecar); !os.IsNotExist(err) {
+		t.Fatalf("older payload sidecar survived: %v", err)
+	}
+	if _, err := os.Stat(newest); err != nil {
+		t.Fatalf("newest payload was removed: %v", err)
+	}
+	resolved, cleanup, err := ResolveProjectRootTransient(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cleanup()
+	if resolved == root {
+		t.Fatal("newest payload was not materialized")
+	}
+}
+
+func TestPruneOlderRuntimeBundlesRefusesDuplicateNewestVersion(t *testing.T) {
+	root := t.TempDir()
+	writeRuntimeBundleForVersion(t, filepath.Join(root, "UNBURGER_A.unburger"), "0.0.98")
+	writeRuntimeBundleForVersion(t, filepath.Join(root, "UNBURGER_B.unburger"), "0.0.98")
+	if _, err := PruneOlderRuntimeBundles(root); err == nil {
+		t.Fatal("expected duplicate newest version to remain fail-closed")
+	}
+	for _, name := range []string{"UNBURGER_A.unburger", "UNBURGER_B.unburger"} {
+		if _, err := os.Stat(filepath.Join(root, name)); err != nil {
+			t.Fatalf("ambiguous newest payload was deleted: %s: %v", name, err)
+		}
+	}
+}
+
+func writeRuntimeBundleForVersion(t *testing.T, path, version string) {
+	t.Helper()
+	files := map[string][]byte{
+		"RELEASE_MANIFEST.json":               []byte(fmt.Sprintf("{\"type\":\"unburger_release_manifest\",\"format_version\":2,\"core_version\":%q}\n", version)),
+		"content/translation/records.v1.json": []byte("{}\n"),
+	}
+	var sums string
+	for name, data := range files {
+		h := sha256.Sum256(data)
+		sums += fmt.Sprintf("%s  ./%s\n", hex.EncodeToString(h[:]), name)
+	}
+	files["SHA256SUMS"] = []byte(sums)
+	writeZip(t, path, files)
 }

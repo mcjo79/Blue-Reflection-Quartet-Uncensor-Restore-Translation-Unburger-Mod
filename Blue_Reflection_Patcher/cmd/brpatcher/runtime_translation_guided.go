@@ -133,10 +133,13 @@ func runRecordTranslationGuided(selection model.SelectionResult, projectRoot str
 		return recordTranslationResult{}, err
 	}
 	stateDir := installationStateDirectory(stateBase, target.TargetID, target.Root)
-	workDir := filepath.Join(stateDir, "builds", "translation-records")
-	if err := os.MkdirAll(workDir, 0o755); err != nil {
+	workDir, cleanupWorkspace, err := newPublicWorkRootWithStatus(stateDir, "unburger-translation-build-", func(message string) {
+		fmt.Fprintf(out, "%sStorage:%s %s\n", ansiGray, ansiReset, message)
+	})
+	if err != nil {
 		return recordTranslationResult{}, err
 	}
+	defer cleanupWorkspace()
 	renderer := newBR1BuildProgressRenderer(out)
 	audit, candidates, err := translationbundle.ApplyInstallation(bundle, target.TargetID, target.Root, workDir, map[string]string{}, br1rebuild.EncryptedTextTool{}, renderer.Callback)
 	renderer.Finish()
@@ -148,12 +151,17 @@ func runRecordTranslationGuided(selection model.SelectionResult, projectRoot str
 		keys = append(keys, rel)
 	}
 	sort.Strings(keys)
-	artifacts := make([]br1rebuild.OutputArtifact, 0, len(keys))
+	artifacts := make([]br1rebuild.OutputArtifact, 0, len(keys)+1)
 	for _, rel := range keys {
 		artifacts = append(artifacts, br1rebuild.OutputArtifact{RelativePath: rel, Path: candidates[rel]})
 	}
+	artifacts, err = appendTranslationManagedStateArtifact(target.TargetID, workDir, audit, artifacts)
+	if err != nil {
+		return recordTranslationResult{}, err
+	}
 	metadata := map[string]string{"target_id": target.TargetID, "purpose": "translation_records", "translation_version": bundle.TranslationVersion}
 	prepRenderer := newTransactionProgressRenderer(out)
+	prepRenderer.Status("prepare", "baseline", "Hashing final Translation artifacts and preserving the rollback baseline")
 	journal, _, err := br1rebuild.PrepareArtifactsForTargetWithProgress(target.Root, stateDir, target.TargetID, artifacts, target.SelectedModuleIDs, metadata, prepRenderer.Callback)
 	prepRenderer.Finish()
 	if err != nil {

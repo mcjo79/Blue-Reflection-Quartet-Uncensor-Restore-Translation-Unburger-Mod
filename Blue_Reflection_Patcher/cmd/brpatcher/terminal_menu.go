@@ -23,6 +23,31 @@ const (
 	ansiShowCur = "\x1b[?25h"
 )
 
+const tuiFrameWidth = 92
+
+func renderTUIFrameTop(out io.Writer, title string) {
+	title = strings.ToUpper(strings.TrimSpace(title))
+	fill := tuiFrameWidth - len(title) - 5
+	if fill < 1 {
+		fill = 1
+	}
+	fmt.Fprintf(out, "%s╭─ UNBURGER · %s %s%s\n", ansiCyan+ansiBold, title, strings.Repeat("─", fill), ansiReset)
+}
+
+func renderTUIFrameRow(out io.Writer, format string, args ...any) {
+	fmt.Fprintf(out, "%s│%s ", ansiCyan, ansiReset)
+	fmt.Fprintf(out, format, args...)
+	fmt.Fprintln(out)
+}
+
+func renderTUIFrameBlank(out io.Writer) {
+	fmt.Fprintf(out, "%s│%s\n", ansiCyan, ansiReset)
+}
+
+func renderTUIFrameBottom(out io.Writer) {
+	fmt.Fprintf(out, "%s╰%s╯%s\n", ansiCyan, strings.Repeat("─", tuiFrameWidth), ansiReset)
+}
+
 type menuKey int
 
 const (
@@ -101,11 +126,13 @@ func renderModuleMenu(
 	cursor int,
 ) {
 	fmt.Fprint(out, ansiClear)
-	fmt.Fprintf(out, "%s%sBLUE REFLECTION unified patcher%s\n", ansiBold, ansiCyan, ansiReset)
-	fmt.Fprintf(out, "%sDetected:%s %s%s%s\n", ansiBold, ansiReset, ansiBold, detection.DisplayName, ansiReset)
-	fmt.Fprintf(out, "%sGame directory:%s %s\n\n", ansiGray, ansiReset, detection.Root)
-	fmt.Fprintf(out, "%sChoose modules%s\n", ansiBold, ansiReset)
-	fmt.Fprintf(out, "%s↑/↓ move   Enter/Space toggle   Enter on Continue confirms   Q cancels%s\n\n", ansiDim, ansiReset)
+	renderTUIFrameTop(out, "MODULE SELECTION")
+	renderTUIFrameRow(out, "%sGame%s      %s%s%s", ansiGray, ansiReset, ansiBold, detection.DisplayName, ansiReset)
+	renderTUIFrameRow(out, "%sDirectory%s %s", ansiGray, ansiReset, detection.Root)
+	renderTUIFrameRow(out, "%sControls%s  ↑/↓ move · Enter/Space toggle · Enter on Continue confirms · Q cancels", ansiGray, ansiReset)
+	renderTUIFrameBlank(out)
+	renderTUIFrameRow(out, "%sChoose modules%s", ansiBold, ansiReset)
+	renderTUIFrameBlank(out)
 
 	for index, module := range modules {
 		pointer := "  "
@@ -120,20 +147,15 @@ func renderModuleMenu(
 			box = "[✓]"
 			boxStyle = ansiGreen + ansiBold
 		}
-		defaultNote := ""
+		renderTUIFrameRow(out, "%s%s%s%s%s%s %s%s%s", pointerStyle, pointer, ansiReset, boxStyle, box, ansiReset, ansiBold, module.DisplayName, ansiReset)
+		renderTUIFrameRow(out, "    %s%s%s", ansiDim, module.Description, ansiReset)
 		if contains(module.DefaultTargets, detection.TargetID) {
-			defaultNote = "  " + ansiGray + "(default)" + ansiReset
-		}
-		fmt.Fprintf(out, "%s%s%s%s%s%s %s%s%s\n", pointerStyle, pointer, ansiReset, boxStyle, box, ansiReset, ansiBold, module.DisplayName, ansiReset)
-		fmt.Fprint(out, ansiReset)
-		fmt.Fprintf(out, "     %s%s%s\n", ansiDim, module.Description, ansiReset)
-		if defaultNote != "" {
-			fmt.Fprintf(out, "     %s\n", defaultNote)
+			renderTUIFrameRow(out, "    %s(default)%s", ansiGray, ansiReset)
 		}
 		if len(module.SourceTargets) > 0 {
-			fmt.Fprintf(out, "     %ssource installation selected later: %s%s\n", ansiGray, strings.Join(module.SourceTargets, ", "), ansiReset)
+			renderTUIFrameRow(out, "    %ssource installation selected later: %s%s", ansiGray, strings.Join(module.SourceTargets, ", "), ansiReset)
 		}
-		fmt.Fprintln(out)
+		renderTUIFrameBlank(out)
 	}
 
 	pointer := "  "
@@ -142,7 +164,8 @@ func renderModuleMenu(
 		pointer = "› "
 		style = ansiYellow + ansiBold
 	}
-	fmt.Fprintf(out, "%s%s%s%s[ Continue ]%s\n", style, pointer, ansiReset, ansiBold, ansiReset)
+	renderTUIFrameRow(out, "%s%s%s%s[ Continue ]%s", style, pointer, ansiReset, ansiBold, ansiReset)
+	renderTUIFrameBottom(out)
 }
 
 func selectedModuleIDs(modules []model.BundleModule, selected map[string]bool) []string {

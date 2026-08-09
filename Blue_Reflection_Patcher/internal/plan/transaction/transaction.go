@@ -35,9 +35,18 @@ const (
 )
 
 type ChangeSpec struct {
-	RelativePath       string
-	StagedPath         string
-	VerifiedBackupPath string
+	RelativePath           string
+	StagedPath             string
+	VerifiedBackupPath     string
+	ExpectedOriginalSHA256 string
+	// ExpectedOriginalSHA256 is an optional metadata-only active-state guard.
+	// Prepare compares it with the SHA-256 it already computes for the live
+	// target before making a rollback backup; it never adds another full read.
+	// DesiredSHA256/DesiredBytes may be supplied by a caller that has just
+	// verified a private candidate artifact. Prepare still verifies the live
+	// target and commit still verifies the staged bytes while installing them.
+	DesiredSHA256 string
+	DesiredBytes  int64
 }
 
 type FileRecord struct {
@@ -166,7 +175,7 @@ func PrepareWithOptions(gameRoot, stateRoot string, changes []ChangeSpec, select
 
 	ordered := append([]ChangeSpec(nil), changes...)
 	sort.Slice(ordered, func(i, j int) bool { return ordered[i].RelativePath < ordered[j].RelativePath })
-	tracker := newPrepareProgressTracker(gameRoot, ordered, progress)
+	tracker := newPrepareProgressTracker(gameRoot, ordered, options, progress)
 	seen := map[string]bool{}
 	records := make([]FileRecord, 0, len(ordered))
 	for index, change := range ordered {
@@ -187,9 +196,26 @@ func PrepareWithOptions(gameRoot, stateRoot string, changes []ChangeSpec, select
 		if err != nil {
 			return Prepared{}, err
 		}
-		desiredHash, err := tracker.hashFile(index, stagedSource, "verify_candidate")
-		if err != nil {
-			return Prepared{}, err
+		desiredHash := strings.ToLower(strings.TrimSpace(change.DesiredSHA256))
+		if desiredHash != "" {
+			if len(desiredHash) != 64 {
+				return Prepared{}, fmt.Errorf("invalid trusted candidate SHA-256 for %s", relative)
+			}
+			if _, err := hex.DecodeString(desiredHash); err != nil {
+				return Prepared{}, fmt.Errorf("invalid trusted candidate SHA-256 for %s", relative)
+			}
+			if info, err := os.Stat(stagedSource); err != nil {
+				return Prepared{}, err
+			} else if change.DesiredBytes > 0 && info.Size() != change.DesiredBytes {
+				return Prepared{}, fmt.Errorf("trusted candidate size drift: %s", relative)
+			}
+			tracker.skipPhase(index, "verify_candidate")
+		} else {
+			var err error
+			desiredHash, err = tracker.hashFile(index, stagedSource, "verify_candidate")
+			if err != nil {
+				return Prepared{}, err
+			}
 		}
 		stagedRelative := filepath.Join("staged", relative)
 		stagedCopy := filepath.Join(transactionRoot, stagedRelative)
@@ -212,12 +238,10 @@ func PrepareWithOptions(gameRoot, stateRoot string, changes []ChangeSpec, select
 				return Prepared{}, fmt.Errorf("stage %s: %w", relative, err)
 			}
 		}
-		if hash, err := tracker.hashFile(index, stagedCopy, "verify_staged"); err != nil || hash != desiredHash {
-			if err == nil {
-				err = fmt.Errorf("staged hash mismatch")
-			}
-			return Prepared{}, fmt.Errorf("verify staged %s: %w", relative, err)
-		}
+		// Staging is either a filesystem clone of the just-verified private
+		// candidate or a copy whose SHA-256 is checked while bytes are written.
+		// Re-reading the complete staged file here adds no independent boundary.
+		tracker.skipPhase(index, "verify_staged")
 
 		record := FileRecord{
 			RelativePath:        filepath.ToSlash(relative),
@@ -238,6 +262,18 @@ func PrepareWithOptions(gameRoot, stateRoot string, changes []ChangeSpec, select
 			record.OriginalSHA256, err = tracker.hashFile(index, target, "verify_current")
 			if err != nil {
 				return Prepared{}, err
+			}
+			expectedOriginal := strings.ToLower(strings.TrimSpace(change.ExpectedOriginalSHA256))
+			if expectedOriginal != "" {
+				if len(expectedOriginal) != 64 {
+					return Prepared{}, fmt.Errorf("invalid expected current SHA-256 for %s", relative)
+				}
+				if _, err := hex.DecodeString(expectedOriginal); err != nil {
+					return Prepared{}, fmt.Errorf("invalid expected current SHA-256 for %s", relative)
+				}
+				if record.OriginalSHA256 != expectedOriginal {
+					return Prepared{}, fmt.Errorf("managed target changed before update: %s", relative)
+				}
 			}
 			backupRelative := filepath.Join("backup", relative)
 			backupBase := transactionRoot
@@ -286,15 +322,32 @@ func PrepareWithOptions(gameRoot, stateRoot string, changes []ChangeSpec, select
 					}
 				}
 			}
-			if hash, err := tracker.hashFile(index, backup, "verify_backup"); err != nil || hash != record.OriginalSHA256 {
-				if err == nil {
-					err = fmt.Errorf("backup hash mismatch")
+			// A hardlink is the exact inode that was just hashed; a successful
+			// reflink is an exact copy-on-write clone; a fallback copy is hashed
+			// during transfer. Avoid a second full read of the rollback copy.
+			backupInfo, statErr := os.Stat(backup)
+			if statErr != nil || !backupInfo.Mode().IsRegular() || backupInfo.Size() != info.Size() {
+				if statErr == nil {
+					statErr = fmt.Errorf("rollback backup size/type mismatch")
 				}
-				return Prepared{}, fmt.Errorf("verify backup %s: %w", relative, err)
+				return Prepared{}, fmt.Errorf("verify backup %s: %w", relative, statErr)
 			}
+			if backupStorageMethod == "hardlink" {
+				sourceInfo, sourceStatErr := os.Stat(backupSource)
+				if sourceStatErr != nil || !os.SameFile(sourceInfo, backupInfo) {
+					if sourceStatErr == nil {
+						sourceStatErr = fmt.Errorf("rollback hardlink does not reference the verified source inode")
+					}
+					return Prepared{}, fmt.Errorf("verify backup %s: %w", relative, sourceStatErr)
+				}
+			}
+			tracker.skipPhase(index, "verify_backup")
 			record.BackupPath = filepath.ToSlash(backupRelative)
 			record.BackupStorageMethod = backupStorageMethod
 		case errors.Is(statErr, os.ErrNotExist):
+			if strings.TrimSpace(change.ExpectedOriginalSHA256) != "" {
+				return Prepared{}, fmt.Errorf("managed target disappeared before update: %s", relative)
+			}
 			record.OriginalExisted = false
 			tracker.skipPhase(index, "verify_current")
 			tracker.skipPhase(index, "verify_backup_source")
@@ -400,6 +453,52 @@ func DiscardPrepared(journalPath string) (Journal, error) {
 		return Journal{}, err
 	}
 	return journal, nil
+}
+
+// UpdatePreparedMetadata atomically augments metadata for a prepared transaction.
+// It is used when a durable rollback source is created by Prepare itself and the
+// persistent baseline manifest is published immediately afterwards. Game files
+// are still untouched at this point.
+func UpdatePreparedMetadata(journalPath string, updates map[string]string) (Journal, error) {
+	journal, err := Load(journalPath)
+	if err != nil {
+		return Journal{}, err
+	}
+	if journal.Status != StatusPrepared {
+		return Journal{}, fmt.Errorf("cannot update transaction metadata in status %s", journal.Status)
+	}
+	if journal.Metadata == nil {
+		journal.Metadata = map[string]string{}
+	}
+	for key, value := range updates {
+		key = strings.TrimSpace(key)
+		if key == "" {
+			return Journal{}, fmt.Errorf("transaction metadata key is empty")
+		}
+		journal.Metadata[key] = value
+	}
+	if err := writeJournal(journalPath, journal); err != nil {
+		return Journal{}, err
+	}
+	return journal, nil
+}
+
+func PruneCommittedStaged(journalPath string) error {
+	journal, err := Load(journalPath)
+	if err != nil {
+		return err
+	}
+	if journal.Status != StatusCommitted {
+		return fmt.Errorf("cannot prune staged payload for transaction in status %s", journal.Status)
+	}
+	staged, err := secureJoin(journal.TransactionRoot, "staged")
+	if err != nil {
+		return err
+	}
+	if err := os.RemoveAll(staged); err != nil {
+		return fmt.Errorf("remove committed staged payloads: %w", err)
+	}
+	return syncParent(staged)
 }
 
 func Commit(journalPath string) (Journal, error) {
@@ -509,7 +608,7 @@ func RollbackWithProgress(journalPath string, progress ProgressFunc) (Journal, e
 		if record.OriginalExisted && exists && currentHash == record.OriginalSHA256 {
 			tracker.skipPhase(index, "verify_backup")
 			tracker.skipPhase(index, "restore")
-			record.RollbackState = "restored"
+			record.RollbackState = "already_restored"
 			record.CommitState = "rolled_back"
 			journal.UpdatedUTC = time.Now().UTC()
 			if err := writeJournal(journalPath, journal); err != nil {
@@ -520,7 +619,7 @@ func RollbackWithProgress(journalPath string, progress ProgressFunc) (Journal, e
 		if !record.OriginalExisted && !exists {
 			tracker.skipPhase(index, "verify_backup")
 			tracker.skipPhase(index, "restore")
-			record.RollbackState = "removed"
+			record.RollbackState = "already_removed"
 			record.CommitState = "rolled_back"
 			journal.UpdatedUTC = time.Now().UTC()
 			if err := writeJournal(journalPath, journal); err != nil {
@@ -538,13 +637,10 @@ func RollbackWithProgress(journalPath string, progress ProgressFunc) (Journal, e
 			return journal, fmt.Errorf("refusing rollback because target changed after commit: %s", record.RelativePath)
 		}
 		if record.OriginalExisted {
-			backupHash, err := tracker.hashFile(index, backup, "verify_backup")
-			if err != nil {
-				return journal, err
-			}
-			if backupHash != record.OriginalSHA256 {
-				return journal, fmt.Errorf("backup changed: %s", record.RelativePath)
-			}
+			// atomicInstallVerified validates the rollback source while materializing
+			// the temporary replacement and refuses the rename on any hash mismatch.
+			// Do not read the same multi-gigabyte backup once more immediately before it.
+			tracker.skipPhase(index, "verify_backup")
 			mode := fs.FileMode(record.OriginalMode)
 			if mode == 0 {
 				mode = 0o644

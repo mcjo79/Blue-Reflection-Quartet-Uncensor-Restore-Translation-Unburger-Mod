@@ -331,6 +331,11 @@ func TestCommitAndRollbackReportByteProgress(t *testing.T) {
 		t.Fatal(err)
 	}
 	assertProgressComplete(t, rollbackEvents, "rollback", "Data/A.PAK")
+	for _, event := range rollbackEvents {
+		if event.Phase == "verify_backup" && event.FileBytesTotal != 0 {
+			t.Fatalf("rollback still performs a redundant full backup verification pass: %+v", event)
+		}
+	}
 	if got := read(t, target); got != "original-progress-data" {
 		t.Fatalf("rollback restored %q", got)
 	}
@@ -636,5 +641,171 @@ func TestSiblingFilesystemBackupSupportsCommitAndRollback(t *testing.T) {
 	}
 	if got := read(t, target); got != "original" {
 		t.Fatalf("rollback restored %q", got)
+	}
+}
+
+func TestPruneCommittedStagedRemovesOnlyDesiredPayload(t *testing.T) {
+	root := t.TempDir()
+	game := filepath.Join(root, "game")
+	state := filepath.Join(root, "state")
+	stagedSource := filepath.Join(root, "candidate.bin")
+	if err := os.MkdirAll(game, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	target := filepath.Join(game, "PACK.PAK")
+	if err := os.WriteFile(target, []byte("original"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(stagedSource, []byte("desired"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	prepared, err := Prepare(game, state, []ChangeSpec{{RelativePath: "PACK.PAK", StagedPath: stagedSource}}, []string{"translation"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	committed, err := Commit(prepared.JournalPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if committed.Status != StatusCommitted {
+		t.Fatalf("unexpected status: %s", committed.Status)
+	}
+	stagedDir := filepath.Join(committed.TransactionRoot, "staged")
+	if _, err := os.Stat(stagedDir); err != nil {
+		t.Fatalf("staged payload missing before prune: %v", err)
+	}
+	backupPath := filepath.Join(committed.TransactionRoot, filepath.FromSlash(committed.Files[0].BackupPath))
+	if _, err := os.Stat(backupPath); err != nil {
+		t.Fatalf("backup missing before prune: %v", err)
+	}
+	if err := PruneCommittedStaged(prepared.JournalPath); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(stagedDir); !os.IsNotExist(err) {
+		t.Fatalf("committed staged payload survived prune: %v", err)
+	}
+	if _, err := os.Stat(backupPath); err != nil {
+		t.Fatalf("rollback backup was removed by prune: %v", err)
+	}
+}
+
+func TestPrepareTrustedCandidateSkipsRedundantRereadsButCommitStillChecksBytes(t *testing.T) {
+	root := t.TempDir()
+	game := filepath.Join(root, "game")
+	state := filepath.Join(root, "state")
+	payload := filepath.Join(root, "payload", "A.PAK")
+	target := filepath.Join(game, "Data", "A.PAK")
+	write(t, target, "original")
+	write(t, payload, "patched-candidate")
+	desired, err := hashFile(payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var events []ProgressEvent
+	prepared, err := PrepareWithOptions(game, state, []ChangeSpec{{
+		RelativePath: "Data/A.PAK", StagedPath: payload,
+		DesiredSHA256: desired, DesiredBytes: info.Size(),
+	}}, []string{"translation"}, nil, PrepareOptions{Progress: func(event ProgressEvent) {
+		events = append(events, event)
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, phase := range []string{"verify_candidate", "verify_staged", "verify_backup"} {
+		seen := false
+		for _, event := range events {
+			if event.Phase == phase {
+				seen = true
+				if event.FileBytesTotal != 0 {
+					t.Fatalf("redundant phase %s still accounts for a full payload read: %+v", phase, event)
+				}
+			}
+		}
+		if !seen {
+			t.Fatalf("progress did not report skipped phase %s", phase)
+		}
+	}
+	privateStaged := filepath.Join(prepared.Journal.TransactionRoot, filepath.FromSlash(prepared.Journal.Files[0].StagedPath))
+	if err := os.WriteFile(privateStaged, []byte("tampered-candidate"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Commit(prepared.JournalPath); err == nil {
+		t.Fatal("commit accepted staged bytes changed after the trusted prepare handoff")
+	}
+}
+
+func TestRollbackRestoresReadOnlyOriginalWithoutReadOnlyResync(t *testing.T) {
+	root := t.TempDir()
+	game := filepath.Join(root, "game")
+	state := filepath.Join(root, "state")
+	payload := filepath.Join(root, "payload")
+	if err := os.MkdirAll(game, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	target := filepath.Join(game, "B1.dll")
+	write(t, target, "read-only-original")
+	if err := os.Chmod(target, 0o444); err != nil {
+		t.Fatal(err)
+	}
+	write(t, payload, "patched-dll")
+	prepared, err := Prepare(game, state, []ChangeSpec{{RelativePath: "B1.dll", StagedPath: payload}}, []string{"quartet_legacy_dlc"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Commit(prepared.JournalPath); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Rollback(prepared.JournalPath); err != nil {
+		t.Fatalf("rollback of read-only original failed: %v", err)
+	}
+	if got := read(t, target); got != "read-only-original" {
+		t.Fatalf("rollback restored %q", got)
+	}
+}
+
+func TestPrepareExpectedOriginalHashUsesExistingCurrentPass(t *testing.T) {
+	root := t.TempDir()
+	game := filepath.Join(root, "game")
+	state := filepath.Join(root, "state")
+	target := filepath.Join(game, "Data", "A.PAK")
+	payload := filepath.Join(root, "payload", "A.PAK")
+	write(t, target, "installed-v1")
+	write(t, payload, "installed-v2")
+	expected, err := hashFile(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var events []ProgressEvent
+	prepared, err := PrepareWithOptions(game, state, []ChangeSpec{{
+		RelativePath: "Data/A.PAK", StagedPath: payload, ExpectedOriginalSHA256: expected,
+	}}, []string{"translation"}, nil, PrepareOptions{Progress: func(event ProgressEvent) {
+		events = append(events, event)
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if prepared.Journal.Files[0].OriginalSHA256 != expected {
+		t.Fatalf("prepared original hash=%s want=%s", prepared.Journal.Files[0].OriginalSHA256, expected)
+	}
+	verifyCurrentPasses := 0
+	for _, event := range events {
+		if event.Phase == "verify_current" && event.FileBytesTotal > 0 {
+			verifyCurrentPasses++
+		}
+	}
+	if verifyCurrentPasses == 0 {
+		t.Fatal("expected-current guard did not reuse the normal verify_current pass")
+	}
+
+	write(t, target, "external-change")
+	if _, err := PrepareWithOptions(game, filepath.Join(root, "state2"), []ChangeSpec{{
+		RelativePath: "Data/A.PAK", StagedPath: payload, ExpectedOriginalSHA256: expected,
+	}}, []string{"translation"}, nil, PrepareOptions{}); err == nil || !strings.Contains(err.Error(), "managed target changed before update") {
+		t.Fatalf("externally changed managed target was not rejected: %v", err)
 	}
 }

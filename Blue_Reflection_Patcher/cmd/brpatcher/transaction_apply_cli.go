@@ -39,6 +39,7 @@ type transactionCommitReport struct {
 	GameFilesModified           bool      `json:"game_files_modified"`
 	AtomicPerFile               bool      `json:"atomic_per_file"`
 	RecoveryPolicy              string    `json:"recovery_policy"`
+	CleanupWarnings             []string  `json:"cleanup_warnings,omitempty"`
 }
 
 type transactionRollbackReport struct {
@@ -196,7 +197,7 @@ func commitPreparedTransactionWithProgress(journalPath string, progress transact
 		if !activeExists || active.TransactionID != context.ExpectedPreviousID {
 			return transactionCommitReport{}, fmt.Errorf("active installation changed after prepare: expected transaction %s", context.ExpectedPreviousID)
 		}
-		if journal.Status == transaction.StatusPrepared {
+		if journal.Status == transaction.StatusPrepared && strings.TrimSpace(journal.Metadata["active_state_prepare_guard"]) != "expected_installed_sha256" {
 			inspection, inspectErr := installstate.Inspect(context.StateDirectory, context.TargetID, journal.GameRoot)
 			if inspectErr != nil {
 				return transactionCommitReport{}, inspectErr
@@ -207,6 +208,11 @@ func commitPreparedTransactionWithProgress(journalPath string, progress transact
 				return transactionCommitReport{}, fmt.Errorf("active installation no longer matches the state used during prepare: expected=%s current=%s", expectedInspection, inspection.Status)
 			}
 		}
+		// Integrated managed updates compare each current target with the active
+		// installed SHA during transaction Prepare's existing verify_current pass.
+		// CommitWithProgress independently checks those recorded original hashes
+		// again immediately before replacement, so another whole-install Inspect
+		// here would only duplicate multi-gigabyte I/O.
 	}
 	committed, err := transaction.CommitWithProgress(context.JournalPath, progress)
 	if err != nil {
@@ -215,18 +221,37 @@ func commitPreparedTransactionWithProgress(journalPath string, progress transact
 	if committed.Status != transaction.StatusCommitted {
 		return transactionCommitReport{}, fmt.Errorf("transaction did not reach committed status: %s", committed.Status)
 	}
+	emitTransactionStatus(progress, "finalize", "publish_state", "active_state.json")
 	activated, err := installstate.Activate(context.StateDirectory, context.TargetID, committed.GameRoot, context.BaselineManifestPath, context.JournalPath)
 	if err != nil {
 		return transactionCommitReport{}, fmt.Errorf("game files were committed but active-state publication failed: %w; rerun transaction-commit with the same journal or roll it back", err)
 	}
-	inspection, err := installstate.Inspect(context.StateDirectory, context.TargetID, committed.GameRoot)
+	emitTransactionStatus(progress, "finalize", "verify_installed_state", "Checking installed files")
+	inspection, err := installstate.InspectWithProgress(context.StateDirectory, context.TargetID, committed.GameRoot, progress)
 	if err != nil {
 		return transactionCommitReport{}, err
 	}
 	if inspection.Status != installstate.InspectionMatchesInstalled || inspection.TransactionID != committed.TransactionID {
 		return transactionCommitReport{}, fmt.Errorf("installed files do not match the published active state: %s", inspection.Status)
 	}
-	return makeTransactionCommitReport(context, activated, "installed"), nil
+	report := makeTransactionCommitReport(context, activated, "installed")
+	emitTransactionStatus(progress, "finalize", "cleanup", "Temporary staged transaction data")
+	if cleanupErr := transaction.PruneCommittedStaged(context.JournalPath); cleanupErr != nil {
+		report.CleanupWarnings = append(report.CleanupWarnings, cleanupErr.Error())
+	}
+	emitTransactionStatus(progress, "finalize", "storage_cleanup", "Removing obsolete persistent patcher payloads")
+	if _, cleanupErr := compactInstallationStorage(context.StateDirectory); cleanupErr != nil {
+		report.CleanupWarnings = append(report.CleanupWarnings, cleanupErr.Error())
+	}
+	emitTransactionStatus(progress, "finalize", "game_files_ready", "Game files installed and verified")
+	return report, nil
+}
+
+func emitTransactionStatus(progress transaction.ProgressFunc, operation, phase, detail string) {
+	if progress == nil {
+		return
+	}
+	progress(transaction.ProgressEvent{Operation: operation, Phase: phase, RelativePath: detail})
 }
 
 func makeTransactionCommitReport(context transactionCommandContext, active installstate.State, status string) transactionCommitReport {
@@ -289,7 +314,8 @@ func rollbackInstalledTransactionWithProgress(journalPath string, progress trans
 	var restored installstate.State
 	var activeAfter bool
 	if reconcileCurrent {
-		restored, activeAfter, err = installstate.ReconcileRollback(context.StateDirectory, context.TargetID, journal.GameRoot, context.JournalPath)
+		emitTransactionStatus(progress, "rollback", "reconcile_state", "Reconciling managed installation state")
+		restored, activeAfter, err = installstate.ReconcileRollbackWithProgress(context.StateDirectory, context.TargetID, journal.GameRoot, context.JournalPath, progress)
 		if err != nil {
 			return transactionRollbackReport{}, fmt.Errorf("files were rolled back but active-state reconciliation failed: %w", err)
 		}
@@ -306,17 +332,28 @@ func rollbackInstalledTransactionWithProgress(journalPath string, progress trans
 	if rolledBack.Status != transaction.StatusRolledBack {
 		return transactionRollbackReport{}, fmt.Errorf("transaction did not reach rolled_back status: %s", rolledBack.Status)
 	}
+	gameFilesModified := false
+	for _, item := range rolledBack.Files {
+		if item.RollbackState == "restored" || item.RollbackState == "removed" {
+			gameFilesModified = true
+			break
+		}
+	}
 	report := transactionRollbackReport{
 		Type: transactionRollbackReportType, FormatVersion: transactionRollbackFormatVersion,
 		Status: "rolled_back", GeneratedUTC: time.Now().UTC(), TransactionID: rolledBack.TransactionID,
 		JournalPath: context.JournalPath, TargetID: context.TargetID, GameRoot: rolledBack.GameRoot,
 		StateDirectory: context.StateDirectory, SelectedModules: append([]string(nil), rolledBack.SelectedModules...),
 		FileCount: len(rolledBack.Files), ActiveAfterRollback: activeAfter,
-		GameFilesModified: true, RecoveryMode: recoveryMode,
+		GameFilesModified: gameFilesModified, RecoveryMode: recoveryMode,
 		RecoveryPolicy: "restore only while current hashes match the transaction-installed state; restore the previous active state or persistent baseline and refuse external changes",
 	}
 	if activeAfter {
 		report.ActiveTransactionID = restored.TransactionID
+	}
+	emitTransactionStatus(progress, "rollback", "storage_cleanup", "Removing obsolete rollback and baseline payloads")
+	if _, cleanupErr := compactInstallationStorage(context.StateDirectory); cleanupErr != nil {
+		return transactionRollbackReport{}, fmt.Errorf("rollback completed but persistent storage cleanup failed: %w", cleanupErr)
 	}
 	return report, nil
 }
@@ -334,6 +371,9 @@ func printHumanTransactionCommit(out io.Writer, report transactionCommitReport) 
 		fmt.Fprintf(out, "%sThe transaction was already committed and matches the active installation state; no file was rewritten.%s\n", ansiDim, ansiReset)
 	} else {
 		fmt.Fprintf(out, "%sGame files were atomically replaced per file, verified by SHA-256 and recorded for rollback.%s\n", ansiDim, ansiReset)
+	}
+	for _, warning := range report.CleanupWarnings {
+		fmt.Fprintf(out, "WARNING: post-install temporary payload cleanup: %s\n", warning)
 	}
 }
 

@@ -31,9 +31,25 @@ func inspectGuidedManagement(detection model.Detection) (guidedManagementState, 
 		return guidedManagementState{}, err
 	}
 	stateDirectory := installationStateDirectory(base, detection.TargetID, detection.Root)
-	inspection, err := installstate.Inspect(stateDirectory, detection.TargetID, detection.Root)
+	// Startup management is intentionally metadata-only. A previous version
+	// hashed every managed multi-gigabyte file before it could even show the
+	// rollback menu. The destructive action itself performs the authoritative
+	// hash guard, so that eager full-disk pass added latency without adding a
+	// distinct safety boundary.
+	active, exists, err := installstate.Load(stateDirectory, detection.TargetID, detection.Root)
 	if err != nil {
 		return guidedManagementState{}, err
+	}
+	inspection := installstate.Inspection{Status: installstate.InspectionNotActive, Active: false, Files: []installstate.FileComparison{}, Warnings: []string{}}
+	if exists {
+		inspection.Active = true
+		inspection.Status = "active_recorded_verification_deferred"
+		inspection.StatePath = installstate.ActivePath(stateDirectory)
+		inspection.TransactionID = active.TransactionID
+		inspection.BaselineID = active.BaselineID
+		inspection.BaselineManifestPath = active.BaselineManifestPath
+		inspection.PreviousStatePath = active.PreviousStatePath
+		inspection.SelectedModules = append([]string(nil), active.SelectedModules...)
 	}
 	return guidedManagementState{Detection: detection, StateDirectory: stateDirectory, Inspection: inspection}, nil
 }
@@ -56,7 +72,7 @@ func chooseGuidedInstallationManagement(detection model.Detection, in io.Reader,
 
 func chooseGuidedInstallationManagementLine(state guidedManagementState, in io.Reader, out io.Writer) (guidedManagementAction, error) {
 	fmt.Fprintf(out, "\nManaged installation detected for %s\n", state.Detection.DisplayName)
-	fmt.Fprintf(out, "Status: %s\nModules: %s\n", state.Inspection.Status, strings.Join(state.Inspection.SelectedModules, ", "))
+	fmt.Fprintf(out, "Status: recorded managed installation; file verification runs only for the chosen action\nModules: %s\n", strings.Join(state.Inspection.SelectedModules, ", "))
 	fmt.Fprintln(out, "  1) Continue to install/update modules")
 	fmt.Fprintln(out, "  2) Remove all patcher-installed modules")
 	fmt.Fprintln(out, "  3) Cancel")
@@ -123,18 +139,21 @@ func chooseGuidedInstallationManagementTUI(state guidedManagementState, in *os.F
 
 func renderGuidedInstallationManagementMenu(out io.Writer, state guidedManagementState, cursor int) {
 	fmt.Fprint(out, ansiClear)
-	fmt.Fprintf(out, "%s%sBLUE REFLECTION unified patcher%s\n", ansiBold, ansiCyan, ansiReset)
-	fmt.Fprintf(out, "%sManaged installation:%s %s%s%s\n", ansiBold, ansiReset, ansiBold, state.Detection.DisplayName, ansiReset)
-	fmt.Fprintf(out, "%sGame directory:%s %s\n", ansiGray, ansiReset, state.Detection.Root)
-	fmt.Fprintf(out, "%sStatus:%s %s\n", ansiGray, ansiReset, state.Inspection.Status)
-	fmt.Fprintf(out, "%sModules:%s %s\n\n", ansiGray, ansiReset, strings.Join(state.Inspection.SelectedModules, ", "))
-	fmt.Fprintf(out, "%sChoose action%s\n", ansiBold, ansiReset)
-	fmt.Fprintf(out, "%s↑/↓ move   Enter confirms   Q cancels%s\n\n", ansiDim, ansiReset)
+	renderTUIFrameTop(out, "MANAGED INSTALLATION")
+	renderTUIFrameRow(out, "%sGame%s      %s%s%s", ansiGray, ansiReset, ansiBold, state.Detection.DisplayName, ansiReset)
+	renderTUIFrameRow(out, "%sDirectory%s %s", ansiGray, ansiReset, state.Detection.Root)
+	renderTUIFrameRow(out, "%sModules%s   %s", ansiGray, ansiReset, strings.Join(state.Inspection.SelectedModules, ", "))
+	renderTUIFrameRow(out, "%sStatus%s    managed installation recorded", ansiGray, ansiReset)
+	renderTUIFrameRow(out, "%sVerification%s deferred until the selected action; opening this menu does not rehash the game", ansiGray, ansiReset)
+	renderTUIFrameRow(out, "%sControls%s  ↑/↓ move · Enter confirms · Q cancels", ansiGray, ansiReset)
+	renderTUIFrameBlank(out)
+	renderTUIFrameRow(out, "%sChoose action%s", ansiBold, ansiReset)
+	renderTUIFrameBlank(out)
 
 	labels := []string{"Install / update modules", "Remove all installed modules", "Cancel"}
 	descriptions := []string{
-		"Continue to module selection, payload verification and the normal explicit install menu.",
-		"Roll back every patcher-managed update in reverse order until the preserved baseline is restored.",
+		"Continue to module selection. Required safety checks run with visible progress only when they are actually needed.",
+		"Run the hash-guarded rollback directly. It will refuse externally changed files before overwriting them.",
 		"Exit without changing files or state.",
 	}
 	for index, label := range labels {
@@ -150,8 +169,10 @@ func renderGuidedInstallationManagementMenu(out io.Writer, state guidedManagemen
 		} else if index == 1 {
 			labelStyle = ansiYellow + ansiBold
 		}
-		fmt.Fprintf(out, "%s%s%s%s%s%s\n", style, pointer, ansiReset, labelStyle, label, ansiReset)
-		fmt.Fprintf(out, "     %s%s%s\n\n", ansiDim, descriptions[index], ansiReset)
+		renderTUIFrameRow(out, "%s%s%s%s%s%s", style, pointer, ansiReset, labelStyle, label, ansiReset)
+		renderTUIFrameRow(out, "    %s%s%s", ansiDim, descriptions[index], ansiReset)
+		renderTUIFrameBlank(out)
 	}
-	fmt.Fprintf(out, "%sRemoval proceeds only while every managed file matches either the recorded installed state or the preserved baseline; external changes are never overwritten.%s\n", ansiDim, ansiReset)
+	renderTUIFrameRow(out, "%sRollback verifies the current transaction-owned hash immediately before each restore. Unknown/external changes are never overwritten.%s", ansiDim, ansiReset)
+	renderTUIFrameBottom(out)
 }

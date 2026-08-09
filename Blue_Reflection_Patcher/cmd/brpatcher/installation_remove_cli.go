@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"local/blue-reflection-patcher/internal/plan/installstate"
+	"local/blue-reflection-patcher/internal/plan/transaction"
 	"local/blue-reflection-patcher/internal/targets"
 )
 
@@ -67,7 +68,10 @@ func commandInstallationRemove(args []string) error {
 	if len(detections) != 1 {
 		return fmt.Errorf("installation-remove requires exactly one detected installation; found %d", len(detections))
 	}
-	report, err := removeManagedInstallation(detections[0].TargetID, detections[0].DisplayName, detections[0].Root)
+	progress := newTransactionProgressRenderer(os.Stdout)
+	progress.Status("rollback", "load_state", "Reading rollback metadata")
+	report, err := removeManagedInstallationWithProgress(detections[0].TargetID, detections[0].DisplayName, detections[0].Root, progress.Callback)
+	progress.Finish()
 	if err != nil {
 		return err
 	}
@@ -82,15 +86,23 @@ func commandInstallationRemove(args []string) error {
 }
 
 func removeManagedInstallation(targetID, displayName, gameRoot string) (installationRemoveReport, error) {
+	return removeManagedInstallationWithProgress(targetID, displayName, gameRoot, nil)
+}
+
+func removeManagedInstallationWithProgress(targetID, displayName, gameRoot string, progress transaction.ProgressFunc) (installationRemoveReport, error) {
 	base, err := stateRoot()
 	if err != nil {
 		return installationRemoveReport{}, err
 	}
 	stateDirectory := installationStateDirectory(base, targetID, gameRoot)
-	return removeManagedInstallationFromState(targetID, displayName, gameRoot, stateDirectory)
+	return removeManagedInstallationFromStateWithProgress(targetID, displayName, gameRoot, stateDirectory, progress)
 }
 
 func removeManagedInstallationFromState(targetID, displayName, gameRoot, stateDirectory string) (installationRemoveReport, error) {
+	return removeManagedInstallationFromStateWithProgress(targetID, displayName, gameRoot, stateDirectory, nil)
+}
+
+func removeManagedInstallationFromStateWithProgress(targetID, displayName, gameRoot, stateDirectory string, progress transaction.ProgressFunc) (installationRemoveReport, error) {
 	report := installationRemoveReport{
 		Type: installationRemoveReportType, FormatVersion: installationRemoveFormatVersion,
 		Status: "not_installed", GeneratedUTC: time.Now().UTC(), TargetID: targetID,
@@ -105,6 +117,9 @@ func removeManagedInstallationFromState(targetID, displayName, gameRoot, stateDi
 			return report, err
 		}
 		if !exists {
+			if progress != nil {
+				progress(transaction.ProgressEvent{Operation: "rollback", Phase: "baseline_restored", RelativePath: "Persistent baseline restored"})
+			}
 			report.BaselineRestored = true
 			if len(report.RollbackSteps) > 0 || report.StaleStateRecordCleared {
 				report.Status = "removed"
@@ -120,30 +135,23 @@ func removeManagedInstallationFromState(targetID, displayName, gameRoot, stateDi
 		}
 		seen[active.TransactionID] = true
 
-		inspection, err := installstate.Inspect(stateDirectory, targetID, gameRoot)
+		// Do not pre-hash the entire managed installation here. RollbackWithProgress
+		// performs the authoritative per-file installed/original hash guard immediately
+		// before any replacement. If the game was externally changed it fails closed
+		// before overwriting that path. This removes the old duplicate startup pass.
+		if progress != nil {
+			progress(transaction.ProgressEvent{Operation: "rollback", Phase: "verify_rollback_target", RelativePath: active.TransactionID})
+		}
+		rolledBack, err := rollbackInstalledTransactionWithProgress(active.JournalPath, progress)
 		if err != nil {
-			return report, err
+			return report, fmt.Errorf("remove active transaction %s: %w", active.TransactionID, err)
 		}
-		switch inspection.Status {
-		case installstate.InspectionMatchesInstalled:
-			rolledBack, err := rollbackInstalledTransaction(active.JournalPath)
-			if err != nil {
-				return report, fmt.Errorf("remove active transaction %s: %w", active.TransactionID, err)
-			}
-			report.RollbackSteps = append(report.RollbackSteps, installationRemoveStep{
-				TransactionID: rolledBack.TransactionID,
-				JournalPath:   rolledBack.JournalPath,
-				FileCount:     rolledBack.FileCount,
-			})
-			report.GameFilesModified = report.GameFilesModified || rolledBack.GameFilesModified
-		case installstate.InspectionDisplacedToBaseline:
-			if err := installstate.ClearDisplacedActiveState(stateDirectory, targetID, gameRoot); err != nil {
-				return report, err
-			}
-			report.StaleStateRecordCleared = true
-		default:
-			return report, fmt.Errorf("refusing complete removal because active installation status is %s; restore exact patcher-installed files or the preserved baseline before retrying", inspection.Status)
-		}
+		report.RollbackSteps = append(report.RollbackSteps, installationRemoveStep{
+			TransactionID: rolledBack.TransactionID,
+			JournalPath:   rolledBack.JournalPath,
+			FileCount:     rolledBack.FileCount,
+		})
+		report.GameFilesModified = report.GameFilesModified || rolledBack.GameFilesModified
 	}
 	return report, fmt.Errorf("active installation rollback history exceeds the safety limit")
 }

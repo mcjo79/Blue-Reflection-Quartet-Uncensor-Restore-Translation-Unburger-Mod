@@ -47,9 +47,12 @@ type progressTracker struct {
 }
 
 type prepareProgressPlan struct {
-	relativePath   string
-	candidateBytes int64
-	targetBytes    int64
+	relativePath            string
+	verifyCandidateBytes    int64
+	stageBytes              int64
+	targetBytes             int64
+	verifyBackupSourceBytes int64
+	backupBytes             int64
 }
 
 type prepareProgressTracker struct {
@@ -59,21 +62,28 @@ type prepareProgressTracker struct {
 	completed int64
 }
 
-func newPrepareProgressTracker(gameRoot string, changes []ChangeSpec, callback ProgressFunc) *prepareProgressTracker {
+func newPrepareProgressTracker(gameRoot string, changes []ChangeSpec, options PrepareOptions, callback ProgressFunc) *prepareProgressTracker {
 	t := &prepareProgressTracker{callback: callback, plans: make([]prepareProgressPlan, len(changes))}
 	for index, change := range changes {
 		relative := filepath.ToSlash(strings.TrimSpace(change.RelativePath))
 		target := filepath.Join(gameRoot, filepath.FromSlash(relative))
+		candidateBytes := regularFileSize(change.StagedPath)
+		targetBytes := regularFileSize(target)
 		plan := prepareProgressPlan{
-			relativePath:   relative,
-			candidateBytes: regularFileSize(change.StagedPath),
-			targetBytes:    regularFileSize(target),
+			relativePath: relative,
+			stageBytes:   candidateBytes,
+			targetBytes:  targetBytes,
 		}
-		// Prepare performs one candidate verification, one staging transfer,
-		// one staged verification, one current-target verification, one backup
-		// transfer and one backup verification. Metadata-only clone/link phases
-		// are counted as completed instantly when no byte copy is required.
-		t.total += 3*plan.candidateBytes + 4*plan.targetBytes
+		if strings.TrimSpace(change.DesiredSHA256) == "" {
+			plan.verifyCandidateBytes = candidateBytes
+		}
+		if strings.TrimSpace(change.VerifiedBackupPath) != "" {
+			plan.verifyBackupSourceBytes = targetBytes
+		}
+		if !options.RequireHardlinkBackup {
+			plan.backupBytes = targetBytes
+		}
+		t.total += plan.verifyCandidateBytes + plan.stageBytes + plan.targetBytes + plan.verifyBackupSourceBytes + plan.backupBytes
 		t.plans[index] = plan
 	}
 	return t
@@ -85,10 +95,18 @@ func (t *prepareProgressTracker) phaseTotal(index int, phase string) int64 {
 	}
 	plan := t.plans[index]
 	switch phase {
-	case "verify_candidate", "stage", "verify_staged":
-		return plan.candidateBytes
-	case "verify_current", "verify_backup_source", "backup", "verify_backup":
+	case "verify_candidate":
+		return plan.verifyCandidateBytes
+	case "stage":
+		return plan.stageBytes
+	case "verify_staged", "verify_backup":
+		return 0
+	case "verify_current":
 		return plan.targetBytes
+	case "verify_backup_source":
+		return plan.verifyBackupSourceBytes
+	case "backup":
+		return plan.backupBytes
 	default:
 		return 0
 	}
@@ -263,7 +281,10 @@ func newProgressTracker(operation string, journal Journal, callback ProgressFunc
 			if record.OriginalExisted {
 				plan.backupBytes = regularFileSize(backup)
 			}
-			t.total += plan.targetBytes + plan.backupBytes + plan.backupBytes
+			// The restore transfer verifies the backup bytes against OriginalSHA256
+			// before the atomic rename. A separate full backup hash immediately
+			// beforehand is redundant and doubles rollback read I/O.
+			t.total += plan.targetBytes + plan.backupBytes
 		}
 		t.plans[index] = plan
 	}
@@ -288,8 +309,10 @@ func (t *progressTracker) phaseTotal(index int, phase string) int64 {
 		return plan.targetBytes
 	case "install":
 		return plan.sourceBytes
-	case "verify_backup", "restore":
+	case "restore":
 		return plan.backupBytes
+	case "verify_backup":
+		return 0
 	default:
 		return 0
 	}

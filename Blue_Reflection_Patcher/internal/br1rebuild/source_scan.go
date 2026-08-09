@@ -40,11 +40,12 @@ type WardrobeSurvey struct {
 }
 
 type SurveyOptions struct {
-	SourceLocator    SourceLocator
-	TargetRoot       string
-	TextTool         EncryptedTextTool
-	UseHantForHans   bool
-	RequireFreeSpace bool
+	SourceLocator       SourceLocator
+	TargetRoot          string
+	TargetFileOverrides map[string]string
+	TextTool            EncryptedTextTool
+	UseHantForHans      bool
+	RequireFreeSpace    bool
 }
 
 func SurveyInstallPair(opts SurveyOptions) (SurveyReport, error) {
@@ -88,7 +89,7 @@ func SurveyInstallPair(opts SurveyOptions) (SurveyReport, error) {
 	}
 	add("Quartet target", true, targetRoot)
 
-	sourceFiles, targetFiles := ResolveContentFiles(source.Root, targetRoot)
+	sourceFiles, targetFiles := ResolveContentFilesWithTargetOverrides(source.Root, targetRoot, opts.TargetFileOverrides)
 	sourceCount, sourceBytes, err := MeasureWardrobeArchive(sourceFiles["pack00_02"])
 	add(
 		"2017 wardrobe asset inventory",
@@ -133,7 +134,7 @@ func SurveyInstallPair(opts SurveyOptions) (SurveyReport, error) {
 		archive.Close()
 	}
 
-	wardrobePlan, err := DeriveWardrobePlan(source.Root, targetRoot, targetFiles["pack12"])
+	wardrobePlan, err := DeriveWardrobePlanWithTargetFiles(source.Root, targetRoot, targetFiles)
 	if err != nil {
 		add("wardrobe reconstruction model", false, err.Error())
 	} else {

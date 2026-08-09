@@ -9,9 +9,11 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 
 	"local/blue-reflection-patcher/internal/br1rebuild"
+	"local/blue-reflection-patcher/internal/managedstate"
 )
 
 func Load(path string) (Bundle, error) {
@@ -100,6 +102,24 @@ func memberName(v string) string {
 	return v
 }
 
+func memberBindingSHA(records []Record) string {
+	ordered := append([]Record(nil), records...)
+	sort.Slice(ordered, func(i, j int) bool {
+		if ordered[i].LogicalID != ordered[j].LogicalID {
+			return ordered[i].LogicalID < ordered[j].LogicalID
+		}
+		return ordered[i].TargetIndex < ordered[j].TargetIndex
+	})
+	var b strings.Builder
+	for _, r := range ordered {
+		b.WriteString(r.LogicalID)
+		b.WriteByte(0)
+		b.WriteString(strconv.Itoa(r.TargetIndex))
+		b.WriteByte('\n')
+	}
+	return shaBytes([]byte(b.String()))
+}
+
 // ApplyInstallation materializes the canonical Translation record bundle on top
 // of the current compatible installation/candidate archives. Whole-archive
 // hashes are intentionally not used as compatibility gates.
@@ -112,6 +132,7 @@ func ApplyInstallation(bundle Bundle, installationTargetID, gameRoot, workDir st
 	for _, id := range targetIDs {
 		wanted[id] = true
 	}
+	previousManaged, haveManaged := managedstate.Load(gameRoot, installationTargetID)
 	audit := ApplyAudit{TranslationVersion: bundle.TranslationVersion, TargetID: installationTargetID, Archives: map[string]int{}, OutputSHA256: map[string]string{}}
 	result := map[string]string{}
 	for k, v := range candidates {
@@ -156,11 +177,31 @@ func ApplyInstallation(bundle Bundle, installationTargetID, gameRoot, workDir st
 				reader.Close()
 				return audit, nil, err
 			}
+			bindingSHA := memberBindingSHA(decl.Records)
+			trustedManaged := false
+			baseStructuralSHA := ""
+			if decl.Kind == "ebm" {
+				baseStructuralSHA, err = ebmStructuralSHA(base)
+				if err != nil {
+					reader.Close()
+					return audit, nil, fmt.Errorf("inspect EBM structure %s:%s: %w", relative, name, err)
+				}
+			}
+			if haveManaged {
+				if prior, ok := managedstate.LookupTranslationMember(previousManaged, relative, name, decl.Kind); ok && strings.EqualFold(prior.BindingSHA256, bindingSHA) {
+					if decl.Kind == "ebm" && prior.StructuralSHA256 != "" {
+						trustedManaged = strings.EqualFold(prior.StructuralSHA256, baseStructuralSHA)
+					} else {
+						// v1 state migration: exact prior content is sufficient once.
+						trustedManaged = strings.EqualFold(prior.InstalledContentSHA256, shaBytes(base))
+					}
+				}
+			}
 			var out []byte
 			var already, rebase int
 			switch decl.Kind {
 			case "ebm":
-				out, already, rebase, err = applyEBM(base, decl.Records)
+				out, already, rebase, err = applyEBMManaged(base, decl.Records, trustedManaged, decl.TargetRecordCount)
 			case "xml":
 				out, already, rebase, err = applyXML(base, decl.Records)
 			default:
@@ -170,6 +211,22 @@ func ApplyInstallation(bundle Bundle, installationTargetID, gameRoot, workDir st
 				reader.Close()
 				return audit, nil, fmt.Errorf("apply %s:%s: %w", relative, name, err)
 			}
+			structuralSHA := ""
+			if decl.Kind == "ebm" {
+				structuralSHA, err = ebmStructuralSHA(out)
+				if err != nil {
+					reader.Close()
+					return audit, nil, fmt.Errorf("verify EBM structure %s:%s: %w", relative, name, err)
+				}
+			}
+			audit.ManagedMembers = append(audit.ManagedMembers, managedstate.TranslationMember{
+				ArchiveRelativePath:    relative,
+				InternalPath:           name,
+				Kind:                   decl.Kind,
+				InstalledContentSHA256: shaBytes(out),
+				BindingSHA256:          bindingSHA,
+				StructuralSHA256:       structuralSHA,
+			})
 			audit.AlreadyDesired += already
 			audit.StructuralRebases += rebase
 			audit.Records += len(decl.Records)

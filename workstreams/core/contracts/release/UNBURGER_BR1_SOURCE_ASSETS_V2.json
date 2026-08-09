@@ -1,0 +1,39 @@
+{
+  "type": "unburger_br1_source_assets_contract",
+  "format_version": 2,
+  "capability": "br1_legacy_source_assets_v2",
+  "reconstruction_capability": "br1_legacy_content_rebuild_v1",
+  "clean_source_anchor_capability": "br1_legacy_clean_source_anchors_v1",
+  "container": "zip-deflate",
+  "public_release_embedded": false,
+  "source_image": {
+    "whole_source_paks_included": false,
+    "logical_root": "source/",
+    "required_categories": [
+      "wardrobe_metadata",
+      "wardrobe_asset",
+      "character_catalog",
+      "strings_en",
+      "strings_jp",
+      "strings_tc",
+      "island_geometry",
+      "island_event"
+    ],
+    "required_source_member_count": 1682,
+    "member_hashes_required": true,
+    "member_sizes_required": true,
+    "clean_anchor_match_required": true,
+    "machine_paths_recorded": false
+  },
+  "loader": {
+    "hidden_cli_option": "--legacy-assets",
+    "accept_file_or_directory": true,
+    "capability_validation": true,
+    "clean_anchor_fingerprint_validation": true,
+    "source_fingerprint_validation": true,
+    "image_hash_validation": true,
+    "member_hash_validation": true,
+    "cache_after_validation": true,
+    "whole_game_archive_hash_gate": false
+  }
+}

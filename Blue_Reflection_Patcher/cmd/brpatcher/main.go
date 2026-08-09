@@ -67,6 +67,10 @@ func main() {
 		err = commandInstallationResetState(os.Args[2:])
 	case "installation-remove":
 		err = commandInstallationRemove(os.Args[2:])
+	case "save-access":
+		err = commandQuartetSaveAccess(os.Args[2:])
+	case "quartet-marker-fast-test":
+		err = commandQuartetMarkerFastTest(os.Args[2:])
 	case "transaction-status":
 		err = commandTransactionStatus(os.Args[2:])
 	case "transaction-commit":
@@ -177,15 +181,25 @@ func commandStart(args []string) error {
 	flags.StringVar(&legacySteam, "legacy-steam", "", "Steam installation or Steam library folder used to locate BLUE REFLECTION (2017)")
 	flags.BoolVar(&legacyNoAuto, "legacy-no-auto", false, "disable automatic Steam discovery for the BLUE REFLECTION (2017) source")
 	flags.StringVar(&legacySCLabels, "legacy-sc-labels", "blank", "Simplified Chinese restored labels: blank or hant")
-	flags.StringVar(&legacySaveRoot, "legacy-save-root", "", "folder containing .pcsave files for optional legacy-content access synchronization")
-	flags.BoolVar(&legacySyncSaves, "legacy-sync-saves", false, "update existing .pcsave access flags after a successful legacy-content install")
+	flags.StringVar(&legacySaveRoot, "legacy-save-root", "", "Quartet save folder, one .pcsave file, or Wine/Proton prefix used for DLC save-access synchronization")
+	flags.BoolVar(&legacySyncSaves, "legacy-sync-saves", false, "update restored costume and Tropical Island access in existing Quartet saves after install")
 	if err := flags.Parse(filteredArgs); err != nil {
 		return err
 	}
-	projectRoot, err = runtimebundle.ResolveProjectRoot(projectRoot)
+	releaseRoot := strings.TrimSpace(projectRoot)
+	if removed, pruneErr := runtimebundle.PruneOlderRuntimeBundles(releaseRoot); pruneErr != nil {
+		return fmt.Errorf("prune older runtime bundles: %w", pruneErr)
+	} else {
+		for _, path := range removed {
+			fmt.Printf("Removed older UNBURGER payload: %s\n", filepath.Base(path))
+		}
+	}
+	var runtimeCleanup func()
+	projectRoot, runtimeCleanup, err = runtimebundle.ResolveProjectRootTransient(projectRoot)
 	if err != nil {
 		return fmt.Errorf("resolve runtime bundle: %w", err)
 	}
+	defer runtimeCleanup()
 	if boolCount(guidedPrepare, guidedInstall, guidedRemove) > 1 {
 		return fmt.Errorf("--prepare, --install and --remove are mutually exclusive")
 	}
@@ -202,7 +216,22 @@ func commandStart(args []string) error {
 		return err
 	}
 	if len(items) == 0 {
-		return fmt.Errorf("no supported installation detected; run from the game directory or pass --game-dir PATH")
+		return fmt.Errorf("no supported installation detected automatically; run from the game directory or pass --game-dir PATH")
+	}
+	// Automatic discovery may legitimately find more than one supported game
+	// across Steam libraries. Guided start operates on one installation at a
+	// time, so ask explicitly instead of accidentally composing a multi-target
+	// selection. Repeated explicit --game-dir values retain the older advanced
+	// multi-target behavior.
+	if len(roots) == 0 && len(items) > 1 {
+		if !prompt {
+			return fmt.Errorf("multiple supported installations detected automatically; pass --game-dir PATH to choose one")
+		}
+		chosenGame, chooseErr := chooseDetectedInstallation(items, os.Stdin, os.Stdout)
+		if chooseErr != nil {
+			return chooseErr
+		}
+		items = []model.Detection{chosenGame}
 	}
 	printHumanDetections(os.Stdout, items)
 	if guidedRemove {
@@ -226,7 +255,10 @@ func commandStart(args []string) error {
 		}
 		switch managementAction {
 		case guidedManagementRemove:
-			report, removeErr := removeManagedInstallation(items[0].TargetID, items[0].DisplayName, items[0].Root)
+			progress := newTransactionProgressRenderer(os.Stdout)
+			progress.Status("rollback", "load_state", "Reading rollback metadata")
+			report, removeErr := removeManagedInstallationWithProgress(items[0].TargetID, items[0].DisplayName, items[0].Root, progress.Callback)
+			progress.Finish()
 			if removeErr != nil {
 				return removeErr
 			}
@@ -254,7 +286,7 @@ func commandStart(args []string) error {
 		return legacyErr
 	} else if requested {
 		legacyResult, runErr := runQuartetContentGuided(chosen, legacyContentStartOptions{
-			ProjectRoot: projectRoot, SourceRoot: legacySource, SteamRoot: legacySteam, AssetRoot: legacyAssets, DisableAutoSource: legacyNoAuto,
+			ProjectRoot: projectRoot, ReleaseRoot: releaseRoot, SourceRoot: legacySource, SteamRoot: legacySteam, AssetRoot: legacyAssets, DisableAutoSource: legacyNoAuto,
 			SimplifiedLabels: legacySCLabels,
 			SaveRoot:         legacySaveRoot, SyncSaves: legacySyncSaves, BuildLocal: buildLocal,
 			Prepare: guidedPrepare, Install: guidedInstall, Confirmed: confirmed, Prompt: prompt,
@@ -524,6 +556,7 @@ Commands:
   installation-status [--game-dir PATH] [--json FILE]
   installation-reset-state --game-dir PATH --adopt-current --yes [--json FILE]
   installation-remove --game-dir PATH --yes [--json FILE]
+  save-access [--game-dir PATH] [--save-path PATH] [--converted-save-dressroom] [--yes] [--json FILE]
   transaction-status [--game-dir PATH] [--json FILE]
   transaction-commit --journal FILE --yes [--json FILE]
   transaction-rollback --journal FILE --yes [--json FILE]

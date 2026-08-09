@@ -99,28 +99,49 @@ func Load(stateRoot, targetID, gameRoot string) (State, bool, error) {
 		return State{}, false, err
 	}
 	path := ActivePath(stateRoot)
-	info, err := os.Lstat(path)
-	if errors.Is(err, os.ErrNotExist) {
+	if _, err := os.Lstat(path); errors.Is(err, os.ErrNotExist) {
 		return State{}, false, nil
-	}
-	if err != nil {
+	} else if err != nil {
 		return State{}, false, fmt.Errorf("inspect active installation state: %w", err)
 	}
-	if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
-		return State{}, false, fmt.Errorf("active installation state is not a regular file: %s", path)
-	}
-	data, err := os.ReadFile(path)
+	state, err := LoadPath(path, targetID, gameRoot)
 	if err != nil {
-		return State{}, false, err
-	}
-	var state State
-	if err := json.Unmarshal(data, &state); err != nil {
-		return State{}, false, fmt.Errorf("decode active installation state: %w", err)
-	}
-	if err := validateState(state, targetID, gameRoot); err != nil {
 		return State{}, false, err
 	}
 	return state, true, nil
+}
+
+// LoadPath reads one exact active/history state record and applies the same
+// identity validation as Load. It is used when a managed update must walk the
+// archived predecessor chain without hashing any game files.
+func LoadPath(path, targetID, gameRoot string) (State, error) {
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return State{}, fmt.Errorf("resolve installation state path: %w", err)
+	}
+	gameRoot, err = cleanExistingDirectory(gameRoot, "game root")
+	if err != nil {
+		return State{}, err
+	}
+	info, err := os.Lstat(abs)
+	if err != nil {
+		return State{}, fmt.Errorf("inspect installation state: %w", err)
+	}
+	if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
+		return State{}, fmt.Errorf("installation state is not a regular file: %s", abs)
+	}
+	data, err := os.ReadFile(abs)
+	if err != nil {
+		return State{}, err
+	}
+	var state State
+	if err := json.Unmarshal(data, &state); err != nil {
+		return State{}, fmt.Errorf("decode installation state: %w", err)
+	}
+	if err := validateState(state, targetID, gameRoot); err != nil {
+		return State{}, err
+	}
+	return state, nil
 }
 
 func Activate(stateRoot, targetID, gameRoot, baselineManifestPath, journalPath string) (State, error) {
@@ -145,7 +166,7 @@ func Activate(stateRoot, targetID, gameRoot, baselineManifestPath, journalPath s
 	if metadataTarget := strings.TrimSpace(journal.Metadata["target_id"]); metadataTarget != "" && metadataTarget != targetID {
 		return State{}, fmt.Errorf("committed transaction target mismatch: %s", metadataTarget)
 	}
-	manifest, _, err := baseline.LoadAndVerify(baselineManifestPath)
+	manifest, err := baseline.LoadManifest(baselineManifestPath)
 	if err != nil {
 		return State{}, err
 	}
@@ -167,13 +188,14 @@ func Activate(stateRoot, targetID, gameRoot, baselineManifestPath, journalPath s
 		if err != nil {
 			return State{}, err
 		}
-		hash, size, exists, err := currentRegularHashAndSize(target)
+		info, err := os.Lstat(target)
 		if err != nil {
-			return State{}, err
+			return State{}, fmt.Errorf("inspect committed target %s: %w", item.RelativePath, err)
 		}
-		if !exists || hash != item.DesiredSHA256 {
-			return State{}, fmt.Errorf("committed target no longer matches journal: %s", item.RelativePath)
+		if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
+			return State{}, fmt.Errorf("committed target is not a regular file: %s", item.RelativePath)
 		}
+		size := info.Size()
 		records = append(records, FileRecord{
 			RelativePath: filepath.ToSlash(item.RelativePath), BaselineExisted: base.Existed,
 			BaselineSHA256: base.SHA256, InstalledSHA256: item.DesiredSHA256, InstalledBytes: size,
@@ -219,6 +241,10 @@ func Activate(stateRoot, targetID, gameRoot, baselineManifestPath, journalPath s
 }
 
 func ReconcileRollback(stateRoot, targetID, gameRoot, journalPath string) (State, bool, error) {
+	return ReconcileRollbackWithProgress(stateRoot, targetID, gameRoot, journalPath, nil)
+}
+
+func ReconcileRollbackWithProgress(stateRoot, targetID, gameRoot, journalPath string, progress transaction.ProgressFunc) (State, bool, error) {
 	stateRoot, err := filepath.Abs(stateRoot)
 	if err != nil {
 		return State{}, false, err
@@ -241,17 +267,44 @@ func ReconcileRollback(stateRoot, targetID, gameRoot, journalPath string) (State
 	if current.TransactionID != journal.TransactionID {
 		return State{}, false, fmt.Errorf("rolled-back transaction is not the active installation transaction")
 	}
+	if progress != nil {
+		progress(transaction.ProgressEvent{Operation: "rollback", Phase: "reconcile_state", RelativePath: "Reconciling managed installation metadata"})
+	}
+	journalByPath := map[string]transaction.FileRecord{}
+	for _, item := range journal.Files {
+		journalByPath[strings.ToLower(filepath.ToSlash(item.RelativePath))] = item
+	}
 	if current.PreviousStatePath != "" {
 		previous, err := loadArchivedState(current.PreviousStatePath, targetID, gameRoot)
 		if err != nil {
 			return State{}, false, err
 		}
-		matches, err := matchesInstalled(gameRoot, previous.Files)
-		if err != nil {
-			return State{}, false, err
-		}
-		if !matches {
-			return State{}, false, fmt.Errorf("rolled-back files do not match the previous active installation state")
+		// Paths restored by this journal have already been hash-verified while
+		// materializing the atomic rollback replacement. Reuse that proof. Only
+		// previous-state paths that were not part of the transaction need a disk
+		// read here; this preserves safety for partial updates without rereading
+		// every large file after a full rollback.
+		for index, item := range previous.Files {
+			key := strings.ToLower(filepath.ToSlash(item.RelativePath))
+			if record, ok := journalByPath[key]; ok && record.OriginalExisted && record.OriginalSHA256 == item.InstalledSHA256 {
+				continue
+			}
+			target, err := secureGameJoin(gameRoot, item.RelativePath)
+			if err != nil {
+				return State{}, false, err
+			}
+			onProgress := func(done, total int64) {
+				if progress != nil {
+					progress(transaction.ProgressEvent{Operation: "rollback", Phase: "verify_previous_state", FileIndex: index + 1, FileCount: len(previous.Files), RelativePath: item.RelativePath, FileBytesDone: done, FileBytesTotal: total, OverallBytesDone: done, OverallBytesTotal: total})
+				}
+			}
+			hash, _, exists, err := currentRegularHashAndSizeWithProgress(target, onProgress)
+			if err != nil {
+				return State{}, false, err
+			}
+			if !exists || hash != item.InstalledSHA256 {
+				return State{}, false, fmt.Errorf("rolled-back files do not match the previous active installation state: %s", item.RelativePath)
+			}
 		}
 		previous.UpdatedUTC = time.Now().UTC()
 		if err := atomicJSON(ActivePath(stateRoot), previous, 0o600); err != nil {
@@ -259,21 +312,42 @@ func ReconcileRollback(stateRoot, targetID, gameRoot, journalPath string) (State
 		}
 		return previous, true, nil
 	}
-	manifest, _, err := baseline.LoadAndVerify(current.BaselineManifestPath)
+	manifest, err := baseline.LoadManifest(current.BaselineManifestPath)
 	if err != nil {
 		return State{}, false, err
+	}
+	if manifest.BaselineID != current.BaselineID || manifest.Fingerprint != current.BaselineFingerprint || manifest.TargetID != targetID || filepath.Clean(manifest.GameRoot) != filepath.Clean(gameRoot) {
+		return State{}, false, fmt.Errorf("rolled-back persistent baseline metadata mismatch")
 	}
 	baselineRecords := map[string]baseline.FileRecord{}
 	for _, item := range manifest.Files {
 		baselineRecords[strings.ToLower(filepath.ToSlash(item.RelativePath))] = item
 	}
-	for _, item := range current.Files {
-		base := baselineRecords[strings.ToLower(item.RelativePath)]
+	for index, item := range current.Files {
+		key := strings.ToLower(filepath.ToSlash(item.RelativePath))
+		base, ok := baselineRecords[key]
+		if !ok {
+			return State{}, false, fmt.Errorf("active managed path is absent from persistent baseline metadata: %s", item.RelativePath)
+		}
+		if record, covered := journalByPath[key]; covered {
+			if base.Existed != record.OriginalExisted || (base.Existed && base.SHA256 != record.OriginalSHA256) {
+				return State{}, false, fmt.Errorf("rollback journal original does not match persistent baseline metadata: %s", item.RelativePath)
+			}
+			continue
+		}
+		// Defensive fallback for old/partial state records. This should be rare,
+		// but keeps reconciliation fail-closed if a managed path was not covered
+		// by the transaction that was just rolled back.
 		target, err := secureGameJoin(gameRoot, item.RelativePath)
 		if err != nil {
 			return State{}, false, err
 		}
-		hash, _, exists, err := currentRegularHashAndSize(target)
+		onProgress := func(done, total int64) {
+			if progress != nil {
+				progress(transaction.ProgressEvent{Operation: "rollback", Phase: "verify_baseline_state", FileIndex: index + 1, FileCount: len(current.Files), RelativePath: item.RelativePath, FileBytesDone: done, FileBytesTotal: total, OverallBytesDone: done, OverallBytesTotal: total})
+			}
+		}
+		hash, _, exists, err := currentRegularHashAndSizeWithProgress(target, onProgress)
 		if err != nil {
 			return State{}, false, err
 		}
@@ -322,6 +396,10 @@ func ClearDisplacedActiveState(stateRoot, targetID, gameRoot string) error {
 }
 
 func Inspect(stateRoot, targetID, gameRoot string) (Inspection, error) {
+	return InspectWithProgress(stateRoot, targetID, gameRoot, nil)
+}
+
+func InspectWithProgress(stateRoot, targetID, gameRoot string, progress transaction.ProgressFunc) (Inspection, error) {
 	gameRoot, err := cleanExistingDirectory(gameRoot, "game root")
 	if err != nil {
 		return Inspection{}, err
@@ -341,15 +419,36 @@ func Inspect(stateRoot, targetID, gameRoot string) (Inspection, error) {
 	result.BaselineManifestPath = state.BaselineManifestPath
 	result.PreviousStatePath = state.PreviousStatePath
 	result.SelectedModules = append([]string(nil), state.SelectedModules...)
-	installedMatches, baselineMatches, other, missing := 0, 0, 0, 0
+	var overallTotal int64
 	for _, item := range state.Files {
+		if item.InstalledBytes > 0 {
+			overallTotal += item.InstalledBytes
+		}
+	}
+	var overallDone int64
+	installedMatches, baselineMatches, other, missing := 0, 0, 0, 0
+	for index, item := range state.Files {
 		target, err := secureGameJoin(gameRoot, item.RelativePath)
 		if err != nil {
 			return Inspection{}, err
 		}
-		hash, _, exists, err := currentRegularHashAndSize(target)
+		onProgress := func(done, total int64) {
+			if progress == nil {
+				return
+			}
+			progress(transaction.ProgressEvent{
+				Operation: "finalize", Phase: "verify_installed_state",
+				FileIndex: index + 1, FileCount: len(state.Files), RelativePath: item.RelativePath,
+				FileBytesDone: done, FileBytesTotal: total,
+				OverallBytesDone: minInt64(overallDone+done, overallTotal), OverallBytesTotal: overallTotal,
+			})
+		}
+		hash, size, exists, err := currentRegularHashAndSizeWithProgress(target, onProgress)
 		if err != nil {
 			return Inspection{}, err
+		}
+		if exists {
+			overallDone += size
 		}
 		comparison := FileComparison{
 			RelativePath: item.RelativePath, InstalledSHA256: item.InstalledSHA256,
@@ -411,7 +510,7 @@ func validateState(state State, targetID, gameRoot string) error {
 	if strings.TrimSpace(state.TransactionID) == "" || strings.TrimSpace(state.BaselineManifestPath) == "" || len(state.Files) == 0 {
 		return fmt.Errorf("active installation state is incomplete")
 	}
-	manifest, _, err := baseline.LoadAndVerify(state.BaselineManifestPath)
+	manifest, err := baseline.LoadManifest(state.BaselineManifestPath)
 	if err != nil {
 		return err
 	}
@@ -537,6 +636,10 @@ func secureGameJoin(root, relative string) (string, error) {
 }
 
 func currentRegularHashAndSize(path string) (string, int64, bool, error) {
+	return currentRegularHashAndSizeWithProgress(path, nil)
+}
+
+func currentRegularHashAndSizeWithProgress(path string, progress func(done, total int64)) (string, int64, bool, error) {
 	info, err := os.Lstat(path)
 	if errors.Is(err, os.ErrNotExist) {
 		return "", 0, false, nil
@@ -553,11 +656,35 @@ func currentRegularHashAndSize(path string) (string, int64, bool, error) {
 	}
 	defer file.Close()
 	hash := sha256.New()
-	n, err := io.Copy(hash, file)
-	if err != nil {
-		return "", 0, false, err
+	buffer := make([]byte, 4*1024*1024)
+	var done int64
+	if progress != nil {
+		progress(0, info.Size())
 	}
-	return hex.EncodeToString(hash.Sum(nil)), n, true, nil
+	for {
+		n, readErr := file.Read(buffer)
+		if n > 0 {
+			_, _ = hash.Write(buffer[:n])
+			done += int64(n)
+			if progress != nil {
+				progress(done, info.Size())
+			}
+		}
+		if errors.Is(readErr, io.EOF) {
+			break
+		}
+		if readErr != nil {
+			return "", 0, false, readErr
+		}
+	}
+	return hex.EncodeToString(hash.Sum(nil)), done, true, nil
+}
+
+func minInt64(a, b int64) int64 {
+	if b <= 0 || a < b {
+		return a
+	}
+	return b
 }
 
 func atomicJSON(path string, value any, mode fs.FileMode) error {

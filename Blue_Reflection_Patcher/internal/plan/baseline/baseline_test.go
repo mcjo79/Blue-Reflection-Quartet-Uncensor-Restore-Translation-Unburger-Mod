@@ -173,3 +173,44 @@ func TestAdoptCurrentRecordsProvenanceAndRejectsAnalyticalArchive(t *testing.T) 
 		t.Fatal("analytical .PAK_ path was accepted as an adopted baseline target")
 	}
 }
+
+func TestSyncTreeWindowsSkipsRedundantReadOnlyResync(t *testing.T) {
+	// The real writes are synced before syncTree is called. The Windows path
+	// must therefore be a no-op rather than reopening read-only files and
+	// calling FlushFileBuffers on those handles.
+	if err := syncTreeForPlatform(filepath.Join(t.TempDir(), "does-not-need-to-exist"), "windows"); err != nil {
+		t.Fatalf("Windows redundant sync pass was not skipped: %v", err)
+	}
+}
+
+func TestLoadManifestAvoidsPayloadReadButDeepVerificationStillDetectsCorruption(t *testing.T) {
+	root := t.TempDir()
+	game := filepath.Join(root, "game")
+	state := filepath.Join(root, "state")
+	path := filepath.Join(game, "Data", "PACK11.PAK")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("clean-baseline"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	result, err := Ensure(game, state, "blue_reflection_quartet", []string{"Data/PACK11.PAK"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	stored := result.StoredFiles["Data/PACK11.PAK"]
+	if err := os.Chmod(stored, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(stored, []byte("dirty-baseline"), 0o444); err != nil {
+		t.Fatal(err)
+	}
+	// Same length: metadata validation intentionally avoids an expensive full
+	// payload read, while the explicit deep verifier remains fail-closed.
+	if _, err := LoadManifest(result.ManifestPath); err != nil {
+		t.Fatalf("metadata-only manifest load unexpectedly read/rejected payload: %v", err)
+	}
+	if _, _, err := LoadAndVerify(result.ManifestPath); err == nil {
+		t.Fatal("deep baseline verification accepted same-size corruption")
+	}
+}

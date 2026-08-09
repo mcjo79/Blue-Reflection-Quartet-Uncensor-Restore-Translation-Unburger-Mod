@@ -14,12 +14,17 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"local/blue-reflection-patcher/internal/workspace"
 )
 
 const (
-	SourceAssetsCapability    = "br1_legacy_source_assets_v1"
-	SourceAssetsFormatVersion = 1
-	sourceAssetsManifestName  = "MANIFEST.json"
+	SourceAssetsCapability      = "br1_legacy_source_assets_v2"
+	SourceAssetsFormatVersion   = 2
+	SourceAnchorsCapability     = "br1_legacy_clean_source_anchors_v1"
+	SourceAnchorsFormatVersion  = 1
+	expectedSourceAnchorMembers = 1682
+	sourceAssetsManifestName    = "MANIFEST.json"
 )
 
 type SourceAssetMember struct {
@@ -41,9 +46,19 @@ type SourceAssetManifest struct {
 	FormatVersion            int                    `json:"format_version"`
 	Capability               string                 `json:"capability"`
 	ReconstructionCapability string                 `json:"reconstruction_capability"`
+	CleanAnchorCapability    string                 `json:"clean_anchor_capability"`
+	CleanAnchorFingerprint   string                 `json:"clean_anchor_fingerprint"`
 	SourceFingerprint        string                 `json:"source_fingerprint"`
 	SourceMembers            []SourceAssetMember    `json:"source_members"`
 	ImageFiles               []SourceAssetImageFile `json:"image_files"`
+}
+
+type SourceAnchorManifest struct {
+	Type              string              `json:"type"`
+	FormatVersion     int                 `json:"format_version"`
+	Capability        string              `json:"capability"`
+	SourceFingerprint string              `json:"source_fingerprint"`
+	SourceMembers     []SourceAssetMember `json:"source_members"`
 }
 
 type sourceAssetBuildResult struct {
@@ -53,12 +68,19 @@ type sourceAssetBuildResult struct {
 	Size     int64
 }
 
-func BuildSourceAssetBundle(sourceRoot, outputPath string) (SourceAssetManifest, error) {
+func BuildSourceAssetBundle(sourceRoot, outputPath, anchorPath string) (SourceAssetManifest, error) {
+	anchors, err := ReadSourceAnchorManifest(anchorPath)
+	if err != nil {
+		return SourceAssetManifest{}, fmt.Errorf("read clean-source anchors: %w", err)
+	}
+	if err := validateSourceAnchorManifest(anchors); err != nil {
+		return SourceAssetManifest{}, fmt.Errorf("validate clean-source anchors: %w", err)
+	}
 	location, err := LocateSourceInstall(SourceLocator{LooseRoot: sourceRoot})
 	if err != nil {
 		return SourceAssetManifest{}, err
 	}
-	stage, err := os.MkdirTemp("", "unburger-br1-assets-")
+	stage, err := workspace.MkdirTemp("unburger-br1-assets-")
 	if err != nil {
 		return SourceAssetManifest{}, err
 	}
@@ -198,10 +220,15 @@ func BuildSourceAssetBundle(sourceRoot, outputPath string) (SourceAssetManifest,
 		FormatVersion:            SourceAssetsFormatVersion,
 		Capability:               SourceAssetsCapability,
 		ReconstructionCapability: "br1_legacy_content_rebuild_v1",
+		CleanAnchorCapability:    anchors.Capability,
+		CleanAnchorFingerprint:   anchors.SourceFingerprint,
 		SourceMembers:            members,
 		ImageFiles:               imageFiles,
 	}
 	manifest.SourceFingerprint = sourceAssetFingerprint(members)
+	if err := verifySourceMembersAgainstAnchors(manifest.SourceMembers, anchors); err != nil {
+		return SourceAssetManifest{}, err
+	}
 	if err := packageSourceAssetImage(stage, outputPath, manifest); err != nil {
 		return SourceAssetManifest{}, err
 	}
@@ -359,11 +386,264 @@ func inventoryImageFiles(stage string) ([]SourceAssetImageFile, error) {
 }
 
 func sourceAssetFingerprint(members []SourceAssetMember) string {
+	ordered := append([]SourceAssetMember(nil), members...)
+	sort.Slice(ordered, func(i, j int) bool { return sourceMemberKey(ordered[i]) < sourceMemberKey(ordered[j]) })
 	h := sha256.New()
-	for _, item := range members {
+	for _, item := range ordered {
 		fmt.Fprintf(h, "%s\x00%s\x00%d\x00%s\n", item.ArchivePath, item.MemberPath, item.Size, item.SHA256)
 	}
 	return hex.EncodeToString(h.Sum(nil))
+}
+
+func sourceMemberKey(item SourceAssetMember) string {
+	return strings.ToLower(filepath.ToSlash(item.ArchivePath)) + "\x00" + strings.ToLower(strings.ReplaceAll(item.MemberPath, `/`, `\`))
+}
+
+func normalizeSourceMembers(members []SourceAssetMember) ([]SourceAssetMember, error) {
+	out := append([]SourceAssetMember(nil), members...)
+	sort.Slice(out, func(i, j int) bool { return sourceMemberKey(out[i]) < sourceMemberKey(out[j]) })
+	seen := map[string]bool{}
+	for _, item := range out {
+		key := sourceMemberKey(item)
+		if item.ArchivePath == "" || item.MemberPath == "" || item.Group == "" || item.Size < 0 || len(item.SHA256) != 64 {
+			return nil, fmt.Errorf("invalid source member anchor: %s#%s", item.ArchivePath, item.MemberPath)
+		}
+		if _, err := hex.DecodeString(item.SHA256); err != nil {
+			return nil, fmt.Errorf("invalid source member SHA-256: %s#%s", item.ArchivePath, item.MemberPath)
+		}
+		if seen[key] {
+			return nil, fmt.Errorf("duplicate source member anchor: %s#%s", item.ArchivePath, item.MemberPath)
+		}
+		seen[key] = true
+	}
+	return out, nil
+}
+
+func ReadSourceAnchorManifest(path string) (SourceAnchorManifest, error) {
+	if strings.TrimSpace(path) == "" {
+		return SourceAnchorManifest{}, fmt.Errorf("clean-source anchor file is required")
+	}
+	blob, err := os.ReadFile(path)
+	if err != nil {
+		return SourceAnchorManifest{}, err
+	}
+	var manifest SourceAnchorManifest
+	if err := json.Unmarshal(blob, &manifest); err != nil {
+		return SourceAnchorManifest{}, err
+	}
+	return manifest, nil
+}
+
+func validateSourceAnchorManifest(manifest SourceAnchorManifest) error {
+	if manifest.Type != "unburger_br1_dlc_clean_source_anchors" || manifest.FormatVersion != SourceAnchorsFormatVersion {
+		return fmt.Errorf("unsupported clean-source anchor manifest type/version")
+	}
+	if manifest.Capability != SourceAnchorsCapability {
+		return fmt.Errorf("unsupported clean-source anchor capability")
+	}
+	if len(manifest.SourceMembers) == 0 {
+		return fmt.Errorf("clean-source anchor set is empty")
+	}
+	members, err := normalizeSourceMembers(manifest.SourceMembers)
+	if err != nil {
+		return err
+	}
+	if sourceAssetFingerprint(members) != manifest.SourceFingerprint {
+		return fmt.Errorf("clean-source anchor fingerprint mismatch")
+	}
+	return nil
+}
+
+func verifySourceMembersAgainstAnchors(actual []SourceAssetMember, anchors SourceAnchorManifest) error {
+	if err := validateSourceAnchorManifest(anchors); err != nil {
+		return err
+	}
+	got, err := normalizeSourceMembers(actual)
+	if err != nil {
+		return err
+	}
+	want, err := normalizeSourceMembers(anchors.SourceMembers)
+	if err != nil {
+		return err
+	}
+	if len(got) != len(want) {
+		return fmt.Errorf("clean-source member coverage mismatch: got %d, expected %d", len(got), len(want))
+	}
+	for i := range want {
+		if sourceMemberKey(got[i]) != sourceMemberKey(want[i]) {
+			return fmt.Errorf("clean-source member identity mismatch at %d: got %s#%s expected %s#%s", i, got[i].ArchivePath, got[i].MemberPath, want[i].ArchivePath, want[i].MemberPath)
+		}
+		if got[i].Group != want[i].Group || got[i].Size != want[i].Size || !strings.EqualFold(got[i].SHA256, want[i].SHA256) {
+			return fmt.Errorf("clean-source member mismatch: %s#%s", got[i].ArchivePath, got[i].MemberPath)
+		}
+	}
+	return nil
+}
+
+func WriteSourceAnchorProposal(sourceRoot, outputPath string) (SourceAnchorManifest, error) {
+	members, err := inventorySourceAssetMembers(sourceRoot)
+	if err != nil {
+		return SourceAnchorManifest{}, err
+	}
+	members, err = normalizeSourceMembers(members)
+	if err != nil {
+		return SourceAnchorManifest{}, err
+	}
+	if len(members) != expectedSourceAnchorMembers {
+		return SourceAnchorManifest{}, fmt.Errorf("source anchor proposal contains %d members, expected %d", len(members), expectedSourceAnchorMembers)
+	}
+	manifest := SourceAnchorManifest{
+		Type:              "unburger_br1_dlc_clean_source_anchors",
+		FormatVersion:     SourceAnchorsFormatVersion,
+		Capability:        SourceAnchorsCapability,
+		SourceMembers:     members,
+		SourceFingerprint: sourceAssetFingerprint(members),
+	}
+	if err := validateSourceAnchorManifest(manifest); err != nil {
+		return SourceAnchorManifest{}, err
+	}
+	if err := os.MkdirAll(filepath.Dir(outputPath), 0o755); err != nil && filepath.Dir(outputPath) != "." {
+		return SourceAnchorManifest{}, err
+	}
+	blob, err := json.MarshalIndent(manifest, "", "  ")
+	if err != nil {
+		return SourceAnchorManifest{}, err
+	}
+	blob = append(blob, '\n')
+	tmp := outputPath + ".tmp"
+	if err := os.WriteFile(tmp, blob, 0o644); err != nil {
+		return SourceAnchorManifest{}, err
+	}
+	if err := os.Rename(tmp, outputPath); err != nil {
+		_ = os.Remove(tmp)
+		return SourceAnchorManifest{}, err
+	}
+	return manifest, nil
+}
+
+func inventorySourceAssetMembers(sourceRoot string) ([]SourceAssetMember, error) {
+	location, err := LocateSourceInstall(SourceLocator{LooseRoot: sourceRoot})
+	if err != nil {
+		return nil, err
+	}
+	sourceData, err := sourceDataDirectory(location.Root)
+	if err != nil {
+		return nil, err
+	}
+	members := []SourceAssetMember{}
+
+	roster, err := readWardrobeTable(casePath(location.Root, "BLUE_REFLECTION.exe"), sourceRosterOffset)
+	if err != nil {
+		return nil, err
+	}
+	if len(roster) != 120 {
+		return nil, fmt.Errorf("source wardrobe table contains %d records, expected 120", len(roster))
+	}
+	rosterBlob := encodeWardrobeRecords(roster)
+	members = append(members, SourceAssetMember{Group: "wardrobe_metadata", ArchivePath: "BLUE_REFLECTION.exe", MemberPath: "wardrobe_table", Size: int64(len(rosterBlob)), SHA256: shaBytes(rosterBlob)})
+
+	appendArchive := func(archiveName, group string, keep func(string) bool) error {
+		path := casePath(sourceData, archiveName)
+		p, err := OpenA18(path)
+		if err != nil {
+			return err
+		}
+		defer p.Close()
+		count := 0
+		var bytes int64
+		for _, e := range p.Entries {
+			if !keep(e.Name) {
+				continue
+			}
+			entry := CrossFormatEntry{Pak: p, Entry: e}
+			digest, err := entry.PlainSHA256()
+			if err != nil {
+				return err
+			}
+			members = append(members, SourceAssetMember{Group: group, ArchivePath: "DATA/" + archiveName, MemberPath: e.Name, Size: int64(e.Size), SHA256: digest})
+			count++
+			bytes += int64(e.Size)
+		}
+		if count == 0 {
+			return fmt.Errorf("no source members selected from %s", path)
+		}
+		if group == "wardrobe_asset" && (count != expectedWardrobeSourceFiles || bytes != expectedWardrobeSourceBytes) {
+			return fmt.Errorf("wardrobe source inventory mismatch: %d files/%d bytes; expected %d/%d", count, bytes, expectedWardrobeSourceFiles, expectedWardrobeSourceBytes)
+		}
+		if group == "island_geometry" && count != 3 {
+			return fmt.Errorf("Island geometry inventory=%d, expected 3", count)
+		}
+		if group == "island_event" && count != 1410 {
+			return fmt.Errorf("Island event inventory=%d, expected 1410", count)
+		}
+		return nil
+	}
+
+	if err := appendArchive("PACK00_02.PAK", "wardrobe_asset", isWardrobeAssetPath); err != nil {
+		return nil, err
+	}
+	needle := `\field\` + islandFieldKey + `\`
+	if err := appendArchive("PACK00_03.PAK", "island_geometry", func(name string) bool {
+		return strings.Contains(strings.ToLower(name), needle)
+	}); err != nil {
+		return nil, err
+	}
+	if err := appendArchive("PACK01.PAK", "island_event", func(name string) bool {
+		lower := strings.ToLower(name)
+		if !strings.HasSuffix(lower, ".ebm") {
+			return false
+		}
+		for _, locale := range []string{"event_en", "event_jp", "event_ch"} {
+			marker := `\` + locale + `\`
+			position := strings.Index(lower, marker)
+			if position < 0 {
+				continue
+			}
+			remainder := lower[position+len(marker):]
+			folder := strings.SplitN(remainder, `\`, 2)[0]
+			return islandEventFolder(folder)
+		}
+		return false
+	}); err != nil {
+		return nil, err
+	}
+
+	catalogBlob, err := sourceCharacterCatalogBlob(location.Root)
+	if err != nil {
+		return nil, err
+	}
+	members = append(members, SourceAssetMember{Group: "character_catalog", ArchivePath: "DATA/PACK02_1.PAK", MemberPath: `\saves_en\chara\charabase.xml`, Size: int64(len(catalogBlob)), SHA256: shaBytes(catalogBlob)})
+
+	localeSpecs := []struct {
+		archive string
+		folder  string
+		group   string
+	}{
+		{"PACK02_1.PAK", "saves_en", "strings_en"},
+		{"PACK02_2.PAK", "saves_ch", "strings_tc"},
+		{"PACK02_3.PAK", "saves_jp", "strings_jp"},
+	}
+	for _, spec := range localeSpecs {
+		p, err := OpenA18(casePath(sourceData, spec.archive))
+		if err != nil {
+			return nil, err
+		}
+		wanted := `\` + spec.folder + `\text\strcombineall.xml`
+		e, ok := p.Find(wanted)
+		if !ok {
+			p.Close()
+			return nil, fmt.Errorf("%s missing %s", spec.archive, wanted)
+		}
+		entry := CrossFormatEntry{Pak: p, Entry: e}
+		digest, err := entry.PlainSHA256()
+		p.Close()
+		if err != nil {
+			return nil, err
+		}
+		members = append(members, SourceAssetMember{Group: spec.group, ArchivePath: "DATA/" + spec.archive, MemberPath: wanted, Size: int64(e.Size), SHA256: digest})
+	}
+
+	return members, nil
 }
 
 func packageSourceAssetImage(stage, outputPath string, manifest SourceAssetManifest) error {
@@ -438,7 +718,63 @@ func writeZipFile(zw *zip.Writer, path, name string, mod time.Time) error {
 	return err
 }
 
-func locateSourceAssetBundle(raw string) (SourceLocation, error) {
+// FindCompatibleSourceAssetBundle performs a metadata-only lookup for a verified
+// .unburger-assets bundle. It does not materialize the bundle. This is used by
+// the public launcher to prefer a sibling developer/test source bundle before
+// asking the user to locate the original BLUE REFLECTION installation.
+func FindCompatibleSourceAssetBundle(raw, anchorPath string) (string, bool, error) {
+	anchors, err := ReadSourceAnchorManifest(anchorPath)
+	if err != nil {
+		return "", false, fmt.Errorf("clean-source anchors are required for developer asset bundles: %w", err)
+	}
+	if err := validateSourceAnchorManifest(anchors); err != nil {
+		return "", false, fmt.Errorf("clean-source anchors are invalid: %w", err)
+	}
+	path := strings.Trim(strings.TrimSpace(raw), `"`)
+	if path == "" {
+		return "", false, nil
+	}
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return "", false, err
+	}
+	st, err := os.Stat(abs)
+	if os.IsNotExist(err) {
+		return "", false, nil
+	}
+	if err != nil {
+		return "", false, err
+	}
+	if !st.IsDir() {
+		if !strings.HasSuffix(strings.ToLower(abs), ".unburger-assets") {
+			return "", false, nil
+		}
+		manifest, err := ReadSourceAssetManifest(abs)
+		if err != nil || validateSourceAssetManifest(manifest) != nil || verifySourceMembersAgainstAnchors(manifest.SourceMembers, anchors) != nil || !strings.EqualFold(manifest.CleanAnchorFingerprint, anchors.SourceFingerprint) {
+			return "", false, nil
+		}
+		return abs, true, nil
+	}
+	candidates, err := compatibleAssetBundles(abs, anchors)
+	if err != nil {
+		return "", false, err
+	}
+	if len(candidates) == 0 {
+		return "", false, nil
+	}
+	// Keep the existing deterministic filename ordering used by the explicit
+	// directory locator. Current bundles are capability/version checked above.
+	return candidates[len(candidates)-1], true, nil
+}
+
+func locateSourceAssetBundle(raw, anchorPath string, progress BuildProgressFunc) (SourceLocation, error) {
+	anchors, err := ReadSourceAnchorManifest(anchorPath)
+	if err != nil {
+		return SourceLocation{}, fmt.Errorf("clean-source anchors are required for developer asset bundles: %w", err)
+	}
+	if err := validateSourceAnchorManifest(anchors); err != nil {
+		return SourceLocation{}, fmt.Errorf("clean-source anchors are invalid: %w", err)
+	}
 	path := strings.Trim(strings.TrimSpace(raw), `"`)
 	if path == "" {
 		return SourceLocation{}, fmt.Errorf("empty assets path")
@@ -453,7 +789,7 @@ func locateSourceAssetBundle(raw string) (SourceLocation, error) {
 	}
 	bundle := abs
 	if st.IsDir() {
-		candidates, err := compatibleAssetBundles(abs)
+		candidates, err := compatibleAssetBundles(abs, anchors)
 		if err != nil {
 			return SourceLocation{}, err
 		}
@@ -471,17 +807,24 @@ func locateSourceAssetBundle(raw string) (SourceLocation, error) {
 	if err := validateSourceAssetManifest(manifest); err != nil {
 		return SourceLocation{}, err
 	}
-	root, err := materializeSourceAssetBundle(bundle, manifest)
+	if err := verifySourceMembersAgainstAnchors(manifest.SourceMembers, anchors); err != nil {
+		return SourceLocation{}, fmt.Errorf("source assets bundle does not match approved clean-source anchors: %w", err)
+	}
+	if !strings.EqualFold(manifest.CleanAnchorFingerprint, anchors.SourceFingerprint) {
+		return SourceLocation{}, fmt.Errorf("source assets bundle was built against a different clean-source anchor set")
+	}
+	root, cleanupRoot, err := materializeSourceAssetBundle(bundle, manifest, progress)
 	if err != nil {
 		return SourceLocation{}, err
 	}
 	if err := validateSourceInstall(root); err != nil {
+		_ = os.RemoveAll(cleanupRoot)
 		return SourceLocation{}, fmt.Errorf("materialized source bundle is invalid: %w", err)
 	}
-	return SourceLocation{Root: root, Origin: "asset_bundle"}, nil
+	return SourceLocation{Root: root, Origin: "asset_bundle", CleanupRoot: cleanupRoot}, nil
 }
 
-func compatibleAssetBundles(dir string) ([]string, error) {
+func compatibleAssetBundles(dir string, anchors SourceAnchorManifest) ([]string, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return nil, err
@@ -493,7 +836,7 @@ func compatibleAssetBundles(dir string) ([]string, error) {
 		}
 		path := filepath.Join(dir, entry.Name())
 		manifest, err := ReadSourceAssetManifest(path)
-		if err == nil && validateSourceAssetManifest(manifest) == nil {
+		if err == nil && validateSourceAssetManifest(manifest) == nil && verifySourceMembersAgainstAnchors(manifest.SourceMembers, anchors) == nil && strings.EqualFold(manifest.CleanAnchorFingerprint, anchors.SourceFingerprint) {
 			out = append(out, path)
 		}
 	}
@@ -532,11 +875,20 @@ func validateSourceAssetManifest(manifest SourceAssetManifest) error {
 	if manifest.Capability != SourceAssetsCapability || manifest.ReconstructionCapability != "br1_legacy_content_rebuild_v1" {
 		return fmt.Errorf("incompatible source assets capability")
 	}
+	if manifest.CleanAnchorCapability != SourceAnchorsCapability || len(manifest.CleanAnchorFingerprint) != 64 {
+		return fmt.Errorf("source assets bundle is not bound to a supported clean-source anchor set")
+	}
 	if len(manifest.SourceMembers) == 0 || len(manifest.ImageFiles) == 0 {
 		return fmt.Errorf("source assets manifest is empty")
 	}
+	if _, err := hex.DecodeString(manifest.CleanAnchorFingerprint); err != nil {
+		return fmt.Errorf("invalid clean-source anchor fingerprint")
+	}
 	if sourceAssetFingerprint(manifest.SourceMembers) != manifest.SourceFingerprint {
 		return fmt.Errorf("source assets fingerprint mismatch")
+	}
+	if !strings.EqualFold(manifest.SourceFingerprint, manifest.CleanAnchorFingerprint) {
+		return fmt.Errorf("source assets fingerprint differs from clean-source anchor fingerprint")
 	}
 	seen := map[string]bool{}
 	for _, item := range manifest.ImageFiles {
@@ -549,63 +901,68 @@ func validateSourceAssetManifest(manifest SourceAssetManifest) error {
 	return nil
 }
 
-func materializeSourceAssetBundle(path string, manifest SourceAssetManifest) (string, error) {
-	hash, _, err := hashPath(path)
-	if err != nil {
-		return "", err
+func materializeSourceAssetBundle(path string, manifest SourceAssetManifest, progress BuildProgressFunc) (string, string, error) {
+	// One-time migration cleanup for the persistent source-image cache used by
+	// older public releases. Failure to remove it must not block this run.
+	if cacheBase, cacheErr := os.UserCacheDir(); cacheErr == nil && strings.TrimSpace(cacheBase) != "" {
+		_ = os.RemoveAll(filepath.Join(cacheBase, "unburger-patcher", "br1-assets"))
 	}
-	cacheBase, err := os.UserCacheDir()
+	stage, err := workspace.MkdirTemp("unburger-br1-assets-")
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
-	cache := filepath.Join(cacheBase, "unburger-patcher", "br1-assets", hash[:20])
-	root := filepath.Join(cache, "source")
-	marker := filepath.Join(cache, "BUNDLE_SHA256")
-	if blob, err := os.ReadFile(marker); err == nil && strings.TrimSpace(string(blob)) == hash {
-		if validateMaterializedSourceImage(cache, manifest) == nil {
-			return root, nil
+	ok := false
+	defer func() {
+		if !ok {
+			_ = os.RemoveAll(stage)
 		}
-	}
-	_ = os.RemoveAll(cache)
-	if err := os.MkdirAll(cache, 0o755); err != nil {
-		return "", err
-	}
+	}()
+	root := filepath.Join(stage, "source")
 	zr, err := zip.OpenReader(path)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 	defer zr.Close()
 	allowed := map[string]SourceAssetImageFile{}
+	var extractTotal int64
 	for _, item := range manifest.ImageFiles {
 		allowed[item.Path] = item
+		extractTotal += item.Size
+	}
+	var extractDone int64
+	if progress != nil {
+		progress(BuildProgress{Phase: "source_bundle_manifest", CurrentFile: filepath.Base(path)})
 	}
 	for _, zf := range zr.File {
 		if zf.Name == sourceAssetsManifestName {
 			continue
 		}
-		expected, ok := allowed[zf.Name]
-		if !ok {
-			return "", fmt.Errorf("unexpected file in source assets bundle: %s", zf.Name)
+		expected, exists := allowed[zf.Name]
+		if !exists {
+			return "", "", fmt.Errorf("unexpected file in source assets bundle: %s", zf.Name)
 		}
-		dst := filepath.Join(cache, filepath.FromSlash(zf.Name))
-		if err := extractZipFile(zf, dst, expected); err != nil {
-			return "", err
+		dst := filepath.Join(stage, filepath.FromSlash(zf.Name))
+		if err := extractZipFile(zf, dst, expected, func(done, total int64) {
+			if progress != nil {
+				progress(BuildProgress{Phase: "source_bundle_extract", CurrentFile: zf.Name, CurrentDone: done, CurrentTotal: total, OverallDone: min64(extractDone+done, extractTotal), OverallTotal: extractTotal})
+			}
+		}); err != nil {
+			return "", "", err
 		}
+		extractDone += expected.Size
 		delete(allowed, zf.Name)
 	}
 	if len(allowed) != 0 {
-		return "", fmt.Errorf("source assets bundle is missing %d image files", len(allowed))
+		return "", "", fmt.Errorf("source assets bundle is missing %d image files", len(allowed))
 	}
-	if err := validateMaterializedSourceImage(cache, manifest); err != nil {
-		return "", err
+	if err := validateMaterializedSourceImage(stage, manifest, progress); err != nil {
+		return "", "", err
 	}
-	if err := os.WriteFile(marker, []byte(hash+"\n"), 0o644); err != nil {
-		return "", err
-	}
-	return root, nil
+	ok = true
+	return root, stage, nil
 }
 
-func extractZipFile(zf *zip.File, dst string, expected SourceAssetImageFile) error {
+func extractZipFile(zf *zip.File, dst string, expected SourceAssetImageFile, report func(done, total int64)) error {
 	if int64(zf.UncompressedSize64) != expected.Size {
 		return fmt.Errorf("source image size mismatch for %s", zf.Name)
 	}
@@ -622,57 +979,128 @@ func extractZipFile(zf *zip.File, dst string, expected SourceAssetImageFile) err
 		return err
 	}
 	h := sha256.New()
-	_, copyErr := io.CopyBuffer(io.MultiWriter(out, h), r, make([]byte, 8<<20))
-	closeErr := out.Close()
-	if copyErr != nil {
-		return copyErr
+	buffer := make([]byte, 8<<20)
+	var done int64
+	for {
+		n, readErr := r.Read(buffer)
+		if n > 0 {
+			if _, err := out.Write(buffer[:n]); err != nil {
+				out.Close()
+				return err
+			}
+			_, _ = h.Write(buffer[:n])
+			done += int64(n)
+			if report != nil {
+				report(done, expected.Size)
+			}
+		}
+		if readErr == io.EOF {
+			break
+		}
+		if readErr != nil {
+			out.Close()
+			return readErr
+		}
 	}
-	if closeErr != nil {
-		return closeErr
+	if err := out.Close(); err != nil {
+		return err
 	}
-	if hex.EncodeToString(h.Sum(nil)) != expected.SHA256 {
+	if done != expected.Size || hex.EncodeToString(h.Sum(nil)) != expected.SHA256 {
 		return fmt.Errorf("source image hash mismatch for %s", zf.Name)
 	}
 	return nil
 }
 
-func validateMaterializedSourceImage(cache string, manifest SourceAssetManifest) error {
+func validateMaterializedSourceImage(cache string, manifest SourceAssetManifest, progress BuildProgressFunc) error {
+	// Extraction already checked every complete image by exact uncompressed size
+	// and SHA-256 while writing it. Do not immediately reread every multi-GB image
+	// just to recompute the same digest. The structural member pass below is the
+	// independent compatibility proof needed by the reconstruction layer.
 	for _, item := range manifest.ImageFiles {
 		path := filepath.Join(cache, filepath.FromSlash(item.Path))
-		hash, size, err := hashPath(path)
-		if err != nil || size != item.Size || hash != item.SHA256 {
+		info, err := os.Lstat(path)
+		if err != nil || info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() || info.Size() != item.Size {
 			return fmt.Errorf("source image validation failed for %s", item.Path)
 		}
 	}
-	root := filepath.Join(cache, "source")
+	var verifyTotal int64
 	for _, item := range manifest.SourceMembers {
+		verifyTotal += item.Size
+	}
+	var verifyDone int64
+	root := filepath.Join(cache, "source")
+
+	// SourceMembers are normalized/sorted by archive path. Keep one A18 reader
+	// open for all members from the same reduced image. Older code reopened and
+	// reparsed a multi-GB archive for every one of the 1,682 members, which made
+	// sibling .unburger-assets verification look stalled even on fast storage.
+	var currentArchivePath string
+	var currentArchive *ArchiveReader
+	closeArchive := func() {
+		if currentArchive != nil {
+			_ = currentArchive.Close()
+			currentArchive = nil
+			currentArchivePath = ""
+		}
+	}
+	defer closeArchive()
+
+	for _, item := range manifest.SourceMembers {
+		label := item.ArchivePath + "#" + item.MemberPath
+		if progress != nil {
+			progress(BuildProgress{Phase: "source_bundle_verify", CurrentFile: label, OverallDone: verifyDone, OverallTotal: verifyTotal})
+		}
 		if item.ArchivePath == "BLUE_REFLECTION.exe" && item.MemberPath == "wardrobe_table" {
+			closeArchive()
 			f, err := os.Open(filepath.Join(root, "BLUE_REFLECTION.exe"))
 			if err != nil {
 				return err
 			}
 			blob := make([]byte, item.Size)
 			_, err = f.ReadAt(blob, sourceRosterOffset)
-			f.Close()
+			_ = f.Close()
 			if err != nil || shaBytes(blob) != item.SHA256 {
 				return fmt.Errorf("source wardrobe metadata validation failed")
 			}
+			verifyDone += item.Size
+			if progress != nil {
+				progress(BuildProgress{Phase: "source_bundle_verify", CurrentFile: label, CurrentDone: item.Size, CurrentTotal: item.Size, OverallDone: min64(verifyDone, verifyTotal), OverallTotal: verifyTotal})
+			}
 			continue
 		}
+
 		archivePath := filepath.Join(root, filepath.FromSlash(item.ArchivePath))
-		p, err := OpenA18(archivePath)
-		if err != nil {
-			return err
+		if currentArchive == nil || !strings.EqualFold(currentArchivePath, archivePath) {
+			closeArchive()
+			p, err := OpenA18(archivePath)
+			if err != nil {
+				return err
+			}
+			currentArchive = p
+			currentArchivePath = archivePath
 		}
-		e, ok := p.Find(item.MemberPath)
+		e, ok := currentArchive.Find(item.MemberPath)
 		if !ok {
-			p.Close()
 			return fmt.Errorf("source asset member missing: %s#%s", item.ArchivePath, item.MemberPath)
 		}
-		digest, err := p.PlainDigest(e)
-		p.Close()
+		digest, err := currentArchive.plainDigestWithProgress(e, func(done, total int64) {
+			if progress != nil {
+				progress(BuildProgress{
+					Phase:        "source_bundle_verify",
+					CurrentFile:  label,
+					CurrentDone:  done,
+					CurrentTotal: total,
+					OverallDone:  min64(verifyDone+done, verifyTotal),
+					OverallTotal: verifyTotal,
+				})
+			}
+		})
 		if err != nil || int64(e.Size) != item.Size || digest != item.SHA256 {
 			return fmt.Errorf("source asset member mismatch: %s#%s", item.ArchivePath, item.MemberPath)
+		}
+		verifyDone += item.Size
+		if progress != nil {
+			progress(BuildProgress{Phase: "source_bundle_verify", CurrentFile: label, CurrentDone: item.Size, CurrentTotal: item.Size, OverallDone: min64(verifyDone, verifyTotal), OverallTotal: verifyTotal})
 		}
 	}
 	return nil

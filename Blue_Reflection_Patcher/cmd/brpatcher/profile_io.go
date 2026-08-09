@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 )
@@ -213,6 +214,13 @@ func atomicReplaceVerified(source, target, sourceHash string, sourceSize int64, 
 }
 
 func fsyncDirectory(path string) error {
+	// Directory fsync through os.File.Sync is not supported reliably on
+	// Windows and can return ERROR_ACCESS_DENIED for an otherwise valid path.
+	// Files are synced before rename, so skip only this directory durability
+	// barrier on Windows.
+	if runtime.GOOS == "windows" {
+		return nil
+	}
 	directory, err := os.Open(path)
 	if err != nil {
 		return err

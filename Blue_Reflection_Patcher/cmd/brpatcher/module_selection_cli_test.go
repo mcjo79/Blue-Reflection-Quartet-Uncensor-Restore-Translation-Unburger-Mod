@@ -59,7 +59,7 @@ func TestMenuArrowKeysAndEnter(t *testing.T) {
 	}
 }
 
-func TestQuartetDefaultsEnableTranslationAndRestoration(t *testing.T) {
+func TestQuartetDefaultsEnableTranslationRestorationAndDLC(t *testing.T) {
 	modules, _ := catalog.Load()
 	detections := []model.Detection{{TargetID: "blue_reflection_quartet", DisplayName: "Quartet", Root: "/game"}}
 	result, err := chooseModules(modules, detections, nil, false, false, strings.NewReader(""), &bytes.Buffer{})
@@ -67,7 +67,7 @@ func TestQuartetDefaultsEnableTranslationAndRestoration(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := result.Targets[0].SelectedModuleIDs
-	want := []string{"blue_reflection_translation", "quartet_restoration"}
+	want := []string{"blue_reflection_translation", "quartet_legacy_dlc", "quartet_restoration"}
 	if len(got) != len(want) || got[0] != want[0] || got[1] != want[1] {
 		t.Fatalf("unexpected Quartet defaults: %+v", got)
 	}

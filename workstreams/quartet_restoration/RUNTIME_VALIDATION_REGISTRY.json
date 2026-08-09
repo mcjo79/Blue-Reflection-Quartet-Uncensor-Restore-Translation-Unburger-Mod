@@ -161,6 +161,7 @@
     "bathroom_water_profile_runtime_validated_state_must_not_be_reverted_for_historical_stage119_tests": true,
     "core_modified": false,
     "event_profiles_remain_individually_unvalidated": true,
+    "external_graphics_api_capture_requires_separate_capability_audit": true,
     "gamma_fast_test_profile_remains_nonproduction": true,
     "gamma_retest_not_required_to_strengthen_visual_claim": true,
     "gamma_visual_effect_is_not_inferred": true,
@@ -168,7 +169,9 @@
     "glowlight_activation_requires_separate_user_authorization": true,
     "glowlight_requires_separate_runtime_evidence": true,
     "installed_game_modified": false,
+    "internal_pointer_object_callpath_instrumentation_closed_after_stage171": true,
     "legacy_dlc_modified": false,
+    "machine_specific_graphics_launch_context_must_remain_under_local_build": true,
     "only_explicit_runtime_results_are_persisted": true,
     "runtime_stability_does_not_imply_visual_validation": true,
     "runtime_validation_is_not_inferred": true,
@@ -210,6 +213,49 @@
     }
   },
   "read_only_runtime_traces": {
+    "graphics_capture_capability_stage172": {
+      "api_dump_layer_available": false,
+      "evidence_sha256": "d3844aa471b168c9fe24c21a9a08883c44c2632da8ec458f59599cc5e3357093",
+      "external_graphics_capture_started": false,
+      "installed_game_modified": false,
+      "process_memory_written": false,
+      "recommended_capture_backend": "existing_renderdoc_capture",
+      "renderdoc_layer_available": true,
+      "renderdoccmd_available": true,
+      "stage": 172,
+      "status": "complete_read_only_backend_selected",
+      "tool_version": "0.2.00",
+      "wet_transparency_mechanism_confirmed": false
+    },
+    "graphics_capture_dry_wet_stage173": {
+      "capture_backend": "existing_renderdoc_capture",
+      "capture_labels": [
+        "DRY",
+        "WET"
+      ],
+      "installed_game_modified": false,
+      "process_memory_written": false,
+      "raw_rdc_exported": false,
+      "requires_stage172_evidence_sha256": "d3844aa471b168c9fe24c21a9a08883c44c2632da8ec458f59599cc5e3357093",
+      "stage": 173,
+      "status": "prepared_pending_user_capture",
+      "tool_version": "0.2.01",
+      "wet_transparency_mechanism_confirmed": false
+    },
+    "wet_blend_context_binding_stage169": {
+      "evidence_sha256": "a4d4976e7449fe41d46133e6a81f790cb66489551ee0985eafe59e33088fdf2d",
+      "installed_game_modified": false,
+      "material_binding_confirmed": false,
+      "process_memory_written": false,
+      "recurrent_wet_only_blend_context_rows": 0,
+      "render_resource_binding_confirmed": false,
+      "shader_binding_confirmed": false,
+      "stage": 169,
+      "status": "complete_read_only_negative",
+      "texture_binding_confirmed": false,
+      "tool_version": "0.1.95",
+      "wet_transparency_mechanism_confirmed": false
+    },
     "wet_character_compound_state_stage166": {
       "bounded_zero_rows_do_not_prove_global_absence": true,
       "evidence_sha256": "7426be534a10ae601c0934ca2c36fd001d1edcae2a11d0d900df2173edd53e7a",
@@ -229,18 +275,67 @@
       "wet_transparency_mechanism_confirmed": false
     },
     "wet_render_resource_material_binding_stage167": {
+      "evidence_sha256": "81e749680b78804802703dda0735911883f7be5335f7fd7553427fd2d484d55a",
       "fresh_process_reacquisition_required": true,
-      "historical_pid_or_absolute_address_reuse_forbidden": true,
       "installed_game_modified": false,
       "material_binding_confirmed": false,
       "process_memory_written": false,
-      "requires_stage166_evidence_sha256": "7426be534a10ae601c0934ca2c36fd001d1edcae2a11d0d900df2173edd53e7a",
+      "render_resource_binding_confirmed": false,
       "shader_binding_confirmed": false,
       "stage": 167,
-      "stage166_broad_scan_repeated": false,
-      "status": "prepared_pending_user_capture",
+      "status": "complete_read_only",
       "texture_binding_confirmed": false,
       "tool_version": "0.1.90",
+      "wet_transparency_mechanism_confirmed": false
+    },
+    "wet_renderer_adjacent_pointer_graph_stage168": {
+      "evidence_sha256": "4c68380b71491180cbfbf98dfae2846b9dc37e600a8ba879d0c26e96ee8604e1",
+      "installed_game_modified": false,
+      "material_binding_confirmed": false,
+      "process_memory_written": false,
+      "recurrent_wet_g1t_or_g1s_path_rows": 67,
+      "recurrent_wet_material_shader_term_path_rows": 39,
+      "recurrent_wet_renderer_adjacent_path_rows": 68,
+      "render_resource_binding_confirmed": false,
+      "shader_binding_confirmed": false,
+      "stage": 168,
+      "status": "complete_read_only",
+      "texture_binding_confirmed": false,
+      "tool_version": "0.1.93",
+      "wet_transparency_mechanism_confirmed": false
+    },
+    "wet_renderer_interface_vtable_stage170": {
+      "evidence_sha256": "6f73ad48d129e1215f110219bc908d02e0e37c1e9f417652cbd86ea88eb088d7",
+      "installed_game_modified": false,
+      "material_binding_confirmed": false,
+      "process_memory_written": false,
+      "recurrent_wet_only_interface_candidate_rows": 7,
+      "recurrent_wet_only_renderer_interface_candidate_rows": 0,
+      "render_resource_binding_confirmed": false,
+      "shader_binding_confirmed": false,
+      "stage": 170,
+      "status": "complete_read_only_negative_renderer_provenance",
+      "texture_binding_confirmed": false,
+      "tool_version": "0.1.98",
+      "wet_transparency_mechanism_confirmed": false
+    },
+    "wet_renderer_transition_callpath_stage171": {
+      "api_or_call_path_binding_confirmed": false,
+      "capture_sample_rows": 1694,
+      "evidence_sha256": "9fcc90452eed4bdd641da45aacdd280af4e8775c05cda2dba0589a0e5b1aebb5",
+      "installed_game_modified": false,
+      "lost_sample_rows": 0,
+      "material_binding_confirmed": false,
+      "process_memory_written": false,
+      "recurrent_wet_only_callpath_candidate_rows": 3,
+      "recurrent_wet_only_renderer_callpath_candidate_rows": 0,
+      "render_resource_binding_confirmed": false,
+      "shader_binding_confirmed": false,
+      "stage": 171,
+      "state_sequence_independently_verified": false,
+      "status": "complete_read_only_negative_renderer_provenance",
+      "texture_binding_confirmed": false,
+      "tool_version": "0.1.99",
       "wet_transparency_mechanism_confirmed": false
     }
   },
@@ -285,5 +380,5 @@
     "wet_school_runtime_observation_path": "workstreams/quartet_restoration/WET_SCHOOL_RUNTIME_OBSERVATION.json"
   },
   "type": "br_quartet_restoration_runtime_validation_registry",
-  "updated_utc": "2026-08-07T23:36:13Z"
+  "updated_utc": "2026-08-08T21:45:00Z"
 }

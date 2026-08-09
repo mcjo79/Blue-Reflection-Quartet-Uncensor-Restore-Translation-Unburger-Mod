@@ -212,15 +212,22 @@ func (p *ArchiveReader) Read(e ArchiveEntry) ([]byte, error) {
 	}
 	return b, nil
 }
-func (p *ArchiveReader) PlainDigest(e ArchiveEntry) (string, error) { return p.digest(e, true) }
-func (p *ArchiveReader) RawDigest(e ArchiveEntry) (string, error)   { return p.digest(e, false) }
-func (p *ArchiveReader) digest(e ArchiveEntry, plain bool) (string, error) {
+func (p *ArchiveReader) PlainDigest(e ArchiveEntry) (string, error) { return p.digest(e, true, nil) }
+func (p *ArchiveReader) RawDigest(e ArchiveEntry) (string, error)   { return p.digest(e, false, nil) }
+func (p *ArchiveReader) plainDigestWithProgress(e ArchiveEntry, onProgress func(int64, int64)) (string, error) {
+	return p.digest(e, true, onProgress)
+}
+func (p *ArchiveReader) rawDigestWithProgress(e ArchiveEntry, onProgress func(int64, int64)) (string, error) {
+	return p.digest(e, false, onProgress)
+}
+func (p *ArchiveReader) digest(e ArchiveEntry, plain bool, onProgress func(int64, int64)) (string, error) {
 	h := sha256.New()
 	remaining := int64(e.Size)
 	off := p.DataBase + int64(e.Offset)
 	phase := 0
 	buf := make([]byte, ioChunk)
 	key := effectiveKey(e.Key, p.Master)
+	var processed int64
 	for remaining > 0 {
 		n := int64(len(buf))
 		if n > remaining {
@@ -238,6 +245,10 @@ func (p *ArchiveReader) digest(e ArchiveEntry, plain bool) (string, error) {
 		h.Write(chunk)
 		remaining -= int64(got)
 		off += int64(got)
+		processed += int64(got)
+		if onProgress != nil {
+			onProgress(processed, int64(e.Size))
+		}
 	}
 	return hex.EncodeToString(h.Sum(nil)), nil
 }
@@ -666,6 +677,22 @@ func AuditA22Rewrite(srcPath, dstPath string, expectedAdded map[string]string, r
 	for _, k := range names {
 		total += int64(bm[k].Size)
 	}
+	digestRange := func(reader *ArchiveReader, entry ArchiveEntry, plain bool, displayName string, base, span int64) (string, error) {
+		onProgress := func(processed, entryTotal int64) {
+			if progress == nil {
+				return
+			}
+			scaled := base
+			if entryTotal > 0 && span > 0 {
+				scaled += processed * span / entryTotal
+			}
+			progress("verify", displayName, min64(scaled, total), total)
+		}
+		if plain {
+			return reader.plainDigestWithProgress(entry, onProgress)
+		}
+		return reader.rawDigestWithProgress(entry, onProgress)
+	}
 	for _, k := range names {
 		be := bm[k]
 		var isAdded bool
@@ -687,7 +714,7 @@ func AuditA22Rewrite(srcPath, dstPath string, expectedAdded map[string]string, r
 			}
 		}
 		if isAdded {
-			got, e := b.PlainDigest(be)
+			got, e := digestRange(b, be, true, be.Name, done, int64(be.Size))
 			if e != nil {
 				return res, e
 			}
@@ -700,7 +727,7 @@ func AuditA22Rewrite(srcPath, dstPath string, expectedAdded map[string]string, r
 			if e != nil {
 				return res, e
 			}
-			got, e := b.PlainDigest(be)
+			got, e := digestRange(b, be, true, be.Name, done, int64(be.Size))
 			if e != nil {
 				return res, e
 			}
@@ -716,11 +743,12 @@ func AuditA22Rewrite(srcPath, dstPath string, expectedAdded map[string]string, r
 			if ae.Size != be.Size {
 				res.Problems = append(res.Problems, "unintended size change: "+be.Name)
 			} else if bytesEqual(ae.Key, be.Key) && ae.Encoded == be.Encoded {
-				ha, e := a.RawDigest(ae)
+				half := int64(be.Size) / 2
+				ha, e := digestRange(a, ae, false, be.Name, done, half)
 				if e != nil {
 					return res, e
 				}
-				hb, e := b.RawDigest(be)
+				hb, e := digestRange(b, be, false, be.Name, done+half, int64(be.Size)-half)
 				if e != nil {
 					return res, e
 				}
@@ -730,11 +758,12 @@ func AuditA22Rewrite(srcPath, dstPath string, expectedAdded map[string]string, r
 					res.Unchanged++
 				}
 			} else {
-				ha, e := a.PlainDigest(ae)
+				half := int64(be.Size) / 2
+				ha, e := digestRange(a, ae, true, be.Name, done, half)
 				if e != nil {
 					return res, e
 				}
-				hb, e := b.PlainDigest(be)
+				hb, e := digestRange(b, be, true, be.Name, done+half, int64(be.Size)-half)
 				if e != nil {
 					return res, e
 				}
@@ -967,6 +996,22 @@ func auditArchiveRewrite(srcPath, dstPath string, expectedAdded map[string]strin
 	for _, k := range names {
 		total += int64(bm[k].Size)
 	}
+	digestRange := func(reader *ArchiveReader, entry ArchiveEntry, plain bool, displayName string, base, span int64) (string, error) {
+		onProgress := func(processed, entryTotal int64) {
+			if progress == nil {
+				return
+			}
+			scaled := base
+			if entryTotal > 0 && span > 0 {
+				scaled += processed * span / entryTotal
+			}
+			progress("verify", displayName, min64(scaled, total), total)
+		}
+		if plain {
+			return reader.plainDigestWithProgress(entry, onProgress)
+		}
+		return reader.rawDigestWithProgress(entry, onProgress)
+	}
 	for _, k := range names {
 		be := bm[k]
 		isAdded := false
@@ -988,7 +1033,7 @@ func auditArchiveRewrite(srcPath, dstPath string, expectedAdded map[string]strin
 			}
 		}
 		if isAdded {
-			got, e := b.PlainDigest(be)
+			got, e := digestRange(b, be, true, be.Name, done, int64(be.Size))
 			if e != nil {
 				return res, e
 			}
@@ -1001,7 +1046,7 @@ func auditArchiveRewrite(srcPath, dstPath string, expectedAdded map[string]strin
 			if e != nil {
 				return res, e
 			}
-			got, e := b.PlainDigest(be)
+			got, e := digestRange(b, be, true, be.Name, done, int64(be.Size))
 			if e != nil {
 				return res, e
 			}
@@ -1013,11 +1058,12 @@ func auditArchiveRewrite(srcPath, dstPath string, expectedAdded map[string]strin
 			if ae.Size != be.Size {
 				res.Problems = append(res.Problems, "unintended size change: "+be.Name)
 			} else if bytesEqual(ae.Key, be.Key) && ae.Encoded == be.Encoded {
-				ha, e := a.RawDigest(ae)
+				half := int64(be.Size) / 2
+				ha, e := digestRange(a, ae, false, be.Name, done, half)
 				if e != nil {
 					return res, e
 				}
-				hb, e := b.RawDigest(be)
+				hb, e := digestRange(b, be, false, be.Name, done+half, int64(be.Size)-half)
 				if e != nil {
 					return res, e
 				}
@@ -1027,11 +1073,12 @@ func auditArchiveRewrite(srcPath, dstPath string, expectedAdded map[string]strin
 					res.Unchanged++
 				}
 			} else {
-				ha, e := a.PlainDigest(ae)
+				half := int64(be.Size) / 2
+				ha, e := digestRange(a, ae, true, be.Name, done, half)
 				if e != nil {
 					return res, e
 				}
-				hb, e := b.PlainDigest(be)
+				hb, e := digestRange(b, be, true, be.Name, done+half, int64(be.Size)-half)
 				if e != nil {
 					return res, e
 				}

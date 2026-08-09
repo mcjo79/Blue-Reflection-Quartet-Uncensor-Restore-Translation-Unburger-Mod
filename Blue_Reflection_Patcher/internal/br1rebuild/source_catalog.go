@@ -300,6 +300,13 @@ func BuildIslandEventArchive(sourcePack, targetPack, outputPath string, progress
 }
 
 func ResolveContentFiles(sourceRoot, targetRoot string) (map[string]string, map[string]string) {
+	return ResolveContentFilesWithTargetOverrides(sourceRoot, targetRoot, nil)
+}
+
+// ResolveContentFilesWithTargetOverrides keeps the live installation as the
+// structural target root while allowing already-managed archive paths to be
+// read from the immutable pre-install baseline during an in-place mod update.
+func ResolveContentFilesWithTargetOverrides(sourceRoot, targetRoot string, overrides map[string]string) (map[string]string, map[string]string) {
 	sourceData, err := sourceDataDirectory(sourceRoot)
 	if err != nil {
 		sourceData = filepath.Join(sourceRoot, "DATA")
@@ -307,5 +314,19 @@ func ResolveContentFiles(sourceRoot, targetRoot string) (map[string]string, map[
 	v := map[string]string{"exe": casePath(sourceRoot, "BLUE_REFLECTION.exe"), "pack00_02": casePath(sourceData, "PACK00_02.PAK"), "pack00_03": casePath(sourceData, "PACK00_03.PAK"), "pack01": casePath(sourceData, "PACK01.PAK")}
 	qd := filepath.Join(targetRoot, "Data")
 	q := map[string]string{"dll": filepath.Join(targetRoot, "B1.dll"), "pack10_02": casePath(qd, "PACK10_02.PAK"), "pack10_03": casePath(qd, "PACK10_03.PAK"), "pack11": casePath(qd, "PACK11.PAK"), "pack12": casePath(qd, "PACK12.PAK")}
+	for relative, path := range overrides {
+		switch strings.ToLower(filepath.ToSlash(strings.TrimSpace(relative))) {
+		case "b1.dll":
+			q["dll"] = path
+		case "data/pack10_02.pak":
+			q["pack10_02"] = path
+		case "data/pack10_03.pak":
+			q["pack10_03"] = path
+		case "data/pack11.pak":
+			q["pack11"] = path
+		case "data/pack12.pak":
+			q["pack12"] = path
+		}
+	}
 	return v, q
 }

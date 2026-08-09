@@ -17,20 +17,23 @@ var vdfPathLine = regexp.MustCompile(`(?i)^\s*"path"\s+"([^"]+)"`)
 var acfInstallDirLine = regexp.MustCompile(`(?i)^\s*"installdir"\s+"([^"]+)"`)
 
 type SourceLocator struct {
-	AssetRoot string
-	LooseRoot string
-	SteamRoot string
-	AutoSteam bool
+	AssetRoot  string
+	AnchorPath string
+	LooseRoot  string
+	SteamRoot  string
+	AutoSteam  bool
+	Progress   BuildProgressFunc
 }
 
 type SourceLocation struct {
-	Root   string `json:"root"`
-	Origin string `json:"origin"`
+	Root        string `json:"root"`
+	Origin      string `json:"origin"`
+	CleanupRoot string `json:"-"`
 }
 
 func LocateSourceInstall(locator SourceLocator) (SourceLocation, error) {
 	if strings.TrimSpace(locator.AssetRoot) != "" {
-		return locateSourceAssetBundle(locator.AssetRoot)
+		return locateSourceAssetBundle(locator.AssetRoot, locator.AnchorPath, locator.Progress)
 	}
 	if strings.TrimSpace(locator.LooseRoot) != "" {
 		root, err := normalizeExistingDir(locator.LooseRoot)
