@@ -1,7 +1,11 @@
 package br1rebuild
 
 import (
+	"bytes"
+	"os/exec"
+
 	"encoding/json"
+	"local/blue-reflection-patcher/internal/assetkey"
 	"os"
 	"path/filepath"
 	"testing"
@@ -191,5 +195,100 @@ func TestSourceAssetBundleRejectsDifferentApprovedAnchorSet(t *testing.T) {
 	}
 	if _, err := LocateSourceInstall(SourceLocator{AssetRoot: bundle, AnchorPath: anchorPath}); err == nil {
 		t.Fatal("asset bundle built against a different clean-source anchor set was accepted")
+	}
+}
+
+func TestEncryptedSourceAssetV3IsOpaqueAndRoundTrips(t *testing.T) {
+	if _, err := exec.LookPath("zstd"); err != nil {
+		t.Skip("zstd CLI not installed")
+	}
+	assetkey.InstallEmbeddedSeed(bytes.Repeat([]byte{0x5a}, 32))
+	stage := t.TempDir()
+	rel := "source/DATA/very-obvious-debug-name.bin"
+	payload := bytes.Repeat([]byte("VERY-OBVIOUS-PLAINTEXT-ASSET-CONTENT\n"), 64)
+	path := filepath.Join(stage, filepath.FromSlash(rel))
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, payload, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	manifest := SourceAssetManifest{
+		Type:                     "unburger_br1_dlc_source_assets",
+		FormatVersion:            SourceAssetsFormatVersion,
+		Capability:               SourceAssetsCapability,
+		ReconstructionCapability: "br1_legacy_content_rebuild_v1",
+		CleanAnchorCapability:    SourceAnchorsCapability,
+		SourceMembers: []SourceAssetMember{{
+			Group: "fixture", ArchivePath: "DATA/PACK01.PAK", MemberPath: `\fixture\asset.bin`, Size: int64(len(payload)), SHA256: shaBytes(payload),
+		}},
+		ImageFiles: []SourceAssetImageFile{{Path: rel, Size: int64(len(payload)), SHA256: shaBytes(payload)}},
+	}
+	manifest.SourceFingerprint = sourceAssetFingerprint(manifest.SourceMembers)
+	manifest.CleanAnchorFingerprint = manifest.SourceFingerprint
+	bundle := filepath.Join(t.TempDir(), "opaque.unburger-assets")
+	if err := packageSourceAssetImageV3(stage, bundle, manifest); err != nil {
+		t.Fatal(err)
+	}
+	blob, err := os.ReadFile(bundle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(blob, []byte("very-obvious-debug-name")) || bytes.Contains(blob, []byte("VERY-OBVIOUS-PLAINTEXT-ASSET-CONTENT")) {
+		t.Fatal("encrypted v3 bundle leaks a plaintext path or payload marker")
+	}
+	got, err := ReadSourceAssetManifest(bundle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.SourceFingerprint != manifest.SourceFingerprint || len(got.ImageFiles) != 1 || got.ImageFiles[0].Path != rel {
+		t.Fatalf("unexpected decrypted manifest: %+v", got)
+	}
+	container, err := readSourceAssetV3Manifest(bundle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(container.Objects) != 1 || container.Objects[0].Path != rel {
+		t.Fatalf("unexpected encrypted object map: %+v", container.Objects)
+	}
+	in, err := os.Open(bundle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer in.Close()
+	dst := filepath.Join(t.TempDir(), "roundtrip.bin")
+	if err := extractSourceAssetV3Object(in, container.Objects[0], dst, manifest.ImageFiles[0], nil); err != nil {
+		t.Fatal(err)
+	}
+	roundtrip, err := os.ReadFile(dst)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(roundtrip, payload) {
+		t.Fatal("encrypted v3 object did not round-trip byte-for-byte")
+	}
+}
+
+func TestLegacySourceAssetV1ManifestStillMatchesApprovedAnchors(t *testing.T) {
+	payload := []byte("legacy-v1")
+	member := SourceAssetMember{Group: "fixture", ArchivePath: "DATA/PACK01.PAK", MemberPath: `\fixture\legacy.bin`, Size: int64(len(payload)), SHA256: shaBytes(payload)}
+	manifest := SourceAssetManifest{
+		Type:                     "unburger_br1_dlc_source_assets",
+		FormatVersion:            legacySourceAssetsFormatVersion,
+		Capability:               legacySourceAssetsCapability,
+		ReconstructionCapability: "br1_legacy_content_rebuild_v1",
+		SourceMembers:            []SourceAssetMember{member},
+		ImageFiles:               []SourceAssetImageFile{{Path: "source/DATA/PACK01.PAK", Size: int64(len(payload)), SHA256: shaBytes(payload)}},
+	}
+	manifest.SourceFingerprint = sourceAssetFingerprint(manifest.SourceMembers)
+	anchors := SourceAnchorManifest{
+		Type: "unburger_br1_dlc_clean_source_anchors", FormatVersion: SourceAnchorsFormatVersion, Capability: SourceAnchorsCapability,
+		SourceMembers: []SourceAssetMember{member}, SourceFingerprint: manifest.SourceFingerprint,
+	}
+	if err := validateSourceAssetManifest(manifest); err != nil {
+		t.Fatalf("legacy v1 source assets were rejected: %v", err)
+	}
+	if !sourceAssetManifestMatchesAnchors(manifest, anchors) {
+		t.Fatal("legacy v1 source assets did not match the identical approved anchor set")
 	}
 }

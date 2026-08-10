@@ -19,6 +19,7 @@ type storageJournalRef struct {
 	TransactionID string            `json:"transaction_id"`
 	Status        string            `json:"status"`
 	GameRoot      string            `json:"game_root"`
+	StagingRoot   string            `json:"staging_root"`
 	BackupRoot    string            `json:"backup_root"`
 	Metadata      map[string]string `json:"metadata"`
 }
@@ -97,6 +98,11 @@ func compactInstallationStorage(stateDir string) (storageLifecycleReport, error)
 			if err := removeTreeIfPresent(filepath.Join(txRoot, "staged"), &report); err != nil {
 				return report, err
 			}
+			if staging := strings.TrimSpace(journal.StagingRoot); staging != "" && trustedTransactionStagingRoot(journal.GameRoot, journal.TransactionID, staging) {
+				if err := removeTreeIfPresent(staging, &report); err != nil {
+					return report, err
+				}
+			}
 		}
 		id := strings.TrimSpace(journal.TransactionID)
 		if id == "" || id != entry.Name() {
@@ -145,6 +151,11 @@ func compactInstallationStorage(stateDir string) (storageLifecycleReport, error)
 		}
 		if err := removeTreeIfPresent(filepath.Join(txRoot, "backup"), &report); err != nil {
 			return report, err
+		}
+		if root := strings.TrimSpace(journal.StagingRoot); root != "" && trustedTransactionStagingRoot(journal.GameRoot, id, root) {
+			if err := removeTreeIfPresent(root, &report); err != nil {
+				return report, err
+			}
 		}
 		if root := strings.TrimSpace(journal.BackupRoot); root != "" && trustedTransactionBackupRoot(journal.GameRoot, id, root) {
 			if err := removeTreeIfPresent(root, &report); err != nil {
@@ -241,6 +252,23 @@ func removeTreeIfPresent(path string, report *storageLifecycleReport) error {
 	}
 	report.RemovedTrees++
 	return nil
+}
+
+func trustedTransactionStagingRoot(gameRoot, transactionID, candidate string) bool {
+	if strings.TrimSpace(gameRoot) == "" || strings.TrimSpace(transactionID) == "" || strings.TrimSpace(candidate) == "" {
+		return false
+	}
+	gameAbs, err := filepath.Abs(gameRoot)
+	if err != nil {
+		return false
+	}
+	candidateAbs, err := filepath.Abs(candidate)
+	if err != nil {
+		return false
+	}
+	expected := filepath.Join(filepath.Dir(gameAbs), ".unburger-patcher-transaction-staging", filepath.Base(gameAbs), transactionID)
+	expectedAbs, err := filepath.Abs(expected)
+	return err == nil && filepath.Clean(expectedAbs) == filepath.Clean(candidateAbs)
 }
 
 func trustedTransactionBackupRoot(gameRoot, transactionID, candidate string) bool {

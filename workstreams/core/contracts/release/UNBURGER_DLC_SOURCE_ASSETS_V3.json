@@ -1,0 +1,35 @@
+{
+  "type": "unburger_dlc_source_assets_container_contract",
+  "format_version": 3,
+  "container": "opaque-encrypted-v3",
+  "public_release_embedded": false,
+  "compression": "per-object-zstd-level-19",
+  "encryption": "aes-256-gcm-chunked",
+  "manifest_encrypted": true,
+  "object_names": "random-128-bit-identifiers",
+  "key_policy": "local-secret-build-time-obfuscated-embed",
+  "primary_source": {
+    "game": "blue_reflection_2017",
+    "capability": "br1_legacy_source_assets_v2",
+    "clean_source_anchor_capability": "br1_legacy_clean_source_anchors_v1",
+    "required_source_member_count": 1682,
+    "content_model_changed_from_0.0.101": false
+  },
+  "supplemental_sources": [
+    {
+      "game": "blue_reflection_second_light",
+      "capability": "second_light_dlc_source_subset_v1",
+      "logical_root": "SECOND_LIGHT",
+      "archive_image": "reduced_a22_member_subset",
+      "whole_retail_paks_included": false,
+      "member_hashes_required": true,
+      "source_fingerprint_required": true
+    }
+  ],
+  "compatibility": {
+    "legacy_br1_only_v3_accepted": true,
+    "missing_second_light_capability_is_not_corruption": true,
+    "standalone_source_fallback": true
+  },
+  "machine_paths_recorded": false
+}

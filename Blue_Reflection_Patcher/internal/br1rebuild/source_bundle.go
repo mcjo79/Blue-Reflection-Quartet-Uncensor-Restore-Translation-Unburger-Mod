@@ -19,12 +19,14 @@ import (
 )
 
 const (
-	SourceAssetsCapability      = "br1_legacy_source_assets_v2"
-	SourceAssetsFormatVersion   = 2
-	SourceAnchorsCapability     = "br1_legacy_clean_source_anchors_v1"
-	SourceAnchorsFormatVersion  = 1
-	expectedSourceAnchorMembers = 1682
-	sourceAssetsManifestName    = "MANIFEST.json"
+	SourceAssetsCapability          = "br1_legacy_source_assets_v2"
+	SourceAssetsFormatVersion       = 2
+	legacySourceAssetsCapability    = "br1_legacy_source_assets_v1"
+	legacySourceAssetsFormatVersion = 1
+	SourceAnchorsCapability         = "br1_legacy_clean_source_anchors_v1"
+	SourceAnchorsFormatVersion      = 1
+	expectedSourceAnchorMembers     = 1682
+	sourceAssetsManifestName        = "MANIFEST.json"
 )
 
 type SourceAssetMember struct {
@@ -41,16 +43,24 @@ type SourceAssetImageFile struct {
 	SHA256 string `json:"sha256"`
 }
 
+type SupplementalSourceAssetManifest struct {
+	Capability        string              `json:"capability"`
+	Root              string              `json:"root"`
+	SourceFingerprint string              `json:"source_fingerprint"`
+	SourceMembers     []SourceAssetMember `json:"source_members"`
+}
+
 type SourceAssetManifest struct {
-	Type                     string                 `json:"type"`
-	FormatVersion            int                    `json:"format_version"`
-	Capability               string                 `json:"capability"`
-	ReconstructionCapability string                 `json:"reconstruction_capability"`
-	CleanAnchorCapability    string                 `json:"clean_anchor_capability"`
-	CleanAnchorFingerprint   string                 `json:"clean_anchor_fingerprint"`
-	SourceFingerprint        string                 `json:"source_fingerprint"`
-	SourceMembers            []SourceAssetMember    `json:"source_members"`
-	ImageFiles               []SourceAssetImageFile `json:"image_files"`
+	Type                     string                            `json:"type"`
+	FormatVersion            int                               `json:"format_version"`
+	Capability               string                            `json:"capability"`
+	ReconstructionCapability string                            `json:"reconstruction_capability"`
+	CleanAnchorCapability    string                            `json:"clean_anchor_capability"`
+	CleanAnchorFingerprint   string                            `json:"clean_anchor_fingerprint"`
+	SourceFingerprint        string                            `json:"source_fingerprint"`
+	SourceMembers            []SourceAssetMember               `json:"source_members"`
+	ImageFiles               []SourceAssetImageFile            `json:"image_files"`
+	SupplementalSources      []SupplementalSourceAssetManifest `json:"supplemental_sources,omitempty"`
 }
 
 type SourceAnchorManifest struct {
@@ -69,6 +79,22 @@ type sourceAssetBuildResult struct {
 }
 
 func BuildSourceAssetBundle(sourceRoot, outputPath, anchorPath string) (SourceAssetManifest, error) {
+	stage, err := workspace.MkdirTemp("unburger-br1-assets-")
+	if err != nil {
+		return SourceAssetManifest{}, err
+	}
+	defer os.RemoveAll(stage)
+	manifest, err := buildBR1SourceAssetStage(sourceRoot, stage, anchorPath)
+	if err != nil {
+		return SourceAssetManifest{}, err
+	}
+	if err := packageSourceAssetImageV3(stage, outputPath, manifest); err != nil {
+		return SourceAssetManifest{}, err
+	}
+	return manifest, nil
+}
+
+func buildBR1SourceAssetStage(sourceRoot, stage, anchorPath string) (SourceAssetManifest, error) {
 	anchors, err := ReadSourceAnchorManifest(anchorPath)
 	if err != nil {
 		return SourceAssetManifest{}, fmt.Errorf("read clean-source anchors: %w", err)
@@ -80,11 +106,6 @@ func BuildSourceAssetBundle(sourceRoot, outputPath, anchorPath string) (SourceAs
 	if err != nil {
 		return SourceAssetManifest{}, err
 	}
-	stage, err := workspace.MkdirTemp("unburger-br1-assets-")
-	if err != nil {
-		return SourceAssetManifest{}, err
-	}
-	defer os.RemoveAll(stage)
 	imageRoot := filepath.Join(stage, "source")
 	dataRoot := filepath.Join(imageRoot, "DATA")
 	if err := os.MkdirAll(dataRoot, 0o755); err != nil {
@@ -227,9 +248,6 @@ func BuildSourceAssetBundle(sourceRoot, outputPath, anchorPath string) (SourceAs
 	}
 	manifest.SourceFingerprint = sourceAssetFingerprint(members)
 	if err := verifySourceMembersAgainstAnchors(manifest.SourceMembers, anchors); err != nil {
-		return SourceAssetManifest{}, err
-	}
-	if err := packageSourceAssetImage(stage, outputPath, manifest); err != nil {
 		return SourceAssetManifest{}, err
 	}
 	return manifest, nil
@@ -750,7 +768,7 @@ func FindCompatibleSourceAssetBundle(raw, anchorPath string) (string, bool, erro
 			return "", false, nil
 		}
 		manifest, err := ReadSourceAssetManifest(abs)
-		if err != nil || validateSourceAssetManifest(manifest) != nil || verifySourceMembersAgainstAnchors(manifest.SourceMembers, anchors) != nil || !strings.EqualFold(manifest.CleanAnchorFingerprint, anchors.SourceFingerprint) {
+		if err != nil || validateSourceAssetManifest(manifest) != nil || !sourceAssetManifestMatchesAnchors(manifest, anchors) {
 			return "", false, nil
 		}
 		return abs, true, nil
@@ -807,11 +825,8 @@ func locateSourceAssetBundle(raw, anchorPath string, progress BuildProgressFunc)
 	if err := validateSourceAssetManifest(manifest); err != nil {
 		return SourceLocation{}, err
 	}
-	if err := verifySourceMembersAgainstAnchors(manifest.SourceMembers, anchors); err != nil {
-		return SourceLocation{}, fmt.Errorf("source assets bundle does not match approved clean-source anchors: %w", err)
-	}
-	if !strings.EqualFold(manifest.CleanAnchorFingerprint, anchors.SourceFingerprint) {
-		return SourceLocation{}, fmt.Errorf("source assets bundle was built against a different clean-source anchor set")
+	if !sourceAssetManifestMatchesAnchors(manifest, anchors) {
+		return SourceLocation{}, fmt.Errorf("source assets bundle does not match approved clean-source anchors")
 	}
 	root, cleanupRoot, err := materializeSourceAssetBundle(bundle, manifest, progress)
 	if err != nil {
@@ -836,7 +851,7 @@ func compatibleAssetBundles(dir string, anchors SourceAnchorManifest) ([]string,
 		}
 		path := filepath.Join(dir, entry.Name())
 		manifest, err := ReadSourceAssetManifest(path)
-		if err == nil && validateSourceAssetManifest(manifest) == nil && verifySourceMembersAgainstAnchors(manifest.SourceMembers, anchors) == nil && strings.EqualFold(manifest.CleanAnchorFingerprint, anchors.SourceFingerprint) {
+		if err == nil && validateSourceAssetManifest(manifest) == nil && sourceAssetManifestMatchesAnchors(manifest, anchors) {
 			out = append(out, path)
 		}
 	}
@@ -845,6 +860,13 @@ func compatibleAssetBundles(dir string, anchors SourceAnchorManifest) ([]string,
 }
 
 func ReadSourceAssetManifest(path string) (SourceAssetManifest, error) {
+	if modern, err := isSourceAssetV3(path); err == nil && modern {
+		container, err := readSourceAssetV3Manifest(path)
+		if err != nil {
+			return SourceAssetManifest{}, err
+		}
+		return container.SourceManifest, nil
+	}
 	zr, err := zip.OpenReader(path)
 	if err != nil {
 		return SourceAssetManifest{}, fmt.Errorf("open source assets bundle: %w", err)
@@ -869,25 +891,37 @@ func ReadSourceAssetManifest(path string) (SourceAssetManifest, error) {
 }
 
 func validateSourceAssetManifest(manifest SourceAssetManifest) error {
-	if manifest.Type != "unburger_br1_dlc_source_assets" || manifest.FormatVersion != SourceAssetsFormatVersion {
-		return fmt.Errorf("unsupported source assets manifest type/version")
+	if manifest.Type != "unburger_br1_dlc_source_assets" {
+		return fmt.Errorf("unsupported source assets manifest type")
 	}
-	if manifest.Capability != SourceAssetsCapability || manifest.ReconstructionCapability != "br1_legacy_content_rebuild_v1" {
-		return fmt.Errorf("incompatible source assets capability")
+	if manifest.ReconstructionCapability != "br1_legacy_content_rebuild_v1" {
+		return fmt.Errorf("incompatible source assets reconstruction capability")
 	}
-	if manifest.CleanAnchorCapability != SourceAnchorsCapability || len(manifest.CleanAnchorFingerprint) != 64 {
-		return fmt.Errorf("source assets bundle is not bound to a supported clean-source anchor set")
+	switch manifest.FormatVersion {
+	case legacySourceAssetsFormatVersion:
+		if manifest.Capability != legacySourceAssetsCapability {
+			return fmt.Errorf("incompatible legacy source assets capability")
+		}
+	case SourceAssetsFormatVersion:
+		if manifest.Capability != SourceAssetsCapability {
+			return fmt.Errorf("incompatible source assets capability")
+		}
+		if manifest.CleanAnchorCapability != SourceAnchorsCapability || len(manifest.CleanAnchorFingerprint) != 64 {
+			return fmt.Errorf("source assets bundle is not bound to a supported clean-source anchor set")
+		}
+		if _, err := hex.DecodeString(manifest.CleanAnchorFingerprint); err != nil {
+			return fmt.Errorf("invalid clean-source anchor fingerprint")
+		}
+	default:
+		return fmt.Errorf("unsupported source assets manifest version %d", manifest.FormatVersion)
 	}
 	if len(manifest.SourceMembers) == 0 || len(manifest.ImageFiles) == 0 {
 		return fmt.Errorf("source assets manifest is empty")
 	}
-	if _, err := hex.DecodeString(manifest.CleanAnchorFingerprint); err != nil {
-		return fmt.Errorf("invalid clean-source anchor fingerprint")
-	}
 	if sourceAssetFingerprint(manifest.SourceMembers) != manifest.SourceFingerprint {
 		return fmt.Errorf("source assets fingerprint mismatch")
 	}
-	if !strings.EqualFold(manifest.SourceFingerprint, manifest.CleanAnchorFingerprint) {
+	if manifest.FormatVersion == SourceAssetsFormatVersion && !strings.EqualFold(manifest.SourceFingerprint, manifest.CleanAnchorFingerprint) {
 		return fmt.Errorf("source assets fingerprint differs from clean-source anchor fingerprint")
 	}
 	seen := map[string]bool{}
@@ -896,12 +930,46 @@ func validateSourceAssetManifest(manifest SourceAssetManifest) error {
 		if !strings.HasPrefix(clean, "source/") || strings.Contains(clean, "../") || seen[clean] || item.Size < 0 || len(item.SHA256) != 64 {
 			return fmt.Errorf("invalid source image file entry %q", item.Path)
 		}
+		if _, err := hex.DecodeString(item.SHA256); err != nil {
+			return fmt.Errorf("invalid source image SHA-256 for %q", item.Path)
+		}
 		seen[clean] = true
+	}
+	seenSupplement := map[string]bool{}
+	for _, supplement := range manifest.SupplementalSources {
+		root := filepath.ToSlash(filepath.Clean(filepath.FromSlash(supplement.Root)))
+		if supplement.Capability == "" || root == "." || root == "" || strings.Contains(root, "../") || strings.HasPrefix(root, "/") || seenSupplement[supplement.Capability] {
+			return fmt.Errorf("invalid supplemental source capability/root")
+		}
+		seenSupplement[supplement.Capability] = true
+		members, err := normalizeSourceMembers(supplement.SourceMembers)
+		if err != nil {
+			return err
+		}
+		if len(members) == 0 || sourceAssetFingerprint(members) != supplement.SourceFingerprint {
+			return fmt.Errorf("supplemental source fingerprint mismatch for %s", supplement.Capability)
+		}
 	}
 	return nil
 }
 
+func sourceAssetManifestMatchesAnchors(manifest SourceAssetManifest, anchors SourceAnchorManifest) bool {
+	if verifySourceMembersAgainstAnchors(manifest.SourceMembers, anchors) != nil {
+		return false
+	}
+	if !strings.EqualFold(manifest.SourceFingerprint, anchors.SourceFingerprint) {
+		return false
+	}
+	if manifest.FormatVersion == SourceAssetsFormatVersion {
+		return manifest.CleanAnchorCapability == anchors.Capability && strings.EqualFold(manifest.CleanAnchorFingerprint, anchors.SourceFingerprint)
+	}
+	return manifest.FormatVersion == legacySourceAssetsFormatVersion && manifest.Capability == legacySourceAssetsCapability
+}
+
 func materializeSourceAssetBundle(path string, manifest SourceAssetManifest, progress BuildProgressFunc) (string, string, error) {
+	if modern, err := isSourceAssetV3(path); err == nil && modern {
+		return materializeSourceAssetBundleV3(path, manifest, progress)
+	}
 	// One-time migration cleanup for the persistent source-image cache used by
 	// older public releases. Failure to remove it must not block this run.
 	if cacheBase, cacheErr := os.UserCacheDir(); cacheErr == nil && strings.TrimSpace(cacheBase) != "" {
@@ -1102,6 +1170,9 @@ func validateMaterializedSourceImage(cache string, manifest SourceAssetManifest,
 		if progress != nil {
 			progress(BuildProgress{Phase: "source_bundle_verify", CurrentFile: label, CurrentDone: item.Size, CurrentTotal: item.Size, OverallDone: min64(verifyDone, verifyTotal), OverallTotal: verifyTotal})
 		}
+	}
+	if err := validateSupplementalSourceAssets(root, manifest.SupplementalSources, progress); err != nil {
+		return err
 	}
 	return nil
 }

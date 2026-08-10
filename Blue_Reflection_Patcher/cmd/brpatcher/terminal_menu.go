@@ -101,19 +101,61 @@ func chooseModulesTUI(
 			}
 		case keyToggle:
 			if cursor < len(available) {
-				id := available[cursor].ModuleID
-				selected[id] = !selected[id]
+				toggleModuleSelection(available, selected, available[cursor].ModuleID)
 			}
 		case keyEnter:
 			if cursor == continueIndex {
 				fmt.Fprint(out, ansiClear)
 				return selectedModuleIDs(available, selected), nil
 			}
-			id := available[cursor].ModuleID
-			selected[id] = !selected[id]
+			toggleModuleSelection(available, selected, available[cursor].ModuleID)
 		case keyCancel:
 			fmt.Fprint(out, ansiClear)
 			return nil, fmt.Errorf("module selection cancelled")
+		}
+	}
+}
+
+func toggleModuleSelection(modules []model.BundleModule, selected map[string]bool, id string) {
+	enabling := !selected[id]
+	selected[id] = enabling
+	if enabling {
+		byID := map[string]model.BundleModule{}
+		for _, module := range modules {
+			byID[module.ModuleID] = module
+		}
+		var enableDeps func(string)
+		enableDeps = func(current string) {
+			module, ok := byID[current]
+			if !ok {
+				return
+			}
+			for _, dep := range module.Dependencies {
+				if !selected[dep] {
+					selected[dep] = true
+					enableDeps(dep)
+				}
+			}
+		}
+		enableDeps(id)
+		return
+	}
+	// Disabling a parent also disables selected dependents, so the menu never
+	// produces an obviously invalid dependency state.
+	changed := true
+	for changed {
+		changed = false
+		for _, module := range modules {
+			if !selected[module.ModuleID] {
+				continue
+			}
+			for _, dep := range module.Dependencies {
+				if !selected[dep] {
+					selected[module.ModuleID] = false
+					changed = true
+					break
+				}
+			}
 		}
 	}
 }
@@ -147,7 +189,11 @@ func renderModuleMenu(
 			box = "[✓]"
 			boxStyle = ansiGreen + ansiBold
 		}
-		renderTUIFrameRow(out, "%s%s%s%s%s%s %s%s%s", pointerStyle, pointer, ansiReset, boxStyle, box, ansiReset, ansiBold, module.DisplayName, ansiReset)
+		displayName := module.DisplayName
+		if module.ModuleID == quartetMovieRestorationModule {
+			displayName = "↳ " + displayName
+		}
+		renderTUIFrameRow(out, "%s%s%s%s%s%s %s%s%s", pointerStyle, pointer, ansiReset, boxStyle, box, ansiReset, ansiBold, displayName, ansiReset)
 		renderTUIFrameRow(out, "    %s%s%s", ansiDim, module.Description, ansiReset)
 		if contains(module.DefaultTargets, detection.TargetID) {
 			renderTUIFrameRow(out, "    %s(default)%s", ansiGray, ansiReset)

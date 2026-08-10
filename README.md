@@ -1,6 +1,6 @@
 # BLUE REFLECTION UNBURGER Mod
 
-An English translation restoration, uncensor and content restoration project for the PC BLUE REFLECTION series.
+An English translation, uncensor and content restoration project for the PC BLUE REFLECTION series.
 
 The translation included with this mod supports every PC edition covered by the project. This includes the original PC releases of **BLUE REFLECTION** and **BLUE REFLECTION: Second Light**, together with **BLUE REFLECTION**, **Second Light**, **SUN** and **RAY** as included in **BLUE REFLECTION Quartet**.
 

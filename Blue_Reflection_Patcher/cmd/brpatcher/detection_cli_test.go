@@ -2,11 +2,13 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"local/blue-reflection-patcher/internal/model"
 )
@@ -221,5 +223,90 @@ func TestLegacyAssetAutodiscoveryDoesNotUseCurrentDirectory(t *testing.T) {
 		if filepath.Clean(root) == filepath.Clean(unrelated) {
 			t.Fatalf("current directory leaked into automatic .unburger-assets search: %#v", roots)
 		}
+	}
+}
+
+func TestRememberedManagedHistorySkipsOrphanCommittedAndKeepsRolledBack(t *testing.T) {
+	stateHome := t.TempDir()
+	t.Setenv("XDG_STATE_HOME", stateHome)
+
+	historicalGame := t.TempDir()
+	vmGame := t.TempDir()
+	base := filepath.Join(stateHome, "unburger-patcher", "blue-reflection", "installations")
+
+	writeJournal := func(installation, txID, status, game string, updated time.Time) {
+		t.Helper()
+		dir := filepath.Join(base, installation, "transactions", txID)
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		payload := map[string]any{
+			"status":      status,
+			"game_root":   game,
+			"updated_utc": updated.UTC(),
+			"metadata":    map[string]string{"target_id": "blue_reflection_quartet"},
+		}
+		data, err := json.Marshal(payload)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "journal.json"), data, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	writeJournal("historical", "old-commit", "committed", historicalGame, time.Date(2026, 8, 8, 15, 11, 7, 0, time.UTC))
+	writeJournal("vm", "new-rollback", "rolled_back", vmGame, time.Date(2026, 8, 9, 14, 53, 41, 0, time.UTC))
+
+	items := rememberedInstallationCandidates()
+	if len(items) != 1 {
+		t.Fatalf("remembered candidates = %+v, expected only rolled-back history", items)
+	}
+	if items[0].Source != "managed_history" || filepath.Clean(items[0].Path) != filepath.Clean(vmGame) {
+		t.Fatalf("wrong managed-history candidate: %+v", items[0])
+	}
+}
+
+func TestRememberedActiveStateOutranksManagedHistory(t *testing.T) {
+	stateHome := t.TempDir()
+	t.Setenv("XDG_STATE_HOME", stateHome)
+	activeGame := t.TempDir()
+	historyGame := t.TempDir()
+	base := filepath.Join(stateHome, "unburger-patcher", "blue-reflection", "installations")
+
+	activeDir := filepath.Join(base, "active")
+	if err := os.MkdirAll(activeDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	activeJSON := fmt.Sprintf(`{"status":"active","target_id":"blue_reflection_quartet","game_root":%q}`, activeGame)
+	if err := os.WriteFile(filepath.Join(activeDir, "active_state.json"), []byte(activeJSON), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	txDir := filepath.Join(base, "history", "transactions", "rolled")
+	if err := os.MkdirAll(txDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	data, err := json.Marshal(map[string]any{
+		"status":      "rolled_back",
+		"game_root":   historyGame,
+		"updated_utc": time.Now().UTC().Add(time.Hour),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(txDir, "journal.json"), data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	items := rememberedInstallationCandidates()
+	if len(items) != 2 {
+		t.Fatalf("remembered candidates = %+v", items)
+	}
+	if items[0].Source != "managed_state" || filepath.Clean(items[0].Path) != filepath.Clean(activeGame) {
+		t.Fatalf("active state did not have first priority: %+v", items)
+	}
+	if items[1].Source != "managed_history" || filepath.Clean(items[1].Path) != filepath.Clean(historyGame) {
+		t.Fatalf("history candidate missing/incorrect: %+v", items)
 	}
 }

@@ -1,11 +1,13 @@
 package runtimebundle
 
 import (
+	"archive/tar"
 	"archive/zip"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 )
@@ -174,4 +176,63 @@ func writeRuntimeBundleForVersion(t *testing.T, path, version string) {
 	}
 	files["SHA256SUMS"] = []byte(sums)
 	writeZip(t, path, files)
+}
+
+func TestResolveProjectRootMaterializesUnburgerV3TarZstd(t *testing.T) {
+	if _, err := exec.LookPath("zstd"); err != nil {
+		t.Skip("zstd CLI unavailable")
+	}
+	root := t.TempDir()
+	files := map[string][]byte{
+		"RELEASE_MANIFEST.json":               []byte("{\"type\":\"unburger_release_manifest\",\"format_version\":3,\"core_version\":\"0.0.100\"}\n"),
+		"content/translation/records.v1.json": []byte("{}\n"),
+	}
+	var sums string
+	for name, data := range files {
+		h := sha256.Sum256(data)
+		sums += fmt.Sprintf("%s  ./%s\n", hex.EncodeToString(h[:]), name)
+	}
+	files["SHA256SUMS"] = []byte(sums)
+	tarPath := filepath.Join(root, "payload.tar")
+	f, err := os.Create(tarPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tw := tar.NewWriter(f)
+	for _, name := range []string{"RELEASE_MANIFEST.json", "content/translation/records.v1.json", "SHA256SUMS"} {
+		data := files[name]
+		if err := tw.WriteHeader(&tar.Header{Name: name, Mode: 0o644, Size: int64(len(data))}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := tw.Write(data); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := tw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
+	bundle := filepath.Join(root, "UNBURGER_0.0.100.unburger")
+	cmd := exec.Command("zstd", "-q", "-19", "-f", tarPath, "-o", bundle)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("zstd: %v: %s", err, out)
+	}
+	_ = os.Remove(tarPath)
+	version, err := runtimeBundleCoreVersion(bundle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if version != "0.0.100" {
+		t.Fatalf("version=%q", version)
+	}
+	resolved, cleanup, err := ResolveProjectRootTransient(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cleanup()
+	if _, err := os.Stat(filepath.Join(resolved, requiredRecordPath)); err != nil {
+		t.Fatal(err)
+	}
 }

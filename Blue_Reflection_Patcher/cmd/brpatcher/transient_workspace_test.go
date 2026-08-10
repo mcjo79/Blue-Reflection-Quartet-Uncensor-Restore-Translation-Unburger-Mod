@@ -63,3 +63,39 @@ func TestNewPublicWorkRootRemovesOnlyRegenerablePersistentPayloadsAndCleansCurre
 		t.Fatalf("current transient workspace survived cleanup: %v", err)
 	}
 }
+
+func TestNewGameScopedPublicWorkRootUsesSiblingFilesystemAndCleansStaleBuilds(t *testing.T) {
+	root := t.TempDir()
+	game := filepath.Join(root, "games", "Quartet")
+	stateDir := filepath.Join(root, "state", "installation")
+	if err := os.MkdirAll(game, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	workParent := filepath.Join(filepath.Dir(game), ".unburger-patcher-work", filepath.Base(game))
+	stale := filepath.Join(workParent, "old-run", "candidate.bin")
+	if err := os.MkdirAll(filepath.Dir(stale), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(stale, []byte("stale"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	workspaceRoot, cleanup, err := newGameScopedPublicWorkRootWithStatus(game, stateDir, "run-", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if filepath.Dir(workspaceRoot) != workParent {
+		t.Fatalf("workspace root = %q, expected child of %q", workspaceRoot, workParent)
+	}
+	if _, err := os.Stat(filepath.Join(workParent, "old-run")); !os.IsNotExist(err) {
+		t.Fatalf("stale build-only workspace survived: %v", err)
+	}
+	candidate := filepath.Join(workspaceRoot, "candidate.bin")
+	if err := os.WriteFile(candidate, []byte("candidate"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cleanup()
+	if _, err := os.Stat(workspaceRoot); !os.IsNotExist(err) {
+		t.Fatalf("current game-scoped workspace survived cleanup: %v", err)
+	}
+}

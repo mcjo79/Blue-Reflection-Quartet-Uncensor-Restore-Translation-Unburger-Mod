@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -67,8 +68,30 @@ func TestQuartetDefaultsEnableTranslationRestorationAndDLC(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := result.Targets[0].SelectedModuleIDs
-	want := []string{"blue_reflection_translation", "quartet_legacy_dlc", "quartet_restoration"}
-	if len(got) != len(want) || got[0] != want[0] || got[1] != want[1] {
+	want := []string{"blue_reflection_translation", "quartet_legacy_dlc", "quartet_movie_restoration", "quartet_restoration"}
+	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("unexpected Quartet defaults: %+v", got)
+	}
+}
+
+func TestMovieRestorationToggleMaintainsUNCENSORDependency(t *testing.T) {
+	modules, err := catalog.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var available []model.BundleModule
+	for _, module := range modules {
+		if contains(module.SupportedTargets, "blue_reflection_quartet") {
+			available = append(available, module)
+		}
+	}
+	selected := map[string]bool{}
+	toggleModuleSelection(available, selected, quartetMovieRestorationModule)
+	if !selected[quartetMovieRestorationModule] || !selected[quartetRestorationModule] {
+		t.Fatalf("movie restoration did not enable UNCENSOR dependency: %+v", selected)
+	}
+	toggleModuleSelection(available, selected, quartetRestorationModule)
+	if selected[quartetRestorationModule] || selected[quartetMovieRestorationModule] {
+		t.Fatalf("disabling UNCENSOR left its movie add-on selected: %+v", selected)
 	}
 }

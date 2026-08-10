@@ -15,29 +15,34 @@ import (
 	"local/blue-reflection-patcher/internal/model"
 	"local/blue-reflection-patcher/internal/plan/baseline"
 	"local/blue-reflection-patcher/internal/plan/installstate"
+	"local/blue-reflection-patcher/internal/quartetdlc"
 	"local/blue-reflection-patcher/internal/translationbundle"
 )
 
 type legacyContentStartOptions struct {
-	ProjectRoot       string
-	ReleaseRoot       string
-	SourceRoot        string
-	SteamRoot         string
-	AssetRoot         string
-	DisableAutoSource bool
-	SimplifiedLabels  string
-	SaveRoot          string
-	SyncSaves         bool
-	BuildLocal        bool
-	Prepare           bool
-	Install           bool
-	Confirmed         bool
-	Prompt            bool
+	ProjectRoot           string
+	ReleaseRoot           string
+	SourceRoot            string
+	SecondLightSourceRoot string
+	DLCSourceGames        string
+	SteamRoot             string
+	AssetRoot             string
+	DisableAutoSource     bool
+	SimplifiedLabels      string
+	SaveRoot              string
+	SyncSaves             bool
+	BuildLocal            bool
+	Prepare               bool
+	Install               bool
+	Confirmed             bool
+	Prompt                bool
 }
 
 type legacyContentResult struct {
 	Survey             br1rebuild.SurveyReport              `json:"survey"`
 	Build              br1rebuild.ReconstructionBuildReport `json:"build,omitempty"`
+	SecondLightDLC     *quartetdlc.SecondLightBuildAudit    `json:"second_light_dlc,omitempty"`
+	DLCSourceGames     []string                             `json:"dlc_source_games,omitempty"`
 	Restoration        *br1rebuild.RestorationLayerAudit    `json:"restoration,omitempty"`
 	Translation        *br1rebuild.TranslationLayerAudit    `json:"translation,omitempty"`
 	TranslationRecords *translationbundle.ApplyAudit        `json:"translation_records,omitempty"`
@@ -60,7 +65,7 @@ func selectionUsesIntegratedQuartetContent(selection model.SelectionResult) (mod
 		valid := true
 		for _, moduleID := range target.SelectedModuleIDs {
 			switch moduleID {
-			case quartetLegacyDLCModule, quartetRestorationModule, quartetTranslationModule:
+			case quartetLegacyDLCModule, quartetRestorationModule, quartetTranslationModule, quartetMovieRestorationModule:
 				integrated = true
 			default:
 				valid = false
@@ -89,9 +94,24 @@ func runQuartetContentGuided(selection model.SelectionResult, opts legacyContent
 	if err != nil || !requested {
 		return legacyContentResult{}, err
 	}
-	legacySelected := contains(target.SelectedModuleIDs, quartetLegacyDLCModule)
+	workflowStartedAt := time.Now()
+	dlcSelected := contains(target.SelectedModuleIDs, quartetLegacyDLCModule)
+	dlcFamilies := []quartetDLCFamily{}
+	if dlcSelected {
+		if opts.Prompt && strings.TrimSpace(opts.DLCSourceGames) == "" {
+			dlcFamilies, err = chooseQuartetDLCFamiliesTUI(os.Stdin, os.Stdout)
+		} else {
+			dlcFamilies, err = parseQuartetDLCFamilies(opts.DLCSourceGames)
+		}
+		if err != nil {
+			return legacyContentResult{}, err
+		}
+	}
+	legacySelected := hasQuartetDLCFamily(dlcFamilies, quartetDLCBlueReflection)
+	secondLightSelected := hasQuartetDLCFamily(dlcFamilies, quartetDLCSecondLight)
 	restorationSelected := contains(target.SelectedModuleIDs, quartetRestorationModule)
 	translationSelected := contains(target.SelectedModuleIDs, quartetTranslationModule)
+	movieRestorationSelected := contains(target.SelectedModuleIDs, quartetMovieRestorationModule)
 	source := br1rebuild.SourceLocator{
 		AssetRoot:  opts.AssetRoot,
 		AnchorPath: legacyAssetAnchorPath(opts.ProjectRoot),
@@ -108,6 +128,9 @@ func runQuartetContentGuided(selection model.SelectionResult, opts legacyContent
 	}
 	surveyOptions := br1rebuild.SurveyOptions{TargetRoot: target.Root, UseHantForHans: simplified == "hant", RequireFreeSpace: true}
 	result := legacyContentResult{Status: "ready", GameModified: false}
+	for _, family := range dlcFamilies {
+		result.DLCSourceGames = append(result.DLCSourceGames, string(family))
+	}
 	stateBase, err := stateRoot()
 	if err != nil {
 		return result, err
@@ -139,7 +162,7 @@ func runQuartetContentGuided(selection model.SelectionResult, opts legacyContent
 		}
 		var sourceRenderer *br1BuildProgressRenderer
 		if strings.TrimSpace(source.AssetRoot) != "" {
-			sourceRenderer = newBR1BuildProgressRenderer(out)
+			sourceRenderer = newBR1BuildProgressRendererWithWorkflowStart(out, workflowStartedAt)
 			defer sourceRenderer.Finish()
 			sourceRenderer.Status("source_bundle_manifest", "Opening and validating BR1 source bundle metadata")
 			source.Progress = sourceRenderer.Callback
@@ -164,6 +187,49 @@ func runQuartetContentGuided(selection model.SelectionResult, opts legacyContent
 		if !survey.Ready {
 			return result, fmt.Errorf("BLUE REFLECTION legacy content survey is blocked")
 		}
+	}
+
+	secondLightSource := ""
+	secondLightSourceOrigin := ""
+	if secondLightSelected {
+		// A combined .unburger-assets image may expose its Second Light source as a
+		// sibling namespace of an already materialized BR1 source. Prefer that
+		// before asking for a standalone installation. When only Second Light DLC
+		// is selected, inspect/materialize a nearby combined bundle directly.
+		if legacySelected {
+			secondLightSource = secondLightSourceFromMaterializedBR1Root(result.Survey.Source.Root)
+			if secondLightSource != "" {
+				if result.Survey.Source.Origin == "asset_bundle" {
+					secondLightSourceOrigin = "combined_assets"
+				} else {
+					secondLightSourceOrigin = "co_located_source"
+				}
+			}
+		}
+		if secondLightSource == "" && !legacySelected && strings.TrimSpace(opts.SecondLightSourceRoot) == "" {
+			sourceRenderer := newBR1BuildProgressRendererWithWorkflowStart(out, workflowStartedAt)
+			sourceRenderer.Status("source_bundle_manifest", "Inspecting combined DLC source bundle for Second Light capability")
+			root, cleanupRoot, found, materializeErr := materializeNearbySecondLightDLCSource(opts.ReleaseRoot, opts.ProjectRoot, legacyAssetAnchorPath(opts.ProjectRoot), sourceRenderer.Callback)
+			sourceRenderer.Finish()
+			if materializeErr != nil {
+				return result, materializeErr
+			}
+			if found {
+				secondLightSource = root
+				secondLightSourceOrigin = "combined_assets"
+				if cleanupRoot != "" {
+					defer os.RemoveAll(cleanupRoot)
+				}
+			}
+		}
+		if secondLightSource == "" {
+			secondLightSource, err = resolveSecondLightDLCSource(opts.SecondLightSourceRoot, opts.Prompt, os.Stdin, out)
+			if err != nil {
+				return result, err
+			}
+			secondLightSourceOrigin = "standalone_installation"
+		}
+		fmt.Fprintf(out, "%sSecond Light DLC source ready:%s %s\n", ansiCyan+ansiBold, ansiReset, secondLightSourceOrigin)
 	}
 
 	action := guidedActionCancel
@@ -206,17 +272,19 @@ func runQuartetContentGuided(selection model.SelectionResult, opts legacyContent
 	textCodec := br1rebuild.EncryptedTextTool{}
 	surveyOptions.TextTool = textCodec
 
-	workspace, cleanupWorkspace, err := newPublicWorkRootWithStatus(stateDir, "unburger-quartet-build-", func(message string) {
+	workspace, cleanupWorkspace, err := newGameScopedPublicWorkRootWithStatus(target.Root, stateDir, "unburger-quartet-build-", func(message string) {
 		fmt.Fprintf(out, "%sStorage:%s %s\n", ansiGray, ansiReset, message)
 	})
 	if err != nil {
 		return result, err
 	}
 	defer cleanupWorkspace()
-	renderer := newBR1BuildProgressRenderer(out)
+	renderer := newBR1BuildProgressRendererWithWorkflowStart(out, workflowStartedAt)
 	defer renderer.Finish()
 	build := br1rebuild.ReconstructionBuildReport{Status: "not_requested", GameModified: false}
 	candidates := map[string]string{}
+	verifiedArtifacts := map[string]br1rebuild.OutputArtifact{}
+	secondLightOutputs := map[string]string{}
 	for relative, path := range managedBaselineSources {
 		candidates[filepath.ToSlash(relative)] = path
 	}
@@ -233,7 +301,35 @@ func runQuartetContentGuided(selection model.SelectionResult, opts legacyContent
 		}
 		result.Build = build
 		for _, artifact := range build.Candidates {
-			candidates[filepath.ToSlash(artifact.RelativePath)] = artifact.Path
+			relative := filepath.ToSlash(artifact.RelativePath)
+			candidates[relative] = artifact.Path
+			verifiedArtifacts[relative] = artifact
+		}
+	}
+	if secondLightSelected {
+		fmt.Fprintf(out, "\n%s%sBuilding verified BLUE REFLECTION: Second Light DLC restoration%s\n", ansiBold, ansiCyan, ansiReset)
+		renderer.Status("second_light_source", "Reading standalone Second Light source and Quartet b4 targets")
+		slAudit, slOutputs, slErr := quartetdlc.ComposeSecondLightDLC(quartetdlc.SecondLightBuildOptions{
+			SourceRoot: secondLightSource, TargetRoot: target.Root, Workspace: filepath.Join(workspace, "second-light-dlc"),
+			TargetOverrides: candidates, TextTool: textCodec,
+		}, func(stage, item string, done, total, overallDone, overallTotal int64) {
+			renderer.Callback(br1rebuild.BuildProgress{Phase: stage, CurrentFile: item, CurrentDone: done, CurrentTotal: total, OverallDone: overallDone, OverallTotal: overallTotal})
+		})
+		renderer.Finish()
+		if slErr != nil {
+			return result, slErr
+		}
+		if !slAudit.Ready() {
+			return result, fmt.Errorf("Second Light DLC restoration did not satisfy the verified reference closure")
+		}
+		result.SecondLightDLC = &slAudit
+		secondLightOutputs = slOutputs
+		for relative, path := range slOutputs {
+			relative = filepath.ToSlash(relative)
+			candidates[relative] = path
+			verifiedArtifacts[relative] = br1rebuild.OutputArtifact{
+				RelativePath: relative, Path: path, Size: slAudit.OutputBytes[relative], SHA256: slAudit.OutputSHA256[relative],
+			}
 		}
 	}
 	overlayDir := filepath.Join(workspace, "composed")
@@ -334,7 +430,19 @@ func runQuartetContentGuided(selection model.SelectionResult, opts legacyContent
 	}
 	sort.Strings(keys)
 	for _, relative := range keys {
-		finalArtifacts = append(finalArtifacts, br1rebuild.OutputArtifact{RelativePath: relative, Path: candidates[relative]})
+		artifact := br1rebuild.OutputArtifact{RelativePath: relative, Path: candidates[relative]}
+		if verified, ok := verifiedArtifacts[relative]; ok && filepath.Clean(verified.Path) == filepath.Clean(artifact.Path) {
+			artifact.Size = verified.Size
+			artifact.SHA256 = verified.SHA256
+		}
+		// If a later layer replaced a Second Light output, its path differs and the
+		// trusted digest is intentionally not reused. That later candidate is hashed
+		// normally at the transaction boundary.
+		if slPath, ok := secondLightOutputs[relative]; ok && filepath.Clean(slPath) != filepath.Clean(artifact.Path) {
+			artifact.Size = 0
+			artifact.SHA256 = ""
+		}
+		finalArtifacts = append(finalArtifacts, artifact)
 	}
 	if translationSelected && result.TranslationRecords != nil {
 		finalArtifacts, err = appendTranslationManagedStateArtifact(target.TargetID, overlayDir, *result.TranslationRecords, finalArtifacts)
@@ -357,14 +465,45 @@ func runQuartetContentGuided(selection model.SelectionResult, opts legacyContent
 		}
 	}
 
+	if movieRestorationSelected {
+		renderer.Status("movie_restoration", "Adding verified UNCENSOR movie restoration payload")
+		movieArtifacts, movieErr := quartetMovieRestorationArtifacts(projectRoot)
+		renderer.Finish()
+		if movieErr != nil {
+			return result, movieErr
+		}
+		finalArtifacts = append(finalArtifacts, movieArtifacts...)
+	}
+
+	compositionParts := []string{}
+	if legacySelected {
+		compositionParts = append(compositionParts, "blue_reflection_dlc")
+	}
+	if secondLightSelected {
+		compositionParts = append(compositionParts, "second_light_dlc")
+	}
+	if restorationSelected {
+		compositionParts = append(compositionParts, "restoration")
+	}
+	if translationSelected {
+		compositionParts = append(compositionParts, "translation")
+	}
+	if movieRestorationSelected {
+		compositionParts = append(compositionParts, "movie_restoration")
+	}
 	metadata := map[string]string{
 		"target_id":         target.TargetID,
-		"purpose":           "br1_legacy_content",
-		"capability":        "br1_legacy_content_rebuild_v1",
-		"source_origin":     result.Survey.Source.Origin,
-		"composition_order": "legacy_content,restoration,translation",
+		"purpose":           "quartet_content",
+		"capability":        "quartet_content_composition_v2",
+		"composition_order": strings.Join(compositionParts, ","),
 	}
-	prepProgress := newTransactionProgressRenderer(out)
+	if legacySelected {
+		metadata["blue_reflection_source_origin"] = result.Survey.Source.Origin
+	}
+	if secondLightSelected {
+		metadata["second_light_source_origin"] = secondLightSourceOrigin
+	}
+	prepProgress := newTransactionProgressRendererWithWorkflowStart(out, workflowStartedAt)
 	prepProgress.Status("prepare", "baseline", "Hashing final artifacts and preserving one game-side rollback baseline")
 	journal, baselineManifest, err := br1rebuild.PrepareArtifactsForTargetWithProgress(target.Root, stateDir, target.TargetID, finalArtifacts, target.SelectedModuleIDs, metadata, prepProgress.Callback)
 	prepProgress.Finish()
@@ -386,7 +525,7 @@ func runQuartetContentGuided(selection model.SelectionResult, opts legacyContent
 		return result, nil
 	}
 
-	txProgress := newTransactionProgressRenderer(out)
+	txProgress := newTransactionProgressRendererWithWorkflowStart(out, workflowStartedAt)
 	committed, err := commitPreparedTransactionWithProgress(journal, txProgress.Callback)
 	txProgress.Finish()
 	if err != nil {
@@ -807,20 +946,25 @@ func printLegacyContentSurvey(out io.Writer, report br1rebuild.SurveyReport) {
 }
 
 type br1BuildProgressRenderer struct {
-	out       io.Writer
-	terminal  bool
-	active    bool
-	started   bool
-	startedAt time.Time
-	lastDraw  time.Time
-	lastItem  br1rebuild.BuildProgress
-	spinner   int
-	stop      chan struct{}
-	done      chan struct{}
-	mu        sync.Mutex
+	out               io.Writer
+	terminal          bool
+	active            bool
+	started           bool
+	startedAt         time.Time
+	workflowStartedAt time.Time
+	lastDraw          time.Time
+	lastItem          br1rebuild.BuildProgress
+	spinner           int
+	stop              chan struct{}
+	done              chan struct{}
+	mu                sync.Mutex
 }
 
 func newBR1BuildProgressRenderer(out io.Writer) *br1BuildProgressRenderer {
+	return newBR1BuildProgressRendererWithWorkflowStart(out, time.Now())
+}
+
+func newBR1BuildProgressRendererWithWorkflowStart(out io.Writer, workflowStartedAt time.Time) *br1BuildProgressRenderer {
 	terminal := false
 	if file, ok := out.(*os.File); ok {
 		if info, err := file.Stat(); err == nil {
@@ -830,7 +974,10 @@ func newBR1BuildProgressRenderer(out io.Writer) *br1BuildProgressRenderer {
 	if os.Getenv("BRPATCHER_FORCE_PROGRESS_TTY") == "1" {
 		terminal = true
 	}
-	return &br1BuildProgressRenderer{out: out, terminal: terminal}
+	if workflowStartedAt.IsZero() {
+		workflowStartedAt = time.Now()
+	}
+	return &br1BuildProgressRenderer{out: out, terminal: terminal, workflowStartedAt: workflowStartedAt}
 }
 
 func (r *br1BuildProgressRenderer) Status(phase, detail string) {
@@ -888,10 +1035,10 @@ func (r *br1BuildProgressRenderer) renderLocked(heartbeat bool) {
 			return
 		}
 		item := r.lastItem
-		fmt.Fprintf(r.out, "[%s] %s | overall %s | current %s | %s | elapsed %s\n",
+		fmt.Fprintf(r.out, "[%s] %s | overall %s | current %s | %s | phase elapsed %s | total elapsed %s\n",
 			legacyPhaseLabel(item.Phase), legacyActivityLabel(item.Phase),
 			legacyPercentText(item.OverallDone, item.OverallTotal), legacyPercentText(item.CurrentDone, item.CurrentTotal),
-			strings.TrimSpace(item.CurrentFile), formatElapsed(now.Sub(r.startedAt)))
+			strings.TrimSpace(item.CurrentFile), formatElapsed(now.Sub(r.startedAt)), formatElapsed(now.Sub(r.workflowStartedAt)))
 		r.lastDraw = now
 		return
 	}
@@ -909,7 +1056,7 @@ func (r *br1BuildProgressRenderer) renderLocked(heartbeat bool) {
 	fmt.Fprintf(r.out, "\r\033[2K%s│%s %-10s %s %6s  %s\n", ansiCyan, ansiReset, "Current", legacyProgressBar(item.CurrentDone, item.CurrentTotal, 32), legacyPercentText(item.CurrentDone, item.CurrentTotal), legacyProgressBytes(item.CurrentDone, item.CurrentTotal))
 	fmt.Fprintf(r.out, "\r\033[2K%s│%s %-10s %s\n", ansiCyan, ansiReset, "File", compactLegacyProgress(strings.TrimSpace(item.CurrentFile), 78))
 	spin := []string{"◐", "◓", "◑", "◒"}[r.spinner%4]
-	fmt.Fprintf(r.out, "\r\033[2K%s│%s %-10s %s%s%s  %s·%s elapsed %s\n", ansiCyan, ansiReset, "Activity", ansiYellow, spin, ansiReset, legacyActivityLabel(item.Phase), ansiGray, formatElapsed(now.Sub(r.startedAt)))
+	fmt.Fprintf(r.out, "\r\033[2K%s│%s %-10s %s%s%s  %s  %s·%s phase elapsed %s · total elapsed %s\n", ansiCyan, ansiReset, "Activity", ansiYellow, spin, ansiReset, legacyActivityLabel(item.Phase), ansiGray, ansiReset, formatElapsed(now.Sub(r.startedAt)), formatElapsed(now.Sub(r.workflowStartedAt)))
 	fmt.Fprintf(r.out, "\r\033[2K%s╰%s╯%s\n", ansiCyan, line, ansiReset)
 	r.lastDraw = now
 }
@@ -966,6 +1113,32 @@ func legacyPhaseLabel(phase string) string {
 		return "Verify BR1 source members"
 	case "title_marker":
 		return "Build title-screen marker"
+	case "second_light_models":
+		return "Plan Second Light models"
+	case "second_light_models_build":
+		return "Build Second Light models"
+	case "second_light_models_verify":
+		return "Verify Second Light models"
+	case "second_light_maps":
+		return "Plan Second Light maps"
+	case "second_light_maps_build":
+		return "Build Second Light maps"
+	case "second_light_maps_verify":
+		return "Verify Second Light maps"
+	case "second_light_dialogue":
+		return "Plan Second Light dialogue"
+	case "second_light_dialogue_build":
+		return "Build Second Light dialogue"
+	case "second_light_dialogue_verify":
+		return "Verify Second Light dialogue"
+	case "second_light_tables":
+		return "Plan Second Light data tables"
+	case "second_light_tables_build":
+		return "Build Second Light data tables"
+	case "second_light_tables_verify":
+		return "Verify Second Light data tables"
+	case "second_light_audio":
+		return "Build Second Light audio"
 	default:
 		if strings.TrimSpace(phase) == "" {
 			return "Working"
@@ -994,6 +1167,32 @@ func legacyActivityLabel(phase string) string {
 		return "Checking the approved BR1 members used by the reconstruction"
 	case "title_marker":
 		return "Replacing the stock KOEI/legal strip with selected module indicators"
+	case "second_light_models":
+		return "Selecting missing Second Light costume model members"
+	case "second_light_models_build":
+		return "Writing the Second Light costume model archive"
+	case "second_light_models_verify":
+		return "Auditing the Second Light costume model archive"
+	case "second_light_maps":
+		return "Selecting Second Light DLC field and battle-stage members"
+	case "second_light_maps_build":
+		return "Writing Second Light DLC field and battle-stage data"
+	case "second_light_maps_verify":
+		return "Auditing Second Light DLC field and battle-stage data"
+	case "second_light_dialogue":
+		return "Restoring Second Light DLC dialogue and notifications"
+	case "second_light_dialogue_build":
+		return "Writing restored Second Light DLC dialogue"
+	case "second_light_dialogue_verify":
+		return "Auditing restored Second Light DLC dialogue"
+	case "second_light_tables":
+		return "Composing Second Light DLC tables, costumes and routing"
+	case "second_light_tables_build":
+		return "Writing Second Light DLC system and text tables"
+	case "second_light_tables_verify":
+		return "Auditing Second Light DLC system and text tables"
+	case "second_light_audio":
+		return "Converting, encrypting and routing Second Light DLC audio"
 	default:
 		return "Disk and integrity work in progress"
 	}

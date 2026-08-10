@@ -8,8 +8,15 @@ KEEP_STAGE=0
 REFRESH=0
 ASSETS=0
 ASSETS_SOURCE=""
+SECOND_LIGHT_ASSETS_SOURCE=""
+QUARTET_ASSETS_TARGET=""
 ASSET_ANCHORS="$PROJECT_ROOT/workstreams/core/contracts/release/BR1_LEGACY_SOURCE_MEMBER_ANCHORS_V1.json"
 ASSET_SOURCE_STATE="$PROJECT_ROOT/.local/release/BR1_ASSETS_SOURCE_PATH"
+SECOND_LIGHT_ASSET_SOURCE_STATE="$PROJECT_ROOT/.local/release/SECOND_LIGHT_ASSETS_SOURCE_PATH"
+QUARTET_ASSET_TARGET_STATE="$PROJECT_ROOT/.local/release/QUARTET_ASSETS_TARGET_PATH"
+ASSET_KEY_FILE="$PROJECT_ROOT/.local/secrets/unburger-assets.key"
+GENERATED_ASSET_KEY_GO="$PATCHER_ROOT/internal/assetkey/embedded_key_generated.local.go"
+MOVIE_ROOT="$PROJECT_ROOT/.local/Video/restored_webm"
 
 usage() {
   cat <<'TXT'
@@ -23,11 +30,14 @@ Options:
   --refresh                 Run the full project validation pass before packaging.
   --output-dir PATH         Destination for release artifacts.
   --keep-stage              Keep verified staging directories.
-  --assets, -assets         Also build the BR1 DLC source-assets bundle.
-  --assets-source PATH      BLUE REFLECTION (2017) game folder, Steam library,
-                            or nearby parent folder for --assets. If omitted,
-                            the last successful source is reused, then Steam
-                            autodetection is tried.
+  --assets, -assets         Also build the combined DLC source-assets bundle.
+  --assets-source PATH      BLUE REFLECTION (2017) source game folder.
+  --assets-second-light-source PATH
+                            Standalone BLUE REFLECTION: Second Light source folder.
+  --assets-quartet-target PATH
+                            Clean/compatible Quartet folder used only to minimize
+                            the Second Light source subset. Source paths are remembered
+                            after a successful assets build.
   -h, --help                Show this help.
 TXT
 }
@@ -39,13 +49,15 @@ while (($#)); do
     --keep-stage) KEEP_STAGE=1; shift ;;
     --assets|-assets) ASSETS=1; shift ;;
     --assets-source) ASSETS_SOURCE="${2:-}"; shift 2 ;;
+    --assets-second-light-source) SECOND_LIGHT_ASSETS_SOURCE="${2:-}"; shift 2 ;;
+    --assets-quartet-target) QUARTET_ASSETS_TARGET="${2:-}"; shift 2 ;;
     -h|--help) usage; exit 0 ;;
     *) echo "ERROR: unknown option: $1" >&2; usage >&2; exit 2 ;;
   esac
 done
 
-if [[ -n "$ASSETS_SOURCE" && "$ASSETS" != 1 ]]; then
-  echo "ERROR: --assets-source requires --assets" >&2
+if [[ -n "$ASSETS_SOURCE$SECOND_LIGHT_ASSETS_SOURCE$QUARTET_ASSETS_TARGET" && "$ASSETS" != 1 ]]; then
+  echo "ERROR: assets source/target options require --assets" >&2
   exit 2
 fi
 
@@ -55,8 +67,16 @@ if ((ASSETS)) && [[ -z "$ASSETS_SOURCE" && -f "$ASSET_SOURCE_STATE" ]]; then
     echo "==> Reuse previous BLUE REFLECTION source hint"
   fi
 fi
+if ((ASSETS)) && [[ -z "$SECOND_LIGHT_ASSETS_SOURCE" && -f "$SECOND_LIGHT_ASSET_SOURCE_STATE" ]]; then
+  SECOND_LIGHT_ASSETS_SOURCE="$(head -n1 "$SECOND_LIGHT_ASSET_SOURCE_STATE" | tr -d '\r\n')"
+  [[ -z "$SECOND_LIGHT_ASSETS_SOURCE" ]] || echo "==> Reuse previous Second Light source hint"
+fi
+if ((ASSETS)) && [[ -z "$QUARTET_ASSETS_TARGET" && -f "$QUARTET_ASSET_TARGET_STATE" ]]; then
+  QUARTET_ASSETS_TARGET="$(head -n1 "$QUARTET_ASSET_TARGET_STATE" | tr -d '\r\n')"
+  [[ -z "$QUARTET_ASSETS_TARGET" ]] || echo "==> Reuse previous Quartet minimization target"
+fi
 
-for cmd in go sha256sum jq zip unzip; do
+for cmd in go sha256sum jq zip unzip tar zstd python3 ffmpeg ffprobe; do
   command -v "$cmd" >/dev/null 2>&1 || { echo "ERROR: $cmd is required" >&2; exit 1; }
 done
 
@@ -87,7 +107,12 @@ if ((ASSETS)); then
     echo "ERROR: verified BLUE REFLECTION source-member checks are invalid" >&2
     exit 1
   }
-  echo "==> Verify clean BLUE REFLECTION source data"
+  if [[ -z "$SECOND_LIGHT_ASSETS_SOURCE" || -z "$QUARTET_ASSETS_TARGET" ]]; then
+    echo "ERROR: combined --assets build needs Second Light source and Quartet minimization target." >&2
+    echo "Pass --assets-second-light-source PATH --assets-quartet-target PATH once; successful paths are remembered." >&2
+    exit 1
+  fi
+  echo "==> Verify clean BLUE REFLECTION and Second Light source data"
 fi
 
 mkdir -p "$OUTPUT_DIR" "$PROJECT_ROOT/.local/release/work"
@@ -95,6 +120,7 @@ WORK_DIR="$(mktemp -d "$PROJECT_ROOT/.local/release/work/unburger-release-XXXXXX
 BUNDLE_STAGE="$WORK_DIR/bundle"
 RELEASE_STAGE="$WORK_DIR/release"
 cleanup() {
+  rm -f "$GENERATED_ASSET_KEY_GO"
   if ((KEEP_STAGE)); then
     echo "Release staging retained: $WORK_DIR"
   else
@@ -115,13 +141,91 @@ echo "==> Go regression"
   go vet ./...
 )
 
+echo "==> Prepare local assets encryption key"
+mkdir -p "$(dirname "$ASSET_KEY_FILE")"
+if [[ ! -f "$ASSET_KEY_FILE" ]]; then
+  umask 077
+  head -c 32 /dev/urandom > "$ASSET_KEY_FILE"
+  chmod 0600 "$ASSET_KEY_FILE"
+  echo "Created local key: $ASSET_KEY_FILE"
+fi
+if [[ "$(wc -c < "$ASSET_KEY_FILE")" != 32 ]]; then
+  echo "ERROR: $ASSET_KEY_FILE must contain exactly 32 bytes" >&2
+  exit 1
+fi
+python3 "$PATCHER_ROOT/internal/assetkey/generate_embed.py" "$ASSET_KEY_FILE" "$GENERATED_ASSET_KEY_GO"
+
+echo "==> Verify canonical Quartet movie restoration assets"
+MOVIES=(CNG_PC00_00.webm CNG_PC01_00.webm CNG_PC02_00.webm)
+MOVIE_CANON_ROOT="$WORK_DIR/movie-restoration-canonical"
+mkdir -p "$MOVIE_CANON_ROOT"
+for movie in "${MOVIES[@]}"; do
+  path="$MOVIE_ROOT/$movie"
+  canon="$MOVIE_CANON_ROOT/$movie"
+  [[ -f "$path" ]] || { echo "ERROR: missing movie restoration asset: $path" >&2; exit 1; }
+
+  probe="$(ffprobe -v error -count_frames -select_streams v:0 -show_entries stream=codec_name,profile,width,height,pix_fmt,r_frame_rate,avg_frame_rate,time_base,color_range,color_space,color_transfer,color_primaries,nb_read_frames -of json "$path")"
+  if ! jq -e '.streams|length==1 and .[0].codec_name=="vp9" and .[0].profile=="Profile 0" and .[0].width==1920 and .[0].height==1080 and .[0].pix_fmt=="yuv420p" and .[0].r_frame_rate=="30000/1001" and .[0].avg_frame_rate=="30000/1001" and .[0].time_base=="1/1000" and .[0].color_range=="tv" and .[0].color_space=="bt709" and ((.[0].color_transfer // "bt709")=="bt709") and ((.[0].color_primaries // "bt709")=="bt709") and .[0].nb_read_frames=="916"' <<<"$probe" >/dev/null; then
+    echo "ERROR: $movie does not match the canonical Quartet restoration video profile" >&2
+    jq -r '.streams[0] | "  codec=\(.codec_name) profile=\(.profile) size=\(.width)x\(.height) pix_fmt=\(.pix_fmt) fps=\(.r_frame_rate)/\(.avg_frame_rate) time_base=\(.time_base) range=\(.color_range) matrix=\(.color_space) transfer=\(.color_transfer // "unspecified") primaries=\(.color_primaries // "unspecified") frames=\(.nb_read_frames)"' <<<"$probe" >&2
+    exit 1
+  fi
+
+  aprobe="$(ffprobe -v error -select_streams a:0 -show_entries stream=codec_name,sample_rate,channels,channel_layout -of json "$path")"
+  jq -e '.streams|length==1 and .[0].codec_name=="opus" and .[0].sample_rate=="48000" and .[0].channels==2 and .[0].channel_layout=="stereo"' <<<"$aprobe" >/dev/null || {
+    echo "ERROR: $movie does not contain canonical Quartet Opus 48k stereo audio" >&2
+    echo "$aprobe" >&2
+    exit 1
+  }
+
+  # FFmpeg/libvpx can produce an otherwise canonical VP9 stream while omitting
+  # Matroska transfer/primaries tags even when -color_trc/-color_primaries were
+  # supplied at encode time. Normalize only those container metadata fields by
+  # stream-copying the already encoded VP9/Opus streams; never re-encode here.
+  if jq -e '.streams[0].color_transfer=="bt709" and .streams[0].color_primaries=="bt709"' <<<"$probe" >/dev/null; then
+    install -Dm644 "$path" "$canon"
+  else
+    echo "    $movie: normalize BT.709 transfer/primaries metadata (stream copy; no re-encode)"
+    ffmpeg -hide_banner -loglevel warning -y \
+      -i "$path" -map 0:v:0 -map 0:a:0 -c:v copy -c:a copy \
+      -color_range tv -colorspace bt709 -color_trc bt709 -color_primaries bt709 \
+      -map_metadata -1 "$canon"
+  fi
+
+  cprobe="$(ffprobe -v error -count_frames -select_streams v:0 -show_entries stream=codec_name,profile,width,height,pix_fmt,r_frame_rate,avg_frame_rate,time_base,color_range,color_space,color_transfer,color_primaries,nb_read_frames -of json "$canon")"
+  jq -e '.streams|length==1 and .[0].codec_name=="vp9" and .[0].profile=="Profile 0" and .[0].width==1920 and .[0].height==1080 and .[0].pix_fmt=="yuv420p" and .[0].r_frame_rate=="30000/1001" and .[0].avg_frame_rate=="30000/1001" and .[0].time_base=="1/1000" and .[0].color_range=="tv" and .[0].color_space=="bt709" and .[0].color_transfer=="bt709" and .[0].color_primaries=="bt709" and .[0].nb_read_frames=="916"' <<<"$cprobe" >/dev/null || {
+    echo "ERROR: $movie failed canonical metadata normalization" >&2
+    echo "$cprobe" >&2
+    exit 1
+  }
+done
+
 echo "==> Build canonical Translation record payload"
 (
   cd "$PATCHER_ROOT"
   go run ./cmd/unburger-release --project-root "$PROJECT_ROOT" --stage-root "$BUNDLE_STAGE"
 )
 
-mkdir -p "$BUNDLE_STAGE/meta" "$BUNDLE_STAGE/content/modules" "$BUNDLE_STAGE/docs" "$BUNDLE_STAGE/contracts" "$RELEASE_STAGE/bin/linux-amd64" "$RELEASE_STAGE/bin/windows-amd64"
+mkdir -p "$BUNDLE_STAGE/meta" "$BUNDLE_STAGE/content/modules" "$BUNDLE_STAGE/docs" "$BUNDLE_STAGE/contracts" "$RELEASE_STAGE/bin/linux-amd64" "$RELEASE_STAGE/bin/windows-amd64" "$BUNDLE_STAGE/content/restoration/movies"
+
+for movie in "${MOVIES[@]}"; do
+  install -Dm644 "$MOVIE_CANON_ROOT/$movie" "$BUNDLE_STAGE/content/restoration/movies/$movie"
+done
+{
+  echo '{'
+  echo '  "type": "unburger_quartet_movie_restoration",'
+  echo '  "format_version": 1,'
+  echo '  "target_relative_dir": "Data/B1/x64/Movie",'
+  echo '  "files": ['
+  for i in "${!MOVIES[@]}"; do
+    movie="${MOVIES[$i]}"
+    hash="$(sha256sum "$MOVIE_CANON_ROOT/$movie" | awk '{print $1}')"
+    comma=","; [[ "$i" == "$((${#MOVIES[@]}-1))" ]] && comma=""
+    printf '    {"name":"%s","sha256":"%s"}%s\n' "$movie" "$hash" "$comma"
+  done
+  echo '  ]'
+  echo '}'
+} > "$BUNDLE_STAGE/content/restoration/movies/MANIFEST.json"
 
 echo "==> Build patcher binaries"
 (
@@ -144,9 +248,16 @@ cat > "$BUNDLE_STAGE/content/modules/quartet_restoration.json" <<'JSON'
 JSON
 install -Dm644 "$PROJECT_ROOT/titles/blue_reflection/modules/quartet_legacy_dlc/module.json" "$BUNDLE_STAGE/content/modules/quartet_legacy_dlc.json"
 install -Dm644 "$PROJECT_ROOT/workstreams/core/docs/UNBURGER_RELEASE_AND_SOURCE_ASSETS.md" "$BUNDLE_STAGE/docs/UNBURGER_RELEASE_AND_SOURCE_ASSETS.md"
-install -Dm644 "$PROJECT_ROOT/workstreams/core/contracts/release/UNBURGER_RUNTIME_BUNDLE_V2.json" "$BUNDLE_STAGE/contracts/UNBURGER_RUNTIME_BUNDLE_V2.json"
+install -Dm644 "$PROJECT_ROOT/workstreams/core/contracts/release/UNBURGER_RUNTIME_BUNDLE_V3.json" "$BUNDLE_STAGE/contracts/UNBURGER_RUNTIME_BUNDLE_V3.json"
+install -Dm644 "$PROJECT_ROOT/workstreams/core/contracts/release/UNBURGER_RUNTIME_BUNDLE_V2.json" "$BUNDLE_STAGE/contracts/UNBURGER_RUNTIME_BUNDLE_V2_LEGACY.json"
+if [[ -f "$PROJECT_ROOT/workstreams/core/contracts/release/UNBURGER_DLC_SOURCE_ASSETS_V3.json" ]]; then
+  install -Dm644 "$PROJECT_ROOT/workstreams/core/contracts/release/UNBURGER_DLC_SOURCE_ASSETS_V3.json" "$BUNDLE_STAGE/contracts/UNBURGER_DLC_SOURCE_ASSETS_V3.json"
+fi
+if [[ -f "$PROJECT_ROOT/workstreams/core/contracts/release/UNBURGER_BR1_SOURCE_ASSETS_V3.json" ]]; then
+  install -Dm644 "$PROJECT_ROOT/workstreams/core/contracts/release/UNBURGER_BR1_SOURCE_ASSETS_V3.json" "$BUNDLE_STAGE/contracts/UNBURGER_BR1_SOURCE_ASSETS_V3.json"
+fi
 if [[ -f "$PROJECT_ROOT/workstreams/core/contracts/release/UNBURGER_BR1_SOURCE_ASSETS_V2.json" ]]; then
-  install -Dm644 "$PROJECT_ROOT/workstreams/core/contracts/release/UNBURGER_BR1_SOURCE_ASSETS_V2.json" "$BUNDLE_STAGE/contracts/UNBURGER_BR1_SOURCE_ASSETS_V2.json"
+  install -Dm644 "$PROJECT_ROOT/workstreams/core/contracts/release/UNBURGER_BR1_SOURCE_ASSETS_V2.json" "$BUNDLE_STAGE/contracts/UNBURGER_BR1_SOURCE_ASSETS_V2_LEGACY.json"
 fi
 if [[ -f "$ASSET_ANCHORS" ]]; then
   install -Dm644 "$ASSET_ANCHORS" "$BUNDLE_STAGE/contracts/BR1_LEGACY_SOURCE_MEMBER_ANCHORS_V1.json"
@@ -173,8 +284,10 @@ cat > "$BUNDLE_STAGE/meta/CONTENT_POLICY.json" <<'JSON'
   "type": "unburger_content_policy",
   "format_version": 3,
   "quartet_composition_order": [
-    "quartet_legacy_dlc",
+    "blue_reflection_dlc_if_selected",
+    "second_light_dlc_if_selected",
     "quartet_restoration",
+    "quartet_movie_restoration",
     "blue_reflection_translation"
   ],
   "translation_last": true,
@@ -184,7 +297,10 @@ cat > "$BUNDLE_STAGE/meta/CONTENT_POLICY.json" <<'JSON'
   "large_source_game_archives_included": false,
   "legacy_content_materialized_locally": true,
   "restoration_materialized_locally": true,
+  "quartet_movie_restoration_embedded": true,
   "developer_source_assets_capability": "br1_legacy_source_assets_v2",
+  "developer_source_assets_supplemental_capability": "second_light_dlc_source_subset_v1",
+  "developer_source_assets_container": "opaque-encrypted-v3",
   "developer_source_assets_clean_anchor_capability": "br1_legacy_clean_source_anchors_v1"
 }
 JSON
@@ -212,13 +328,15 @@ UNBURGER="$OUTPUT_DIR/${ARCHIVE_BASENAME}.unburger"
 UNBURGER_SIDECAR="$UNBURGER.sha256"
 rm -f "$UNBURGER" "$UNBURGER_SIDECAR"
 
-echo "==> Package ${ARCHIVE_BASENAME}.unburger"
+echo "==> Package ${ARCHIVE_BASENAME}.unburger (format v3: tar + Zstandard)"
 (
   cd "$BUNDLE_STAGE"
   find . -exec touch -h -t 202601010000.00 {} +
-  find . -type f -printf '%P\n' | LC_ALL=C sort | zip -9 -X -q "$UNBURGER" -@
+  find . -type f -printf '%P\0' | LC_ALL=C sort -z | \
+    tar --null --no-recursion --format=ustar --owner=0 --group=0 --numeric-owner --mtime='2026-01-01 00:00:00 UTC' -T - -cf - | \
+    zstd -q -19 -T0 -o "$UNBURGER"
 )
-unzip -tqq "$UNBURGER"
+zstd -q -t "$UNBURGER"
 sha256sum "$UNBURGER" | sed "s#  .*#  ${ARCHIVE_BASENAME}.unburger#" > "$UNBURGER_SIDECAR"
 
 # The public ZIP contains only user-facing launchers/binaries and the canonical runtime payload.
@@ -288,9 +406,9 @@ cat > "$RELEASE_STAGE/README.md" <<'MD'
 
 Run `RUN.sh` on Linux or `RUN.cmd` on Windows. The patcher first checks the current/release directory, then a previously managed installation, then the default Steam libraries (including extra libraries listed in `steamapps/libraryfolders.vdf`). If more than one supported game is found, the guided UI asks which installation to use. Identification remains based on structural game files, not on a Steam AppID.
 
-For BLUE REFLECTION Quartet, Translation, UNCENSOR and DLC are normal module choices and are enabled by default. A compatible `.unburger-assets` source bundle is auto-detected only beside the patcher/release `.unburger` payload (or through an explicit developer override); Steam game discovery does not search game/library folders for `.unburger-assets`. Otherwise the DLC source flow can use a BLUE REFLECTION (2017) installation.
+For BLUE REFLECTION Quartet, Translation, UNCENSOR and DLC are normal module choices and are enabled by default. Inside DLC, BLUE REFLECTION and BLUE REFLECTION: Second Light source families are both enabled by default and the cursor starts on Continue. UNCENSOR also exposes an optional restored-movie component using the three verified CNG_PC00_00/CNG_PC01_00/CNG_PC02_00 WEBM assets carried inside the public .unburger payload. One compatible `.unburger-assets` bundle can provide reduced source data for both DLC families and is auto-detected only beside the patcher/release `.unburger` payload (or through an explicit developer override). If a required capability is absent, the DLC source flow can use the corresponding standalone source installation.
 
-Restored DLC also needs save-side access flags. After a DLC install the guided flow can update existing Quartet saves. On native Windows it detects the normal Local AppData save folder. On Linux it can detect Steam/Proton prefixes without relying on a Steam AppID. For Heroic, Wine or another loose prefix, point it at the prefix folder containing `drive_c`; you do not need to locate a specific save file. A save folder or one `.pcsave` file is also accepted. Every changed save is backed up before writing.
+BLUE REFLECTION legacy DLC can also use the optional Save Access step for existing Quartet saves. Native Second Light DLC restoration does not require an automatic save patch; its unresolved entitlement gates are restored through game-data story routing. On native Windows Save Access detects the normal Local AppData folder, while Linux supports Steam/Proton and loose Wine/Heroic prefixes. Every changed save is backed up before writing.
 
 Run `SAVE_ACCESS.sh` on Linux or `SAVE_ACCESS.cmd` on Windows whenever you create a new playthrough/save and want the restored costume and Tropical Island access flags applied to it.
 
@@ -321,12 +439,12 @@ unzip -tqq "$RELEASE_ZIP"
 sha256sum "$RELEASE_ZIP" | sed "s#  .*#  ${RELEASE_BASENAME}.zip#" > "$RELEASE_SIDECAR"
 
 if ((ASSETS)); then
-  ASSET_BASENAME="UNBURGER_BR1_DLC_ASSETS_v2"
+  ASSET_BASENAME="UNBURGER_DLC_ASSETS_v3"
   ASSET_BUNDLE="$OUTPUT_DIR/${ASSET_BASENAME}.unburger-assets"
   ASSET_SIDECAR="$ASSET_BUNDLE.sha256"
   rm -f "$ASSET_BUNDLE" "$ASSET_SIDECAR"
-  echo "==> Build BR1 DLC source-assets bundle"
-  ASSET_ARGS=(--output "$ASSET_BUNDLE" --anchors "$ASSET_ANCHORS")
+  echo "==> Build combined BLUE REFLECTION + Second Light DLC source-assets bundle"
+  ASSET_ARGS=(--output "$ASSET_BUNDLE" --anchors "$ASSET_ANCHORS" --second-light-source-root "$SECOND_LIGHT_ASSETS_SOURCE" --quartet-root "$QUARTET_ASSETS_TARGET")
   if [[ -n "$ASSETS_SOURCE" ]]; then
     ASSET_ARGS+=(--source-root "$ASSETS_SOURCE")
   fi
@@ -340,12 +458,16 @@ if ((ASSETS)); then
     mkdir -p "$(dirname "$ASSET_SOURCE_STATE")"
     printf '%s\n' "$RESOLVED_SOURCE" > "$ASSET_SOURCE_STATE"
   fi
+  RESOLVED_SECOND_LIGHT="$(awk -F= '$1 == "SECOND_LIGHT_SOURCE_ROOT" {sub(/^SECOND_LIGHT_SOURCE_ROOT=/, ""); print; exit}' "$ASSET_BUILD_LOG")"
+  RESOLVED_QUARTET="$(awk -F= '$1 == "QUARTET_ROOT" {sub(/^QUARTET_ROOT=/, ""); print; exit}' "$ASSET_BUILD_LOG")"
+  [[ -z "$RESOLVED_SECOND_LIGHT" ]] || printf '%s\n' "$RESOLVED_SECOND_LIGHT" > "$SECOND_LIGHT_ASSET_SOURCE_STATE"
+  [[ -z "$RESOLVED_QUARTET" ]] || printf '%s\n' "$RESOLVED_QUARTET" > "$QUARTET_ASSET_TARGET_STATE"
   sha256sum "$ASSET_BUNDLE" | sed "s#  .*#  ${ASSET_BASENAME}.unburger-assets#" > "$ASSET_SIDECAR"
   (
     cd "$PATCHER_ROOT"
     go run ./cmd/unburger-assets --inspect --output "$ASSET_BUNDLE" >/dev/null
   )
-  printf '\nBR1 source bundle complete\n  %s\n  %s\n' "$ASSET_BUNDLE" "$ASSET_SIDECAR"
+  printf '\nCombined DLC source bundle complete\n  %s\n  %s\n' "$ASSET_BUNDLE" "$ASSET_SIDECAR"
 fi
 
 printf '\nRelease complete\n  %s\n  %s\n  %s\n  %s\n' "$RELEASE_ZIP" "$RELEASE_SIDECAR" "$UNBURGER" "$UNBURGER_SIDECAR"

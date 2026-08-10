@@ -7,9 +7,10 @@ import (
 )
 
 const (
-	quartetTranslationModule = "blue_reflection_translation"
-	quartetRestorationModule = "quartet_restoration"
-	quartetLegacyDLCModule   = "quartet_legacy_dlc"
+	quartetTranslationModule      = "blue_reflection_translation"
+	quartetRestorationModule      = "quartet_restoration"
+	quartetLegacyDLCModule        = "quartet_legacy_dlc"
+	quartetMovieRestorationModule = "quartet_movie_restoration"
 )
 
 const (
@@ -57,6 +58,9 @@ func normalizeQuartetCompositionModules(values []string) ([]string, error) {
 			switch module {
 			case quartetTranslationModule, quartetRestorationModule, quartetLegacyDLCModule:
 				selected[module] = true
+			case quartetMovieRestorationModule:
+				// Loose public movie payload is installed by the integrated guided transaction, not archive composition.
+				continue
 			default:
 				return nil, fmt.Errorf("unsupported Quartet composition module: %s", module)
 			}

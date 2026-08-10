@@ -226,13 +226,15 @@ func commitPreparedTransactionWithProgress(journalPath string, progress transact
 	if err != nil {
 		return transactionCommitReport{}, fmt.Errorf("game files were committed but active-state publication failed: %w; rerun transaction-commit with the same journal or roll it back", err)
 	}
-	emitTransactionStatus(progress, "finalize", "verify_installed_state", "Checking installed files")
-	inspection, err := installstate.InspectWithProgress(context.StateDirectory, context.TargetID, committed.GameRoot, progress)
-	if err != nil {
-		return transactionCommitReport{}, err
-	}
-	if inspection.Status != installstate.InspectionMatchesInstalled || inspection.TransactionID != committed.TransactionID {
-		return transactionCommitReport{}, fmt.Errorf("installed files do not match the published active state: %s", inspection.Status)
+	// CommitWithProgress already validates every staged payload against its desired
+	// SHA-256 while materializing the atomic replacement. Activate then verifies
+	// each installed path is still a regular file of the committed byte size. A
+	// second immediate full-install SHA pass would only reread the same tens of
+	// gigabytes without crossing a new trust boundary. Explicit status/rollback
+	// commands still perform full on-disk inspection when requested later.
+	emitTransactionStatus(progress, "finalize", "verify_installed_state", "Commit hashes accepted; validating installed metadata")
+	if activated.TransactionID != committed.TransactionID || len(activated.Files) != len(committed.Files) {
+		return transactionCommitReport{}, fmt.Errorf("published active state does not match committed transaction metadata")
 	}
 	report := makeTransactionCommitReport(context, activated, "installed")
 	emitTransactionStatus(progress, "finalize", "cleanup", "Temporary staged transaction data")

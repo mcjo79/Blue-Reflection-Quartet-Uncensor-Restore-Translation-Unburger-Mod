@@ -159,6 +159,38 @@ func (t *prepareProgressTracker) skipPhase(index int, phase string) {
 	t.finishPhase(index, phase)
 }
 
+// omitPhase removes work from the denominator when the filesystem completed a
+// transfer without reading/writing the payload (hardlink/reflink). Unlike
+// skipPhase, it must not pretend that multi-gigabyte I/O happened.
+func (t *prepareProgressTracker) omitPhase(index int, phase string) {
+	if t == nil || index < 0 || index >= len(t.plans) {
+		return
+	}
+	amount := t.phaseTotal(index, phase)
+	if amount <= 0 {
+		t.emit(index, phase, 0, 0)
+		return
+	}
+	plan := &t.plans[index]
+	switch phase {
+	case "verify_candidate":
+		plan.verifyCandidateBytes = 0
+	case "stage":
+		plan.stageBytes = 0
+	case "verify_current":
+		plan.targetBytes = 0
+	case "verify_backup_source":
+		plan.verifyBackupSourceBytes = 0
+	case "backup":
+		plan.backupBytes = 0
+	}
+	t.total -= amount
+	if t.total < t.completed {
+		t.total = t.completed
+	}
+	t.emit(index, phase, 0, 0)
+}
+
 func (t *prepareProgressTracker) hashFile(index int, path, phase string) (string, error) {
 	file, err := os.Open(path)
 	if err != nil {
@@ -262,7 +294,11 @@ func (t *prepareProgressTracker) finish() {
 		index = 0
 	}
 	t.completed = t.total
-	t.emit(index, "complete", 1, 1)
+	if t.total == 0 {
+		t.emit(index, "complete", 0, 0)
+	} else {
+		t.emit(index, "complete", 1, 1)
+	}
 }
 
 func newProgressTracker(operation string, journal Journal, callback ProgressFunc) *progressTracker {
@@ -360,6 +396,31 @@ func (t *progressTracker) skipPhase(index int, phase string) {
 	t.finishPhase(index, phase)
 }
 
+func (t *progressTracker) omitPhase(index int, phase string) {
+	if t == nil || index < 0 || index >= len(t.plans) {
+		return
+	}
+	amount := t.phaseTotal(index, phase)
+	if amount <= 0 {
+		t.emit(index, phase, 0, 0)
+		return
+	}
+	plan := &t.plans[index]
+	switch phase {
+	case "verify_current":
+		plan.targetBytes = 0
+	case "install":
+		plan.sourceBytes = 0
+	case "restore":
+		plan.backupBytes = 0
+	}
+	t.total -= amount
+	if t.total < t.completed {
+		t.total = t.completed
+	}
+	t.emit(index, phase, 0, 0)
+}
+
 func (t *progressTracker) finish() {
 	if t == nil || t.callback == nil {
 		return
@@ -369,7 +430,11 @@ func (t *progressTracker) finish() {
 		index = 0
 	}
 	t.completed = t.total
-	t.emit(index, "complete", 1, 1)
+	if t.total == 0 {
+		t.emit(index, "complete", 0, 0)
+	} else {
+		t.emit(index, "complete", 1, 1)
+	}
 }
 
 func (t *progressTracker) hashFile(index int, path, phase string) (string, error) {
@@ -424,6 +489,64 @@ func (t *progressTracker) currentRegularHash(index int, path, phase string) (str
 	return hash, true, err
 }
 
+// atomicInstallTrustedHardlink is used only by the same-process Prepare -> Commit
+// fast path after both the live target and staged payload have been proven to be
+// the exact same file identities/sizes/mtimes that Prepare hashed or created.
+// A later/resumed process cannot take this path and falls back to SHA-256 I/O.
+func (t *progressTracker) atomicInstallTrustedHardlink(index int, source, destination string, mode fs.FileMode, phase string) (string, bool, error) {
+	if err := os.MkdirAll(filepath.Dir(destination), 0o755); err != nil {
+		return "", false, err
+	}
+	input, err := regularFile(source, "trusted transaction source")
+	if err != nil {
+		return "", false, err
+	}
+	temp, err := os.CreateTemp(filepath.Dir(destination), ".brpatch-link-*")
+	if err != nil {
+		return "", false, err
+	}
+	tempPath := temp.Name()
+	if err := temp.Close(); err != nil {
+		_ = os.Remove(tempPath)
+		return "", false, err
+	}
+	if err := os.Remove(tempPath); err != nil {
+		return "", false, err
+	}
+	if err := os.Link(input, tempPath); err != nil {
+		return "", false, nil
+	}
+	ok := false
+	defer func() {
+		if !ok {
+			_ = os.Remove(tempPath)
+		}
+	}()
+	srcInfo, err := os.Stat(input)
+	if err != nil {
+		return "", false, err
+	}
+	tmpInfo, err := os.Stat(tempPath)
+	if err != nil {
+		return "", false, err
+	}
+	if !os.SameFile(srcInfo, tmpInfo) || srcInfo.Size() != tmpInfo.Size() {
+		return "", false, fmt.Errorf("trusted hardlink did not preserve source identity")
+	}
+	if err := os.Rename(tempPath, destination); err != nil {
+		return "", false, err
+	}
+	ok = true
+	if err := os.Chmod(destination, mode); err != nil {
+		return "", false, err
+	}
+	if err := syncParent(destination); err != nil {
+		return "", false, err
+	}
+	t.omitPhase(index, phase)
+	return "hardlink", true, nil
+}
+
 func (t *progressTracker) atomicInstallVerified(index int, source, destination string, mode fs.FileMode, expectedSHA256, phase string) (string, error) {
 	if err := os.MkdirAll(filepath.Dir(destination), 0o755); err != nil {
 		return "", err
@@ -454,23 +577,34 @@ func (t *progressTracker) atomicInstallVerified(index int, source, destination s
 	if strings.TrimSpace(expectedSHA256) == "" {
 		return "", fmt.Errorf("expected SHA-256 is empty")
 	}
-	cloned, err := tryReflinkRegularFile(input, tempPath, mode)
-	if err != nil {
-		return "", err
-	}
-	storageMethod := "reflink"
-	if cloned {
-		actual, err := t.hashFile(index, tempPath, phase)
+	storageMethod := "hardlink"
+	if linkErr := os.Link(input, tempPath); linkErr == nil {
+		actual, hashErr := t.hashFile(index, tempPath, phase)
+		if hashErr != nil {
+			return "", hashErr
+		}
+		if actual != expectedSHA256 {
+			return "", fmt.Errorf("hardlinked payload hash mismatch")
+		}
+	} else {
+		cloned, err := tryReflinkRegularFile(input, tempPath, mode)
 		if err != nil {
 			return "", err
 		}
-		if actual != expectedSHA256 {
-			return "", fmt.Errorf("reflinked payload hash mismatch")
-		}
-	} else {
-		storageMethod = "copy"
-		if err := t.copyRegularFileVerified(index, input, tempPath, mode, expectedSHA256, phase); err != nil {
-			return "", err
+		storageMethod = "reflink"
+		if cloned {
+			actual, err := t.hashFile(index, tempPath, phase)
+			if err != nil {
+				return "", err
+			}
+			if actual != expectedSHA256 {
+				return "", fmt.Errorf("reflinked payload hash mismatch")
+			}
+		} else {
+			storageMethod = "copy"
+			if err := t.copyRegularFileVerified(index, input, tempPath, mode, expectedSHA256, phase); err != nil {
+				return "", err
+			}
 		}
 	}
 	if err := os.Rename(tempPath, destination); err != nil {

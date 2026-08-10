@@ -1,0 +1,31 @@
+{
+  "type": "unburger_runtime_bundle_contract",
+  "format_version": 3,
+  "container": "tar-zstd",
+  "compression": "zstd-level-19",
+  "legacy_readers": ["zip-deflate-v2"],
+  "public_release_embedded": true,
+  "runtime_materialization": "transient-user-cache",
+  "integrity": {
+    "outer_sha256_sidecar": true,
+    "inner_sha256sums": true
+  },
+  "quartet_dlc": {
+    "module_id": "quartet_legacy_dlc",
+    "human_facing_name": "DLC",
+    "source_families": ["blue_reflection", "second_light"],
+    "source_families_default_enabled": true,
+    "selector_initial_cursor": "continue",
+    "source_assets_embedded_in_public_release": false,
+    "combined_source_assets_optional": true
+  },
+  "quartet_movie_restoration": {
+    "embedded": true,
+    "path": "content/restoration/movies/",
+    "files": [
+      "CNG_PC00_00.webm",
+      "CNG_PC01_00.webm",
+      "CNG_PC02_00.webm"
+    ]
+  }
+}

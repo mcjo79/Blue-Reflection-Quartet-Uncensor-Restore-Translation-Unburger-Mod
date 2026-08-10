@@ -13,9 +13,11 @@ import (
 
 func main() {
 	fs := flag.NewFlagSet("unburger-assets", flag.ExitOnError)
-	var source, output, anchors string
+	var source, secondLightSource, quartetRoot, output, anchors string
 	var inspect, captureAnchors bool
 	fs.StringVar(&source, "source-root", "", "BLUE REFLECTION (2017) source game folder")
+	fs.StringVar(&secondLightSource, "second-light-source-root", "", "standalone BLUE REFLECTION: Second Light source game folder; with --quartet-root builds a combined DLC source bundle")
+	fs.StringVar(&quartetRoot, "quartet-root", "", "BLUE REFLECTION Quartet game folder used to minimize the Second Light source subset")
 	fs.StringVar(&output, "output", "", "output .unburger-assets path")
 	fs.StringVar(&anchors, "anchors", "", "clean-source member anchor manifest")
 	fs.BoolVar(&inspect, "inspect", false, "inspect and validate a .unburger-assets manifest")
@@ -79,7 +81,15 @@ func main() {
 	if err != nil {
 		fatal(err.Error())
 	}
-	manifest, err := br1rebuild.BuildSourceAssetBundle(source, absolute, anchors)
+	var manifest br1rebuild.SourceAssetManifest
+	if strings.TrimSpace(secondLightSource) != "" || strings.TrimSpace(quartetRoot) != "" {
+		if strings.TrimSpace(secondLightSource) == "" || strings.TrimSpace(quartetRoot) == "" {
+			fatal("--second-light-source-root and --quartet-root must be supplied together")
+		}
+		manifest, err = br1rebuild.BuildCombinedSourceAssetBundle(source, secondLightSource, quartetRoot, absolute, anchors)
+	} else {
+		manifest, err = br1rebuild.BuildSourceAssetBundle(source, absolute, anchors)
+	}
 	if err != nil {
 		fatal(err.Error())
 	}
@@ -88,9 +98,20 @@ func main() {
 		fatal(err.Error())
 	}
 	fmt.Printf("ASSET_BUNDLE=%s\n", absolute)
+	fmt.Printf("SOURCE_ROOT=%s\n", source)
+	if strings.TrimSpace(secondLightSource) != "" {
+		fmt.Printf("SECOND_LIGHT_SOURCE_ROOT=%s\n", secondLightSource)
+	}
+	if strings.TrimSpace(quartetRoot) != "" {
+		fmt.Printf("QUARTET_ROOT=%s\n", quartetRoot)
+	}
 	fmt.Printf("CAPABILITY=%s\n", manifest.Capability)
 	fmt.Printf("SOURCE_FINGERPRINT=%s\n", manifest.SourceFingerprint)
 	fmt.Printf("SOURCE_MEMBERS=%d\n", len(manifest.SourceMembers))
+	for _, supplement := range manifest.SupplementalSources {
+		fmt.Printf("SUPPLEMENTAL_CAPABILITY=%s\n", supplement.Capability)
+		fmt.Printf("SUPPLEMENTAL_SOURCE_MEMBERS=%d\n", len(supplement.SourceMembers))
+	}
 	fmt.Printf("BYTES=%d\n", info.Size())
 }
 

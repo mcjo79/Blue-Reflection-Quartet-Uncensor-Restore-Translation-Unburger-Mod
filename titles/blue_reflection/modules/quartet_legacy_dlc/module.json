@@ -4,48 +4,61 @@
   "module_id": "quartet_legacy_dlc",
   "project": "blue_reflection",
   "module_type": "dlc_restoration",
-  "status": "runtime_validated",
+  "status": "runtime_validation_pending",
   "default_enabled": false,
   "targets": [
     "blue_reflection_quartet"
   ],
   "dependencies": [],
   "source_requirements": [
-    "selected_blue_reflection_original_installation",
+    "selected_dlc_source_family_blue_reflection_or_second_light",
     "blue_reflection_quartet_installation"
   ],
   "distribution_policy": {
     "contains_raw_game_assets": false,
     "source_files_read_locally": true,
     "large_game_archives_distributed": false,
-    "public_payload": "patcher_logic_manifests_and_small_authored_content_only"
+    "public_payload": "patcher_logic_manifests_and_small_authored_content_only",
+    "developer_source_bundle": "one optional .unburger-assets container can carry reduced source subsets for both source games"
   },
   "content_scope": {
-    "restored_pc_costumes": 66,
-    "unavailable_pc_costumes": 24,
-    "final_wardrobe_records": 122,
-    "tropical_island": true,
-    "save_access_sync": "optional_guided_step_with_per_save_backup"
+    "blue_reflection": {
+      "restored_pc_costumes": 66,
+      "unavailable_pc_costumes": 24,
+      "final_wardrobe_records": 122,
+      "tropical_island": true,
+      "save_access_sync": "optional_guided_step_with_per_save_backup"
+    },
+    "second_light": {
+      "costumes": true,
+      "dlc_maps_and_battle_fields": true,
+      "dlc_dialogue_and_notifications": true,
+      "ui_strings": true,
+      "dlc_event_and_facility_story_regating": true,
+      "resonance_tide": true,
+      "ryza_audio": true,
+      "ryza_cauldron_fix": true,
+      "save_access_sync": "not_required_for_native_quartet_saves; optional parity handling remains separate"
+    }
   },
   "composition": {
     "order": [
-      "quartet_legacy_dlc",
+      "blue_reflection_dlc_if_selected",
+      "second_light_dlc_if_selected",
       "quartet_restoration",
       "blue_reflection_translation"
     ],
     "translation_last": true,
-    "shared_string_tables": "merge_changed_rows_by_String_No_then_rebuild_encrypted_aggregate"
+    "shared_string_tables": "compose target-native changes before translation; never wholesale-copy source rows where Quartet-native fields must survive",
+    "second_light_costume_closure": "two_pass_open_then_reclose_missing_model_rows"
   },
-  "core_capability": "br1_legacy_content_rebuild_v1",
+  "core_capability": "quartet_content_composition_v2",
   "runtime_validation": {
-    "restored_costumes_visible": true,
-    "restored_costume_names_visible": true,
-    "restored_costume_model_switching": true,
-    "tropical_island_invite": true,
-    "tropical_island_map_render": true,
-    "save_access": true,
-    "tropical_island_short_scene_voice_acting_expected": false
+    "blue_reflection_dlc": "runtime_validated",
+    "second_light_reference_behavior": "runtime_validated_by_reference_implementation",
+    "second_light_unburger_go_implementation": "0.0.103 runtime FAIL; causal parity audit isolated dangling DEFAULT costume rows; 0.0.104 fix pending user runtime validation",
+    "second_light_asset_bundle": "2942/2942 required Steam 1.04 inputs exact; not causal"
   },
-  "workstream_version": "0.1.0",
-  "workstream_status": "runtime_validated_closed"
+  "workstream_version": "0.2.1",
+  "workstream_status": "runtime_fix_candidate_validation_pending"
 }

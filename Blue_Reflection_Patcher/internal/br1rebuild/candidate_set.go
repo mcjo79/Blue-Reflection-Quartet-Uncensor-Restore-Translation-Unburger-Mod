@@ -128,7 +128,7 @@ func BuildCandidateSet(opts ReconstructionBuildOptions, progress BuildProgressFu
 			}
 		}
 	}
-	if err := rejectNonTerminalTransactions(opts.StateRoot, progress); err != nil {
+	if err := rejectNonTerminalTransactions(opts.StateRoot, activeExists, progress); err != nil {
 		return report, err
 	}
 	if err := os.MkdirAll(opts.Workspace, 0o755); err != nil {
@@ -261,17 +261,39 @@ func PrepareArtifactsForTargetWithProgress(gameRoot, stateRoot, targetID string,
 		if _, exists := byPath[key]; exists {
 			return "", "", fmt.Errorf("duplicate final artifact path: %s", relative)
 		}
-		hash, size, err := hashPath(artifact.Path)
-		if err != nil {
-			return "", "", err
+		trustedHash := strings.ToLower(strings.TrimSpace(artifact.SHA256))
+		trustedSize := artifact.Size
+		if trustedHash != "" && trustedSize > 0 {
+			if len(trustedHash) != 64 {
+				return "", "", fmt.Errorf("invalid verified artifact SHA-256: %s", relative)
+			}
+			if _, decodeErr := hex.DecodeString(trustedHash); decodeErr != nil {
+				return "", "", fmt.Errorf("invalid verified artifact SHA-256: %s", relative)
+			}
+			info, statErr := os.Lstat(artifact.Path)
+			if statErr != nil {
+				return "", "", statErr
+			}
+			if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
+				return "", "", fmt.Errorf("verified artifact is not a regular file: %s", relative)
+			}
+			if info.Size() != trustedSize {
+				return "", "", fmt.Errorf("final artifact size drift: %s", relative)
+			}
+			artifact.RelativePath, artifact.SHA256, artifact.Size = relative, trustedHash, trustedSize
+		} else {
+			hash, size, err := hashPath(artifact.Path)
+			if err != nil {
+				return "", "", err
+			}
+			if trustedHash != "" && !strings.EqualFold(hash, trustedHash) {
+				return "", "", fmt.Errorf("final artifact hash drift: %s", relative)
+			}
+			if trustedSize != 0 && size != trustedSize {
+				return "", "", fmt.Errorf("final artifact size drift: %s", relative)
+			}
+			artifact.RelativePath, artifact.SHA256, artifact.Size = relative, hash, size
 		}
-		if artifact.SHA256 != "" && !strings.EqualFold(hash, artifact.SHA256) {
-			return "", "", fmt.Errorf("final artifact hash drift: %s", relative)
-		}
-		if artifact.Size != 0 && size != artifact.Size {
-			return "", "", fmt.Errorf("final artifact size drift: %s", relative)
-		}
-		artifact.RelativePath, artifact.SHA256, artifact.Size = relative, hash, size
 		byPath[key] = artifact
 		ordered = append(ordered, relative)
 	}
@@ -307,9 +329,10 @@ func PrepareArtifactsForTargetWithProgress(gameRoot, stateRoot, targetID string,
 		})
 	}
 	prepared, err := transaction.PrepareWithOptions(gameRoot, stateRoot, changes, selectedModules, transactionMetadata, transaction.PrepareOptions{
-		Progress:                        progress,
-		RequireHardlinkBackup:           true,
-		UseSiblingFilesystemBackupStore: true,
+		Progress:                         progress,
+		RequireHardlinkBackup:            true,
+		UseSiblingFilesystemBackupStore:  true,
+		UseSiblingFilesystemStagingStore: true,
 	})
 	if err != nil {
 		return "", "", err
@@ -376,7 +399,7 @@ func BuildReconstructionSet(opts ReconstructionBuildOptions, progress BuildProgr
 	return PrepareCandidateSet(report, opts.StateRoot, []string{ReconstructionModuleID})
 }
 
-func rejectNonTerminalTransactions(stateRoot string, progress BuildProgressFunc) error {
+func rejectNonTerminalTransactions(stateRoot string, activeStateExists bool, progress BuildProgressFunc) error {
 	root := filepath.Join(stateRoot, "transactions")
 	entries, err := os.ReadDir(root)
 	if errors.Is(err, os.ErrNotExist) {
@@ -397,6 +420,11 @@ func rejectNonTerminalTransactions(stateRoot string, progress BuildProgressFunc)
 		switch journal.Status {
 		case transaction.StatusRolledBack, transaction.StatusDiscarded:
 			continue
+		case transaction.StatusCommitted:
+			if activeStateExists {
+				continue
+			}
+			return fmt.Errorf("candidate build blocked by orphan committed transaction %s; this installation has no active managed state, so select the intended installation or run transaction/installation recovery", journal.TransactionID)
 		case transaction.StatusPrepared:
 			if legacyPreparedJournalNeedsMetadataRecovery(journal) {
 				if progress != nil {

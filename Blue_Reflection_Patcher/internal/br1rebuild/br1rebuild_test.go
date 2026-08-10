@@ -267,6 +267,13 @@ func TestA22NoOpPatchIsByteIdentical(t *testing.T) {
 	if stats.Replaced != 0 || stats.Added != 0 || stats.EntriesBefore != stats.EntriesAfter {
 		t.Fatalf("unexpected no-op stats: %+v", stats)
 	}
+	digest, size, err := hashPath(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stats.OutputSHA256 != digest || stats.SizeAfter != size {
+		t.Fatalf("writer output digest/size not reusable: stats=%+v digest=%s size=%d", stats, digest, size)
+	}
 }
 
 func TestExtraCostumeBoundsExactOnePlusSeventeen(t *testing.T) {
@@ -450,8 +457,16 @@ func TestA18SurgicalRewritePreservesUnchangedMembers(t *testing.T) {
 	_ = p.Close()
 	out := filepath.Join(dir, "out.pak")
 	repl := map[string]ArchiveInput{`\event\event_en\a.ebm`: MemoryEntry{Data: []byte("translated")}}
-	if _, err := RewriteA18(src, out, ArchiveEdits{Replacements: repl}, nil); err != nil {
+	stats, err := RewriteA18(src, out, ArchiveEdits{Replacements: repl}, nil)
+	if err != nil {
 		t.Fatal(err)
+	}
+	digest, size, err := hashPath(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stats.OutputSHA256 != digest || stats.SizeAfter != size {
+		t.Fatalf("A18 writer output digest/size not reusable: stats=%+v digest=%s size=%d", stats, digest, size)
 	}
 	audit, err := AuditA18Rewrite(src, out, nil, repl, nil)
 	if err != nil {
@@ -478,5 +493,48 @@ func TestA18SurgicalRewritePreservesUnchangedMembers(t *testing.T) {
 	}
 	if string(blob) != "translated" {
 		t.Fatalf("replacement=%q", blob)
+	}
+}
+
+func TestWriteReducedA22SourceImageKeepsOnlySelectedMembers(t *testing.T) {
+	dir := t.TempDir()
+	src := filepath.Join(dir, "source.pak")
+	dst := filepath.Join(dir, "reduced.pak")
+	writeA22Fixture(t, src, map[string][]byte{
+		`\data\x64\character\keep\a.bin`: []byte("alpha"),
+		`\data\x64\character\drop\b.bin`: []byte("beta"),
+		`\data\x64\character\keep\c.bin`: []byte("gamma"),
+	})
+	selected, err := WriteReducedA22SourceImage(src, dst, func(name string) bool { return strings.Contains(name, `\keep\`) })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(selected) != 2 {
+		t.Fatalf("selected=%d want=2", len(selected))
+	}
+	p, err := OpenA22(dst)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer p.Close()
+	if len(p.Entries) != 2 {
+		t.Fatalf("entries=%d", len(p.Entries))
+	}
+	wantPayload := map[string]string{`\data\x64\character\keep\a.bin`: "alpha", `\data\x64\character\keep\c.bin`: "gamma"}
+	for name, want := range wantPayload {
+		e, ok := p.Find(name)
+		if !ok {
+			t.Fatalf("missing %s", name)
+		}
+		b, err := p.Read(e)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(b) != want {
+			t.Fatalf("%s payload=%q want=%q", name, b, want)
+		}
+	}
+	if _, ok := p.Find(`\data\x64\character\drop\b.bin`); ok {
+		t.Fatal("unselected member survived")
 	}
 }

@@ -196,6 +196,9 @@ func Activate(stateRoot, targetID, gameRoot, baselineManifestPath, journalPath s
 			return State{}, fmt.Errorf("committed target is not a regular file: %s", item.RelativePath)
 		}
 		size := info.Size()
+		if item.DesiredBytes > 0 && size != item.DesiredBytes {
+			return State{}, fmt.Errorf("committed target size changed before active-state publication: %s", item.RelativePath)
+		}
 		records = append(records, FileRecord{
 			RelativePath: filepath.ToSlash(item.RelativePath), BaselineExisted: base.Existed,
 			BaselineSHA256: base.SHA256, InstalledSHA256: item.DesiredSHA256, InstalledBytes: size,

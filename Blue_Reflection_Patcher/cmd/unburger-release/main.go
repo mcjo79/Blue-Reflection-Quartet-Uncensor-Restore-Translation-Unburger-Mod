@@ -90,7 +90,7 @@ func stageRelease(project, stage string) error {
 		targets = append(targets, id)
 	}
 	sort.Strings(targets)
-	manifest := releaseManifest{Type: "unburger_release_manifest", FormatVersion: 2, CoreVersion: coreVersion, TranslationVersion: translationVersion, TranslationTargets: targets, TranslationMembers: stats.TargetMembers, TranslationRecords: stats.TargetRecords, ModuleOrder: []string{"quartet_legacy_dlc", "quartet_restoration", "blue_reflection_translation"}, LargeGameArchives: false, RuntimeMaterialization: true}
+	manifest := releaseManifest{Type: "unburger_release_manifest", FormatVersion: 3, CoreVersion: coreVersion, TranslationVersion: translationVersion, TranslationTargets: targets, TranslationMembers: stats.TargetMembers, TranslationRecords: stats.TargetRecords, ModuleOrder: []string{"quartet_legacy_dlc", "quartet_restoration", "quartet_movie_restoration", "blue_reflection_translation"}, LargeGameArchives: false, RuntimeMaterialization: true}
 	data, _ := json.MarshalIndent(manifest, "", "  ")
 	return os.WriteFile(filepath.Join(stage, "RELEASE_MANIFEST.json"), append(data, '\n'), 0o644)
 }

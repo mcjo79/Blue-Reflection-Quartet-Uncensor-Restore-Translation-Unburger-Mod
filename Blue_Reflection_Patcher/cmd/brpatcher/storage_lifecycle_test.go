@@ -17,10 +17,12 @@ func TestCompactInstallationStoragePrunesTerminalPayloadsAndUnreferencedBaseline
 	id := "20260809T120000Z-deadbeef0001"
 	txRoot := filepath.Join(state, "transactions", id)
 	external := filepath.Join(filepath.Dir(game), ".unburger-patcher-transaction-backups", filepath.Base(game), id)
+	staging := filepath.Join(filepath.Dir(game), ".unburger-patcher-transaction-staging", filepath.Base(game), id)
 	writeStorageFixture(t, filepath.Join(txRoot, "staged", "large.bin"), "staged")
 	writeStorageFixture(t, filepath.Join(txRoot, "backup", "large.bin"), "legacy-backup")
 	writeStorageFixture(t, filepath.Join(external, "backup", "Data", "PACK.PAK"), "external-backup")
-	journal := storageJournalRef{TransactionID: id, Status: "rolled_back", GameRoot: game, BackupRoot: external, Metadata: map[string]string{}}
+	writeStorageFixture(t, filepath.Join(staging, "staged", "Data", "PACK.PAK"), "external-staged")
+	journal := storageJournalRef{TransactionID: id, Status: "rolled_back", GameRoot: game, StagingRoot: staging, BackupRoot: external, Metadata: map[string]string{}}
 	writeStorageJSON(t, filepath.Join(txRoot, "journal.json"), journal)
 	orphanBaseline := filepath.Join(state, "baselines", "orphan", "files", "Data", "PACK.PAK")
 	writeStorageFixture(t, orphanBaseline, "old-appdata-baseline")
@@ -33,7 +35,7 @@ func TestCompactInstallationStoragePrunesTerminalPayloadsAndUnreferencedBaseline
 		t.Fatal("storage cleanup reported no removals")
 	}
 	for _, path := range []string{
-		filepath.Join(txRoot, "staged"), filepath.Join(txRoot, "backup"), external,
+		filepath.Join(txRoot, "staged"), filepath.Join(txRoot, "backup"), external, staging,
 		filepath.Join(state, "baselines", "orphan"),
 	} {
 		if _, err := os.Stat(path); !os.IsNotExist(err) {
@@ -58,6 +60,8 @@ func TestCompactInstallationStoragePreservesActiveRollbackChain(t *testing.T) {
 	orphanBaseline := filepath.Join(state, "baselines", "orphan", "manifest.json")
 	activeBackup := filepath.Join(filepath.Dir(game), ".unburger-patcher-transaction-backups", filepath.Base(game), activeID)
 	oldBackup := filepath.Join(filepath.Dir(game), ".unburger-patcher-transaction-backups", filepath.Base(game), oldID)
+	activeStaging := filepath.Join(filepath.Dir(game), ".unburger-patcher-transaction-staging", filepath.Base(game), activeID)
+	oldStaging := filepath.Join(filepath.Dir(game), ".unburger-patcher-transaction-staging", filepath.Base(game), oldID)
 
 	writeStorageJSON(t, filepath.Join(state, "active_state.json"), storageStateRef{TransactionID: activeID, BaselineManifestPath: activeBaseline})
 	writeStorageJSON(t, activeBaseline, map[string]any{"format_version": 2, "storage_root": activeBackup})
@@ -66,13 +70,15 @@ func TestCompactInstallationStoragePreservesActiveRollbackChain(t *testing.T) {
 	writeStorageFixture(t, filepath.Join(filepath.Dir(orphanBaseline), "files", "large.bin"), "orphan")
 
 	activeTx := filepath.Join(state, "transactions", activeID)
-	writeStorageJSON(t, filepath.Join(activeTx, "journal.json"), storageJournalRef{TransactionID: activeID, Status: "committed", GameRoot: game, BackupRoot: activeBackup, Metadata: map[string]string{"baseline_manifest_path": activeBaseline}})
+	writeStorageJSON(t, filepath.Join(activeTx, "journal.json"), storageJournalRef{TransactionID: activeID, Status: "committed", GameRoot: game, StagingRoot: activeStaging, BackupRoot: activeBackup, Metadata: map[string]string{"baseline_manifest_path": activeBaseline}})
 	writeStorageFixture(t, filepath.Join(activeTx, "staged", "large.bin"), "obsolete-staged")
+	writeStorageFixture(t, filepath.Join(activeStaging, "staged", "large.bin"), "obsolete-external-staged")
 	writeStorageFixture(t, filepath.Join(activeBackup, "backup", "Data", "PACK.PAK"), "keep-active-rollback")
 
 	oldTx := filepath.Join(state, "transactions", oldID)
-	writeStorageJSON(t, filepath.Join(oldTx, "journal.json"), storageJournalRef{TransactionID: oldID, Status: "committed", GameRoot: game, BackupRoot: oldBackup, Metadata: map[string]string{"baseline_manifest_path": orphanBaseline}})
+	writeStorageJSON(t, filepath.Join(oldTx, "journal.json"), storageJournalRef{TransactionID: oldID, Status: "committed", GameRoot: game, StagingRoot: oldStaging, BackupRoot: oldBackup, Metadata: map[string]string{"baseline_manifest_path": orphanBaseline}})
 	writeStorageFixture(t, filepath.Join(oldTx, "staged", "large.bin"), "obsolete-staged")
+	writeStorageFixture(t, filepath.Join(oldStaging, "staged", "large.bin"), "obsolete-external-staged")
 	writeStorageFixture(t, filepath.Join(oldBackup, "backup", "Data", "PACK.PAK"), "obsolete-backup")
 
 	if _, err := compactInstallationStorage(state); err != nil {
@@ -87,7 +93,7 @@ func TestCompactInstallationStoragePreservesActiveRollbackChain(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(filepath.Dir(activeBaseline), "files")); !os.IsNotExist(err) {
 		t.Fatalf("obsolete local duplicate beside v2 baseline survived: %v", err)
 	}
-	for _, path := range []string{filepath.Join(activeTx, "staged"), oldBackup, filepath.Dir(orphanBaseline)} {
+	for _, path := range []string{filepath.Join(activeTx, "staged"), activeStaging, oldStaging, oldBackup, filepath.Dir(orphanBaseline)} {
 		if _, err := os.Stat(path); !os.IsNotExist(err) {
 			t.Fatalf("superseded payload survived: %s: %v", path, err)
 		}

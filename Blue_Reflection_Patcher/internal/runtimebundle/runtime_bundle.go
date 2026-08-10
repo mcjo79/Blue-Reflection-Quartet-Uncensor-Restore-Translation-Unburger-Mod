@@ -1,6 +1,7 @@
 package runtimebundle
 
 import (
+	"archive/tar"
 	"archive/zip"
 	"bufio"
 	"crypto/sha256"
@@ -12,6 +13,8 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"local/blue-reflection-patcher/internal/zstddec"
 
 	"local/blue-reflection-patcher/internal/workspace"
 )
@@ -95,6 +98,39 @@ func PruneOlderRuntimeBundles(root string) ([]string, error) {
 }
 
 func runtimeBundleCoreVersion(path string) (string, error) {
+	if zstd, err := isZstdRuntimeBundle(path); err != nil {
+		return "", err
+	} else if zstd {
+		f, err := os.Open(path)
+		if err != nil {
+			return "", err
+		}
+		defer f.Close()
+		tr := tar.NewReader(zstddec.NewReader(f))
+		for {
+			hdr, err := tr.Next()
+			if err == io.EOF {
+				break
+			}
+			if err != nil {
+				return "", fmt.Errorf("read zstd runtime bundle: %w", err)
+			}
+			if filepath.ToSlash(hdr.Name) != "RELEASE_MANIFEST.json" {
+				continue
+			}
+			var manifest releaseManifest
+			if err := json.NewDecoder(io.LimitReader(tr, 1<<20)).Decode(&manifest); err != nil {
+				return "", err
+			}
+			if manifest.Type != "unburger_release_manifest" || manifest.FormatVersion < 3 || strings.TrimSpace(manifest.CoreVersion) == "" {
+				return "", fmt.Errorf("unsupported zstd runtime bundle manifest")
+			}
+			return strings.TrimSpace(manifest.CoreVersion), nil
+		}
+		return "", fmt.Errorf("runtime bundle is missing RELEASE_MANIFEST.json")
+	}
+
+	// Legacy .unburger v2: ZIP/Deflate.
 	zr, err := zip.OpenReader(path)
 	if err != nil {
 		return "", err
@@ -120,6 +156,19 @@ func runtimeBundleCoreVersion(path string) (string, error) {
 		return strings.TrimSpace(manifest.CoreVersion), nil
 	}
 	return "", fmt.Errorf("runtime bundle is missing RELEASE_MANIFEST.json")
+}
+
+func isZstdRuntimeBundle(path string) (bool, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return false, err
+	}
+	defer f.Close()
+	var magic [4]byte
+	if _, err := io.ReadFull(f, magic[:]); err != nil {
+		return false, err
+	}
+	return magic == [4]byte{0x28, 0xb5, 0x2f, 0xfd}, nil
 }
 
 func parseCoreVersion(raw string) ([3]int, error) {
@@ -200,7 +249,7 @@ func ResolveProjectRootTransient(root string) (string, func(), error) {
 		return "", noop, err
 	}
 	cleanup := func() { _ = os.RemoveAll(stage) }
-	if err := extractZip(bundles[0], stage); err != nil {
+	if err := extractRuntimeBundle(bundles[0], stage); err != nil {
 		cleanup()
 		return "", noop, err
 	}
@@ -209,6 +258,76 @@ func ResolveProjectRootTransient(root string) (string, func(), error) {
 		return "", noop, err
 	}
 	return stage, cleanup, nil
+}
+
+func extractRuntimeBundle(bundlePath, dst string) error {
+	zstd, err := isZstdRuntimeBundle(bundlePath)
+	if err != nil {
+		return err
+	}
+	if zstd {
+		return extractTarZstd(bundlePath, dst)
+	}
+	return extractZip(bundlePath, dst)
+}
+
+func extractTarZstd(bundlePath, dst string) error {
+	f, err := os.Open(bundlePath)
+	if err != nil {
+		return fmt.Errorf("open .unburger payload: %w", err)
+	}
+	defer f.Close()
+	tr := tar.NewReader(zstddec.NewReader(f))
+	for {
+		hdr, err := tr.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return fmt.Errorf("read .unburger zstd/tar payload: %w", err)
+		}
+		name := filepath.FromSlash(hdr.Name)
+		if hdr.Name == "" || strings.HasPrefix(hdr.Name, "/") || filepath.IsAbs(name) {
+			return fmt.Errorf("unsafe .unburger entry: %q", hdr.Name)
+		}
+		clean := filepath.Clean(name)
+		if clean == "." || clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
+			return fmt.Errorf("unsafe .unburger entry: %q", hdr.Name)
+		}
+		target := filepath.Join(dst, clean)
+		if rel, err := filepath.Rel(dst, target); err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			return fmt.Errorf("unsafe .unburger entry: %q", hdr.Name)
+		}
+		switch hdr.Typeflag {
+		case tar.TypeDir:
+			if err := os.MkdirAll(target, 0o755); err != nil {
+				return err
+			}
+		case tar.TypeReg, tar.TypeRegA:
+			if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+				return err
+			}
+			mode := os.FileMode(hdr.Mode).Perm()
+			if mode == 0 {
+				mode = 0o644
+			}
+			out, err := os.OpenFile(target, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, mode)
+			if err != nil {
+				return err
+			}
+			_, copyErr := io.Copy(out, tr)
+			closeErr := out.Close()
+			if copyErr != nil {
+				return copyErr
+			}
+			if closeErr != nil {
+				return closeErr
+			}
+		default:
+			return fmt.Errorf("unsupported .unburger tar entry type for %q", hdr.Name)
+		}
+	}
+	return nil
 }
 
 func extractZip(bundlePath, dst string) error {

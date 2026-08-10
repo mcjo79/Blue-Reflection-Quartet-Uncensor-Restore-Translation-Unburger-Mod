@@ -64,7 +64,7 @@ func TestStageReleaseBuildsCanonicalRecordBundle(t *testing.T) {
 	if err := json.Unmarshal(blob, &manifest); err != nil {
 		t.Fatal(err)
 	}
-	if manifest.FormatVersion != 2 || manifest.TranslationVersion != "0.0.203" || manifest.LargeGameArchives || !manifest.RuntimeMaterialization {
+	if manifest.FormatVersion != 3 || manifest.TranslationVersion != "0.0.203" || manifest.LargeGameArchives || !manifest.RuntimeMaterialization {
 		t.Fatalf("unexpected manifest: %+v", manifest)
 	}
 	if manifest.TranslationRecords["blue_reflection_original"] != 1 || manifest.TranslationRecords["blue_reflection_quartet"] != 1 {

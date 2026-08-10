@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
@@ -425,6 +426,7 @@ type ArchiveEdits struct {
 type ArchiveRewriteStats struct {
 	EntriesBefore, EntriesAfter, Replaced, Added int
 	SizeBefore, SizeAfter                        int64
+	OutputSHA256                                 string
 }
 type ArchiveAuditResult struct {
 	Checked, Changed, Unchanged int
@@ -531,7 +533,8 @@ func RewriteA22(srcPath, dstPath string, patch ArchiveEdits, progress byteProgre
 			os.Remove(dstPath)
 		}
 	}()
-	bw := bufio.NewWriterSize(out, 8<<20)
+	outputHash := sha256.New()
+	bw := bufio.NewWriterSize(io.MultiWriter(out, outputHash), 8<<20)
 	hdr := make([]byte, 16)
 	binary.LittleEndian.PutUint32(hdr[0:4], 0x20000)
 	binary.LittleEndian.PutUint32(hdr[4:8], uint32(len(plan)))
@@ -584,7 +587,10 @@ func RewriteA22(srcPath, dstPath string, patch ArchiveEdits, progress byteProgre
 	ok = true
 	st1, _ := os.Stat(srcPath)
 	st2, _ := os.Stat(dstPath)
-	return ArchiveRewriteStats{len(p.Entries), len(plan), len(repl), len(adds), st1.Size(), st2.Size()}, nil
+	return ArchiveRewriteStats{
+		EntriesBefore: len(p.Entries), EntriesAfter: len(plan), Replaced: len(repl), Added: len(adds),
+		SizeBefore: st1.Size(), SizeAfter: st2.Size(), OutputSHA256: hex.EncodeToString(outputHash.Sum(nil)),
+	}, nil
 }
 
 type countWriter struct {
@@ -884,7 +890,8 @@ func RewriteA18(srcPath, dstPath string, patch ArchiveEdits, progress byteProgre
 			os.Remove(dstPath)
 		}
 	}()
-	bw := bufio.NewWriterSize(out, 8<<20)
+	outputHash := sha256.New()
+	bw := bufio.NewWriterSize(io.MultiWriter(out, outputHash), 8<<20)
 	hdr := make([]byte, pakHeaderSize)
 	binary.LittleEndian.PutUint32(hdr[0:4], 0x20000)
 	binary.LittleEndian.PutUint32(hdr[4:8], uint32(len(plan)))
@@ -937,7 +944,10 @@ func RewriteA18(srcPath, dstPath string, patch ArchiveEdits, progress byteProgre
 	ok = true
 	st1, _ := os.Stat(srcPath)
 	st2, _ := os.Stat(dstPath)
-	return ArchiveRewriteStats{len(p.Entries), len(plan), len(repl), len(adds), st1.Size(), st2.Size()}, nil
+	return ArchiveRewriteStats{
+		EntriesBefore: len(p.Entries), EntriesAfter: len(plan), Replaced: len(repl), Added: len(adds),
+		SizeBefore: st1.Size(), SizeAfter: st2.Size(), OutputSHA256: hex.EncodeToString(outputHash.Sum(nil)),
+	}, nil
 }
 
 func AuditA18Rewrite(srcPath, dstPath string, expectedAdded map[string]string, replacements map[string]ArchiveInput, progress byteProgress) (ArchiveAuditResult, error) {
@@ -1096,4 +1106,89 @@ func auditArchiveRewrite(srcPath, dstPath string, expectedAdded map[string]strin
 		res.Checked++
 	}
 	return res, nil
+}
+
+// WriteReducedA22SourceImage creates a structurally valid A22 image containing
+// only the selected source members. It preserves each selected member's raw
+// encrypted bytes and header metadata; only table-relative offsets and the
+// archive entry count are rewritten. This is intended for local source bundles,
+// not for modifying a live game archive.
+func WriteReducedA22SourceImage(srcPath, dstPath string, keep func(string) bool) ([]ArchiveEntry, error) {
+	p, err := OpenA22(srcPath)
+	if err != nil {
+		return nil, err
+	}
+	defer p.Close()
+	selected := make([]ArchiveEntry, 0)
+	for _, e := range p.Entries {
+		if keep == nil || keep(e.Name) {
+			selected = append(selected, e)
+		}
+	}
+	if len(selected) == 0 {
+		return nil, fmt.Errorf("cannot write empty reduced A22 source image: %s", srcPath)
+	}
+	if err := os.MkdirAll(filepath.Dir(dstPath), 0o755); err != nil {
+		return nil, err
+	}
+	out, err := os.Create(dstPath)
+	if err != nil {
+		return nil, err
+	}
+	ok := false
+	defer func() {
+		_ = out.Close()
+		if !ok {
+			_ = os.Remove(dstPath)
+		}
+	}()
+	outputHash := sha256.New()
+	bw := bufio.NewWriterSize(io.MultiWriter(out, outputHash), 8<<20)
+	hdr := make([]byte, pakHeaderSize)
+	binary.LittleEndian.PutUint32(hdr[0:4], 0x20000)
+	binary.LittleEndian.PutUint32(hdr[4:8], uint32(len(selected)))
+	binary.LittleEndian.PutUint32(hdr[8:12], pakHeaderSize)
+	binary.LittleEndian.PutUint32(hdr[12:16], p.Flags)
+	if _, err := bw.Write(hdr); err != nil {
+		return nil, err
+	}
+	var offset uint64
+	for _, e := range selected {
+		raw := append([]byte(nil), e.rawHeader...)
+		binary.LittleEndian.PutUint64(raw[168:176], offset)
+		if _, err := bw.Write(raw); err != nil {
+			return nil, err
+		}
+		offset += uint64(e.Size)
+	}
+	for i := range selected {
+		e := selected[i]
+		if err := copyRaw(p, &e, bw, nil); err != nil {
+			return nil, err
+		}
+	}
+	if err := bw.Flush(); err != nil {
+		return nil, err
+	}
+	if err := out.Sync(); err != nil {
+		return nil, err
+	}
+	if err := out.Close(); err != nil {
+		return nil, err
+	}
+	ok = true
+	verify, err := OpenA22(dstPath)
+	if err != nil {
+		return nil, fmt.Errorf("verify reduced A22 source image: %w", err)
+	}
+	defer verify.Close()
+	if len(verify.Entries) != len(selected) {
+		return nil, fmt.Errorf("reduced A22 entry count drift: got %d expected %d", len(verify.Entries), len(selected))
+	}
+	for i := range selected {
+		if !strings.EqualFold(verify.Entries[i].Name, selected[i].Name) || verify.Entries[i].Size != selected[i].Size {
+			return nil, fmt.Errorf("reduced A22 member drift at %d", i)
+		}
+	}
+	return selected, nil
 }

@@ -19,6 +19,18 @@ var brTextSeeds = textEnvelopeSeeds{
 	fence:  0x0b23,
 }
 
+// secondLightA21TextSeeds is the A21 profile used by BLUE REFLECTION: Second Light
+// for encrypted XML table siblings (for example stream.xml.e). It is deliberately
+// separate from the original BLUE REFLECTION profile above: using BR seeds creates
+// a self-consistent round trip in this package, but the Second Light runtime cannot
+// decode that ciphertext.
+var secondLightA21TextSeeds = textEnvelopeSeeds{
+	main:   [3]uint32{0x6d3f, 0xcb53, 0x74b9},
+	table:  [3]uint32{0xa83b, 0xb11d, 0x88a5},
+	length: [3]uint32{0x1d, 0x13, 0x0b},
+	fence:  0x0a31,
+}
+
 type textEnvelopeSeeds struct {
 	main   [3]uint32
 	table  [3]uint32
@@ -268,7 +280,7 @@ func unwrapLiteralTextStream(src []byte) ([]byte, error) {
 	return out, nil
 }
 
-func encodeBRTextEnvelope(plain []byte) ([]byte, error) {
+func encodeTextEnvelope(plain []byte, seeds textEnvelopeSeeds) ([]byte, error) {
 	stream, codeBytes, err := literalTextStream(plain)
 	if err != nil {
 		return nil, err
@@ -280,12 +292,12 @@ func encodeBRTextEnvelope(plain []byte) ([]byte, error) {
 	payload := append([]byte(nil), stream...)
 	check2 := textAdler32(payload)
 	begin := minInt(len(payload), 0x800)
-	if err := shuffleTextBits(payload[:begin], 0x80, newTextPRNG(check2, brTextSeeds.main[2]), false); err != nil {
+	if err := shuffleTextBits(payload[:begin], 0x80, newTextPRNG(check2, seeds.main[2]), false); err != nil {
 		return nil, err
 	}
 	check0 := textChecksumSub(payload)
 	check1 := textChecksumXOR(payload)
-	rotateTextBytes(payload, brTextSeeds, newTextPRNG(check2, brTextSeeds.table[0]))
+	rotateTextBytes(payload, seeds, newTextPRNG(check2, seeds.table[0]))
 
 	aligned := (len(payload) + 1 + 15) &^ 15
 	main := make([]byte, aligned+16)
@@ -294,11 +306,11 @@ func encodeBRTextEnvelope(plain []byte) ([]byte, error) {
 	binary.BigEndian.PutUint32(main[aligned+4:aligned+8], check0)
 	binary.BigEndian.PutUint32(main[aligned+8:aligned+12], check1)
 	binary.BigEndian.PutUint32(main[aligned+12:aligned+16], check2)
-	if err := fenceTextWords(main, brTextSeeds.fence, newTextPRNG(0, brTextSeeds.main[1]), false); err != nil {
+	if err := fenceTextWords(main, seeds.fence, newTextPRNG(0, seeds.main[1]), false); err != nil {
 		return nil, err
 	}
 	end := minInt(len(main), 0x800)
-	if err := shuffleTextBits(main[len(main)-end:], 0x100, newTextPRNG(0, brTextSeeds.main[0]), false); err != nil {
+	if err := shuffleTextBits(main[len(main)-end:], 0x100, newTextPRNG(0, seeds.main[0]), false); err != nil {
 		return nil, err
 	}
 	out := make([]byte, 16+len(main))
@@ -308,7 +320,7 @@ func encodeBRTextEnvelope(plain []byte) ([]byte, error) {
 	return out, nil
 }
 
-func decodeBRTextEnvelope(encoded []byte) ([]byte, error) {
+func decodeTextEnvelope(encoded []byte, seeds textEnvelopeSeeds) ([]byte, error) {
 	if len(encoded) <= 32 || len(encoded)%4 != 0 {
 		return nil, fmt.Errorf("text envelope size is invalid")
 	}
@@ -321,10 +333,10 @@ func decodeBRTextEnvelope(encoded []byte) ([]byte, error) {
 	}
 	main := append([]byte(nil), encoded[16:]...)
 	end := minInt(len(main), 0x800)
-	if err := shuffleTextBits(main[len(main)-end:], 0x100, newTextPRNG(0, brTextSeeds.main[0]), true); err != nil {
+	if err := shuffleTextBits(main[len(main)-end:], 0x100, newTextPRNG(0, seeds.main[0]), true); err != nil {
 		return nil, err
 	}
-	if err := fenceTextWords(main, brTextSeeds.fence, newTextPRNG(0, brTextSeeds.main[1]), true); err != nil {
+	if err := fenceTextWords(main, seeds.fence, newTextPRNG(0, seeds.main[1]), true); err != nil {
 		return nil, err
 	}
 	if len(main) < 16 {
@@ -343,12 +355,12 @@ func decodeBRTextEnvelope(encoded []byte) ([]byte, error) {
 		return nil, fmt.Errorf("text envelope end marker is missing")
 	}
 	payload := main[:marker]
-	rotateTextBytes(payload, brTextSeeds, newTextPRNG(check2, brTextSeeds.table[0]))
+	rotateTextBytes(payload, seeds, newTextPRNG(check2, seeds.table[0]))
 	if textChecksumSub(payload) != check0 || textChecksumXOR(payload) != check1 {
 		return nil, fmt.Errorf("text envelope checksum mismatch")
 	}
 	begin := minInt(len(payload), 0x800)
-	if err := shuffleTextBits(payload[:begin], 0x80, newTextPRNG(check2, brTextSeeds.main[2]), true); err != nil {
+	if err := shuffleTextBits(payload[:begin], 0x80, newTextPRNG(check2, seeds.main[2]), true); err != nil {
 		return nil, err
 	}
 	plain, err := unwrapLiteralTextStream(payload)
@@ -361,12 +373,20 @@ func decodeBRTextEnvelope(encoded []byte) ([]byte, error) {
 	return plain, nil
 }
 
+func (EncryptedTextTool) DecryptA21(blob []byte) ([]byte, error) {
+	return decodeTextEnvelope(blob, secondLightA21TextSeeds)
+}
+
+func (EncryptedTextTool) EncryptA21(blob []byte) ([]byte, error) {
+	return encodeTextEnvelope(blob, secondLightA21TextSeeds)
+}
+
 func (EncryptedTextTool) EncryptBR(blob []byte, _ string) ([]byte, error) {
-	return encodeBRTextEnvelope(blob)
+	return encodeTextEnvelope(blob, brTextSeeds)
 }
 
 func (EncryptedTextTool) VerifyBRRoundTrip(plain, encrypted []byte, stem string) error {
-	got, err := decodeBRTextEnvelope(encrypted)
+	got, err := decodeTextEnvelope(encrypted, brTextSeeds)
 	if err != nil {
 		return fmt.Errorf("text envelope verification failed for %s: %w", stem, err)
 	}

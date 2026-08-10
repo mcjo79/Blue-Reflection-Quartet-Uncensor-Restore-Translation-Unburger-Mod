@@ -11,6 +11,7 @@ import (
 	"runtime"
 	"sort"
 	"strings"
+	"time"
 
 	"local/blue-reflection-patcher/internal/detect"
 	"local/blue-reflection-patcher/internal/model"
@@ -135,32 +136,100 @@ func rememberedInstallationCandidates() []detect.RootCandidate {
 		TargetID string `json:"target_id"`
 		GameRoot string `json:"game_root"`
 	}
-	seen := map[string]bool{}
-	var result []detect.RootCandidate
+	type journalState struct {
+		Status     string            `json:"status"`
+		GameRoot   string            `json:"game_root"`
+		UpdatedUTC time.Time         `json:"updated_utc"`
+		Metadata   map[string]string `json:"metadata"`
+	}
+	type candidate struct {
+		root     string
+		source   string
+		priority int
+		updated  time.Time
+	}
+	var candidates []candidate
 	for _, entry := range entries {
 		if !entry.IsDir() {
 			continue
 		}
-		data, err := os.ReadFile(filepath.Join(root, entry.Name(), "active_state.json"))
-		if err != nil {
+		installationDir := filepath.Join(root, entry.Name())
+		activeAdded := false
+		if data, readErr := os.ReadFile(filepath.Join(installationDir, "active_state.json")); readErr == nil {
+			var state rememberedState
+			if json.Unmarshal(data, &state) == nil && state.Status == "active" && strings.TrimSpace(state.GameRoot) != "" {
+				path := filepath.Clean(state.GameRoot)
+				if info, statErr := os.Stat(path); statErr == nil && info.IsDir() {
+					candidates = append(candidates, candidate{root: path, source: "managed_state", priority: 0})
+					activeAdded = true
+				}
+			}
+		}
+		if activeAdded {
 			continue
 		}
-		var state rememberedState
-		if json.Unmarshal(data, &state) != nil || state.Status != "active" || strings.TrimSpace(state.GameRoot) == "" {
+
+		// A rolled-back/discarded journal is useful installation history even
+		// though no active_state.json exists. This is exactly the state of a clean
+		// installation after rollback. Orphan committed journals are deliberately
+		// NOT remembered: selecting one implicitly is unsafe and was the cause of
+		// the old Linux /Gry root winning over the newer VM root.
+		transactionsDir := filepath.Join(installationDir, "transactions")
+		txEntries, readErr := os.ReadDir(transactionsDir)
+		if readErr != nil {
 			continue
 		}
-		path := filepath.Clean(state.GameRoot)
-		if info, statErr := os.Stat(path); statErr != nil || !info.IsDir() {
-			continue
+		var newest *journalState
+		for _, tx := range txEntries {
+			if !tx.IsDir() {
+				continue
+			}
+			data, readErr := os.ReadFile(filepath.Join(transactionsDir, tx.Name(), "journal.json"))
+			if readErr != nil {
+				continue
+			}
+			var journal journalState
+			if json.Unmarshal(data, &journal) != nil {
+				continue
+			}
+			if journal.Status != "rolled_back" && journal.Status != "discarded" {
+				continue
+			}
+			if strings.TrimSpace(journal.GameRoot) == "" {
+				continue
+			}
+			copyJournal := journal
+			if newest == nil || copyJournal.UpdatedUTC.After(newest.UpdatedUTC) {
+				newest = &copyJournal
+			}
 		}
-		key := detectionPathKey(path)
+		if newest != nil {
+			path := filepath.Clean(newest.GameRoot)
+			if info, statErr := os.Stat(path); statErr == nil && info.IsDir() {
+				candidates = append(candidates, candidate{root: path, source: "managed_history", priority: 1, updated: newest.UpdatedUTC})
+			}
+		}
+	}
+
+	sort.SliceStable(candidates, func(i, j int) bool {
+		if candidates[i].priority != candidates[j].priority {
+			return candidates[i].priority < candidates[j].priority
+		}
+		if !candidates[i].updated.Equal(candidates[j].updated) {
+			return candidates[i].updated.After(candidates[j].updated)
+		}
+		return candidates[i].root < candidates[j].root
+	})
+	seen := map[string]bool{}
+	result := make([]detect.RootCandidate, 0, len(candidates))
+	for _, item := range candidates {
+		key := detectionPathKey(item.root)
 		if seen[key] {
 			continue
 		}
 		seen[key] = true
-		result = append(result, detect.RootCandidate{Path: path, Source: "managed_state"})
+		result = append(result, detect.RootCandidate{Path: item.root, Source: item.source})
 	}
-	sort.Slice(result, func(i, j int) bool { return result[i].Path < result[j].Path })
 	return result
 }
 
@@ -349,13 +418,13 @@ func chooseDetectedInstallationTUI(items []model.Detection, in *os.File, out *os
 	defer restore()
 	defer fmt.Fprint(out, ansiShowCur, ansiReset)
 	reader := bufio.NewReader(in)
-	cursor := 0
+	cursor := -1
 	fmt.Fprint(out, ansiHideCur)
 	for {
 		fmt.Fprint(out, ansiClear)
 		renderTUIFrameTop(out, "GAME SELECTION")
 		renderTUIFrameRow(out, "%sMultiple supported installations were found.%s", ansiBold, ansiReset)
-		renderTUIFrameRow(out, "%sControls%s  ↑/↓ move · Enter selects · Q cancels", ansiGray, ansiReset)
+		renderTUIFrameRow(out, "%sControls%s  ↑/↓ choose explicitly · Enter selects · Q cancels", ansiGray, ansiReset)
 		renderTUIFrameBlank(out)
 		for index, item := range items {
 			pointer := "  "
@@ -376,10 +445,21 @@ func chooseDetectedInstallationTUI(items []model.Detection, in *os.File, out *os
 		}
 		switch key {
 		case keyUp:
-			cursor = (cursor + len(items) - 1) % len(items)
+			if cursor < 0 {
+				cursor = len(items) - 1
+			} else {
+				cursor = (cursor + len(items) - 1) % len(items)
+			}
 		case keyDown:
-			cursor = (cursor + 1) % len(items)
+			if cursor < 0 {
+				cursor = 0
+			} else {
+				cursor = (cursor + 1) % len(items)
+			}
 		case keyEnter, keyToggle:
+			if cursor < 0 {
+				continue
+			}
 			fmt.Fprint(out, ansiClear)
 			return items[cursor], nil
 		case keyCancel:

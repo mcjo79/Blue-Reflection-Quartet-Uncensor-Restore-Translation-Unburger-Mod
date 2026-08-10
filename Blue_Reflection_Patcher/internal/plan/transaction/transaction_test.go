@@ -56,7 +56,7 @@ func TestPrepareCommitRollbackExistingAndNewFiles(t *testing.T) {
 		t.Fatalf("unexpected prepared journal: %+v", prepared.Journal)
 	}
 	for _, record := range prepared.Journal.Files {
-		if record.StagedStorageMethod != "reflink" && record.StagedStorageMethod != "copy" {
+		if record.StagedStorageMethod != "hardlink" && record.StagedStorageMethod != "reflink" && record.StagedStorageMethod != "copy" {
 			t.Fatalf("unexpected staged storage method for %s: %q", record.RelativePath, record.StagedStorageMethod)
 		}
 		if record.OriginalExisted && record.BackupStorageMethod != "hardlink" && record.BackupStorageMethod != "reflink" && record.BackupStorageMethod != "copy" {
@@ -76,7 +76,7 @@ func TestPrepareCommitRollbackExistingAndNewFiles(t *testing.T) {
 		t.Fatalf("commit result is invalid: %+v", journal)
 	}
 	for _, record := range journal.Files {
-		if record.InstalledStorageMethod != "reflink" && record.InstalledStorageMethod != "copy" && record.InstalledStorageMethod != "already_present" {
+		if record.InstalledStorageMethod != "hardlink" && record.InstalledStorageMethod != "reflink" && record.InstalledStorageMethod != "copy" && record.InstalledStorageMethod != "already_present" {
 			t.Fatalf("unexpected installed storage method for %s: %q", record.RelativePath, record.InstalledStorageMethod)
 		}
 	}
@@ -807,5 +807,145 @@ func TestPrepareExpectedOriginalHashUsesExistingCurrentPass(t *testing.T) {
 		RelativePath: "Data/A.PAK", StagedPath: payload, ExpectedOriginalSHA256: expected,
 	}}, []string{"translation"}, nil, PrepareOptions{}); err == nil || !strings.Contains(err.Error(), "managed target changed before update") {
 		t.Fatalf("externally changed managed target was not rejected: %v", err)
+	}
+}
+
+func TestPrepareCanKeepStagedPayloadBesideGameRootWithoutCopy(t *testing.T) {
+	root := t.TempDir()
+	game := filepath.Join(root, "games", "Quartet")
+	state := filepath.Join(root, "state")
+	// Keep the candidate on the same filesystem as the game, mirroring the
+	// guided public workflow's game-scoped transient workspace.
+	payload := filepath.Join(root, "games", ".unburger-patcher-work", "Quartet", "op", "A.PAK")
+	target := filepath.Join(game, "Data", "A.PAK")
+	write(t, target, "original")
+	write(t, payload, "patched")
+
+	var events []ProgressEvent
+	prepared, err := PrepareWithOptions(game, state, []ChangeSpec{{
+		RelativePath: "Data/A.PAK",
+		StagedPath:   payload,
+	}}, []string{"quartet_legacy_dlc"}, nil, PrepareOptions{
+		UseSiblingFilesystemBackupStore:  true,
+		UseSiblingFilesystemStagingStore: true,
+		Progress: func(event ProgressEvent) {
+			events = append(events, event)
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	expectedRoot := siblingFilesystemStagingRoot(game, prepared.Journal.TransactionID)
+	if prepared.Journal.StagingRoot != expectedRoot {
+		t.Fatalf("staging root = %q, expected %q", prepared.Journal.StagingRoot, expectedRoot)
+	}
+	record := prepared.Journal.Files[0]
+	if record.StagedStorageMethod != "hardlink" && record.StagedStorageMethod != "reflink" {
+		t.Fatalf("same-filesystem staging unexpectedly copied payload: %q", record.StagedStorageMethod)
+	}
+	staged := filepath.Join(prepared.Journal.StagingRoot, filepath.FromSlash(record.StagedPath))
+	stagedInfo, err := os.Stat(staged)
+	if err != nil {
+		t.Fatal(err)
+	}
+	payloadInfo, err := os.Stat(payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if record.StagedStorageMethod == "hardlink" && !os.SameFile(stagedInfo, payloadInfo) {
+		t.Fatal("hardlink staging does not reference the candidate inode")
+	}
+	if len(events) == 0 {
+		t.Fatal("prepare did not emit progress")
+	}
+	if _, err := DiscardPrepared(prepared.JournalPath); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(expectedRoot); !os.IsNotExist(err) {
+		t.Fatalf("discard retained sibling staging root: %v", err)
+	}
+}
+
+func TestLoadRejectsTamperedSiblingStagingRoot(t *testing.T) {
+	root := t.TempDir()
+	game := filepath.Join(root, "games", "Quartet")
+	state := filepath.Join(root, "state")
+	payload := filepath.Join(root, "games", ".unburger-patcher-work", "Quartet", "op", "A.PAK")
+	target := filepath.Join(game, "Data", "A.PAK")
+	write(t, target, "original")
+	write(t, payload, "patched")
+
+	prepared, err := PrepareWithOptions(game, state, []ChangeSpec{{
+		RelativePath: "Data/A.PAK",
+		StagedPath:   payload,
+	}}, nil, nil, PrepareOptions{
+		UseSiblingFilesystemBackupStore:  true,
+		UseSiblingFilesystemStagingStore: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(prepared.JournalPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var journal Journal
+	if err := json.Unmarshal(data, &journal); err != nil {
+		t.Fatal(err)
+	}
+	journal.StagingRoot = filepath.Join(root, "evil-staging")
+	data, err = json.MarshalIndent(journal, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(prepared.JournalPath, append(data, '\n'), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Load(prepared.JournalPath); err == nil || !strings.Contains(err.Error(), "staging root") {
+		t.Fatalf("expected staging-root rejection, got %v", err)
+	}
+}
+
+func TestImmediateCommitUsesSameProcessZeroCopyFastPath(t *testing.T) {
+	root := t.TempDir()
+	game := filepath.Join(root, "games", "Quartet")
+	state := filepath.Join(root, "state")
+	payload := filepath.Join(root, "games", ".unburger-patcher-work", "Quartet", "op", "A.PAK")
+	target := filepath.Join(game, "Data", "A.PAK")
+	write(t, target, "original")
+	write(t, payload, "patched")
+
+	prepared, err := PrepareWithOptions(game, state, []ChangeSpec{{
+		RelativePath: "Data/A.PAK",
+		StagedPath:   payload,
+	}}, nil, nil, PrepareOptions{
+		UseSiblingFilesystemBackupStore:  true,
+		UseSiblingFilesystemStagingStore: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var events []ProgressEvent
+	journal, err := CommitWithProgress(prepared.JournalPath, func(event ProgressEvent) {
+		events = append(events, event)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := read(t, target); got != "patched" {
+		t.Fatalf("commit installed %q", got)
+	}
+	method := journal.Files[0].InstalledStorageMethod
+	if method != "hardlink" {
+		t.Fatalf("immediate same-filesystem commit method = %q, expected hardlink", method)
+	}
+	var sawMeasuredInstall bool
+	for _, event := range events {
+		if event.Phase == "install" && event.FileBytesTotal > 0 {
+			sawMeasuredInstall = true
+		}
+	}
+	if sawMeasuredInstall {
+		t.Fatal("zero-copy immediate commit reported full install-byte work")
 	}
 }

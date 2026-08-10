@@ -23,7 +23,7 @@ func TestDefaultsByTarget(t *testing.T) {
 		available        int
 	}{
 		{"blue_reflection_original", "blue_reflection_translation", 1},
-		{"blue_reflection_quartet", "blue_reflection_translation,quartet_legacy_dlc,quartet_restoration", 3},
+		{"blue_reflection_quartet", "blue_reflection_translation,quartet_legacy_dlc,quartet_movie_restoration,quartet_restoration", 4},
 		{"second_light_original", "second_light_translation", 1},
 	}
 	for _, tc := range cases {

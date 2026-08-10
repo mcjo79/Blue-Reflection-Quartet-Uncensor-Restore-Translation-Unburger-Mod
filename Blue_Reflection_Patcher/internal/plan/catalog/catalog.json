@@ -37,9 +37,27 @@
       "source_targets": []
     },
     {
+      "module_id": "quartet_movie_restoration",
+      "display_name": "UNCENSOR · Restored movie cutscenes",
+      "description": "Optional restored versions of the three censored BLUE REFLECTION movie cutscenes, installed as Quartet-compatible VP9/WebM files.",
+      "module_type": "restoration_addon",
+      "supported_targets": [
+        "blue_reflection_quartet"
+      ],
+      "default_targets": [
+        "blue_reflection_quartet"
+      ],
+      "dependencies": [
+        "quartet_restoration"
+      ],
+      "conflicts": [],
+      "selectable": true,
+      "source_targets": []
+    },
+    {
       "module_id": "quartet_legacy_dlc",
-      "display_name": "BLUE REFLECTION legacy content restoration",
-      "description": "Reconstructs the missing 2017 BLUE REFLECTION costume content and Tropical Island in Quartet from a user-selected local 2017 installation. Source game files are read locally and are not distributed with the patcher.",
+      "display_name": "Quartet DLC restoration",
+      "description": "Restores DLC and bonus content from BLUE REFLECTION (2017) and BLUE REFLECTION: Second Light into their Quartet partitions. Choose either source game or both; both are enabled by default.",
       "module_type": "dlc_restoration",
       "supported_targets": [
         "blue_reflection_quartet"
@@ -50,9 +68,7 @@
       "dependencies": [],
       "conflicts": [],
       "selectable": true,
-      "source_targets": [
-        "blue_reflection_original"
-      ]
+      "source_targets": []
     },
     {
       "module_id": "second_light_translation",

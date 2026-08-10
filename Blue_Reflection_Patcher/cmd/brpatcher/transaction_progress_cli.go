@@ -12,21 +12,26 @@ import (
 )
 
 type transactionProgressRenderer struct {
-	out       io.Writer
-	terminal  bool
-	active    bool
-	started   bool
-	startedAt time.Time
-	lastDraw  time.Time
-	lastKey   string
-	lastEvent transaction.ProgressEvent
-	spinner   int
-	stop      chan struct{}
-	done      chan struct{}
-	mu        sync.Mutex
+	out               io.Writer
+	terminal          bool
+	active            bool
+	started           bool
+	startedAt         time.Time
+	workflowStartedAt time.Time
+	lastDraw          time.Time
+	lastKey           string
+	lastEvent         transaction.ProgressEvent
+	spinner           int
+	stop              chan struct{}
+	done              chan struct{}
+	mu                sync.Mutex
 }
 
 func newTransactionProgressRenderer(out io.Writer) *transactionProgressRenderer {
+	return newTransactionProgressRendererWithWorkflowStart(out, time.Now())
+}
+
+func newTransactionProgressRendererWithWorkflowStart(out io.Writer, workflowStartedAt time.Time) *transactionProgressRenderer {
 	terminal := false
 	if file, ok := out.(*os.File); ok {
 		if info, err := file.Stat(); err == nil {
@@ -36,7 +41,10 @@ func newTransactionProgressRenderer(out io.Writer) *transactionProgressRenderer 
 	if os.Getenv("BRPATCHER_FORCE_PROGRESS_TTY") == "1" {
 		terminal = true
 	}
-	return &transactionProgressRenderer{out: out, terminal: terminal}
+	if workflowStartedAt.IsZero() {
+		workflowStartedAt = time.Now()
+	}
+	return &transactionProgressRenderer{out: out, terminal: terminal, workflowStartedAt: workflowStartedAt}
 }
 
 func (r *transactionProgressRenderer) Status(operation, phase, detail string) {
@@ -102,12 +110,12 @@ func (r *transactionProgressRenderer) renderLocked(heartbeat bool) {
 			return
 		}
 		event := r.lastEvent
-		fmt.Fprintf(r.out, "[%s/%s] overall %s, file %d/%d %s, path=%s, elapsed=%s\n",
+		fmt.Fprintf(r.out, "[%s/%s] overall %s, file %d/%d %s, path=%s, phase=%s, total=%s\n",
 			strings.ToUpper(event.Operation), progressPhaseLabel(event.Phase),
 			transactionPercentText(event.OverallBytesDone, event.OverallBytesTotal),
 			event.FileIndex, event.FileCount,
 			transactionPercentText(event.FileBytesDone, event.FileBytesTotal), event.RelativePath,
-			formatElapsed(now.Sub(r.startedAt)))
+			formatElapsed(now.Sub(r.startedAt)), formatElapsed(now.Sub(r.workflowStartedAt)))
 		r.lastDraw = now
 		return
 	}
@@ -130,7 +138,7 @@ func (r *transactionProgressRenderer) renderLocked(heartbeat bool) {
 	}
 	fmt.Fprintf(r.out, "\r\033[2K%s│%s %-10s %s\n", ansiCyan, ansiReset, "File", compactLegacyProgress(fileLabel, 78))
 	spin := []string{"◐", "◓", "◑", "◒"}[r.spinner%4]
-	fmt.Fprintf(r.out, "\r\033[2K%s│%s %-10s %s%s%s  %s  %s·%s elapsed %s\n", ansiCyan, ansiReset, "Activity", ansiYellow, spin, ansiReset, transactionActivityLabel(event.Phase), ansiGray, ansiReset, formatElapsed(now.Sub(r.startedAt)))
+	fmt.Fprintf(r.out, "\r\033[2K%s│%s %-10s %s%s%s  %s  %s·%s phase elapsed %s · total elapsed %s\n", ansiCyan, ansiReset, "Activity", ansiYellow, spin, ansiReset, transactionActivityLabel(event.Phase), ansiGray, ansiReset, formatElapsed(now.Sub(r.startedAt)), formatElapsed(now.Sub(r.workflowStartedAt)))
 	fmt.Fprintf(r.out, "\r\033[2K%s╰%s╯%s\n", ansiCyan, line, ansiReset)
 	r.lastDraw = now
 }

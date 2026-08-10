@@ -14,6 +14,7 @@ import (
 	"runtime"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"local/blue-reflection-patcher/internal/plan/archivepolicy"
@@ -44,7 +45,9 @@ type ChangeSpec struct {
 	// target before making a rollback backup; it never adds another full read.
 	// DesiredSHA256/DesiredBytes may be supplied by a caller that has just
 	// verified a private candidate artifact. Prepare still verifies the live
-	// target and commit still verifies the staged bytes while installing them.
+	// target. A resumed commit hashes staged bytes while installing; the immediate
+	// same-process path may instead reuse the verified digest when exact file
+	// identity, size and mtime are unchanged.
 	DesiredSHA256 string
 	DesiredBytes  int64
 }
@@ -54,6 +57,7 @@ type FileRecord struct {
 	OriginalExisted        bool   `json:"original_existed"`
 	OriginalSHA256         string `json:"original_sha256,omitempty"`
 	DesiredSHA256          string `json:"desired_sha256"`
+	DesiredBytes           int64  `json:"desired_bytes,omitempty"`
 	OriginalMode           uint32 `json:"original_mode,omitempty"`
 	BackupPath             string `json:"backup_path,omitempty"`
 	BackupStorageMethod    string `json:"backup_storage_method,omitempty"`
@@ -73,6 +77,7 @@ type Journal struct {
 	UpdatedUTC      time.Time         `json:"updated_utc"`
 	GameRoot        string            `json:"game_root"`
 	TransactionRoot string            `json:"transaction_root"`
+	StagingRoot     string            `json:"staging_root,omitempty"`
 	BackupRoot      string            `json:"backup_root,omitempty"`
 	SelectedModules []string          `json:"selected_modules"`
 	Files           []FileRecord      `json:"files"`
@@ -85,12 +90,29 @@ type Prepared struct {
 }
 
 type PrepareOptions struct {
-	Progress                        ProgressFunc
-	RequireReflinkStaging           bool
-	RequireHardlinkBackup           bool
-	UseGameFilesystemBackupStore    bool
-	UseSiblingFilesystemBackupStore bool
+	Progress                         ProgressFunc
+	RequireReflinkStaging            bool
+	RequireHardlinkBackup            bool
+	UseGameFilesystemBackupStore     bool
+	UseSiblingFilesystemBackupStore  bool
+	UseSiblingFilesystemStagingStore bool
 }
+
+// preparedFastPaths exists only in-process. It allows the guided Prepare -> Commit
+// path to reuse the hashes it computed seconds earlier when the exact same file
+// identities, sizes and mtimes are still present. A resumed commit in a new
+// process has no entry here and therefore falls back to full SHA-256 guards.
+type preparedFileSnapshot struct {
+	target        fs.FileInfo
+	targetExisted bool
+	staged        fs.FileInfo
+}
+
+type preparedFastSnapshot struct {
+	files map[string]preparedFileSnapshot
+}
+
+var preparedFastPaths sync.Map
 
 func NewID(now time.Time) (string, error) {
 	var random [6]byte
@@ -132,6 +154,27 @@ func PrepareWithOptions(gameRoot, stateRoot string, changes []ChangeSpec, select
 	if err := os.Mkdir(transactionRoot, 0o700); err != nil {
 		return Prepared{}, fmt.Errorf("create transaction root: %w", err)
 	}
+	stagingRoot := ""
+	if options.UseSiblingFilesystemStagingStore {
+		stagingRoot = siblingFilesystemStagingRoot(gameRoot, id)
+		stagingParent := filepath.Dir(stagingRoot)
+		if err := os.MkdirAll(stagingParent, 0o700); err != nil {
+			_ = os.RemoveAll(transactionRoot)
+			return Prepared{}, fmt.Errorf("create external staging parent: %w", err)
+		}
+		info, err := os.Lstat(stagingParent)
+		if err != nil || info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
+			_ = os.RemoveAll(transactionRoot)
+			if err == nil {
+				err = fmt.Errorf("external staging parent must be a real directory")
+			}
+			return Prepared{}, fmt.Errorf("inspect external staging parent: %w", err)
+		}
+		if err := os.Mkdir(stagingRoot, 0o700); err != nil {
+			_ = os.RemoveAll(transactionRoot)
+			return Prepared{}, fmt.Errorf("create external staging root: %w", err)
+		}
+	}
 	backupRoot := ""
 	if options.UseGameFilesystemBackupStore && options.UseSiblingFilesystemBackupStore {
 		_ = os.RemoveAll(transactionRoot)
@@ -167,6 +210,9 @@ func PrepareWithOptions(gameRoot, stateRoot string, changes []ChangeSpec, select
 	defer func() {
 		if cleanup {
 			_ = os.RemoveAll(transactionRoot)
+			if stagingRoot != "" {
+				_ = os.RemoveAll(stagingRoot)
+			}
 			if backupRoot != "" {
 				_ = os.RemoveAll(backupRoot)
 			}
@@ -176,6 +222,7 @@ func PrepareWithOptions(gameRoot, stateRoot string, changes []ChangeSpec, select
 	ordered := append([]ChangeSpec(nil), changes...)
 	sort.Slice(ordered, func(i, j int) bool { return ordered[i].RelativePath < ordered[j].RelativePath })
 	tracker := newPrepareProgressTracker(gameRoot, ordered, options, progress)
+	fastSnapshot := preparedFastSnapshot{files: map[string]preparedFileSnapshot{}}
 	seen := map[string]bool{}
 	records := make([]FileRecord, 0, len(ordered))
 	for index, change := range ordered {
@@ -218,24 +265,39 @@ func PrepareWithOptions(gameRoot, stateRoot string, changes []ChangeSpec, select
 			}
 		}
 		stagedRelative := filepath.Join("staged", relative)
-		stagedCopy := filepath.Join(transactionRoot, stagedRelative)
+		stagedBase := transactionRoot
+		if stagingRoot != "" {
+			stagedBase = stagingRoot
+		}
+		stagedCopy := filepath.Join(stagedBase, stagedRelative)
 		if err := os.MkdirAll(filepath.Dir(stagedCopy), 0o700); err != nil {
 			return Prepared{}, fmt.Errorf("stage %s: %w", relative, err)
 		}
-		cloned, err := tryReflinkRegularFile(stagedSource, stagedCopy, 0o600)
-		if err != nil {
-			return Prepared{}, fmt.Errorf("stage %s: %w", relative, err)
-		}
 		stagedStorageMethod := "reflink"
-		if cloned {
-			tracker.skipPhase(index, "stage")
-		} else {
-			if options.RequireReflinkStaging {
-				return Prepared{}, fmt.Errorf("stage %s: reflink is required by prepare policy", relative)
+		hardlinked := false
+		if options.UseSiblingFilesystemStagingStore {
+			if linkErr := os.Link(stagedSource, stagedCopy); linkErr == nil {
+				hardlinked = true
+				stagedStorageMethod = "hardlink"
+				tracker.omitPhase(index, "stage")
 			}
-			stagedStorageMethod = "copy"
-			if err := tracker.copyVerified(index, stagedSource, stagedCopy, 0o600, desiredHash, "stage"); err != nil {
-				return Prepared{}, fmt.Errorf("stage %s: %w", relative, err)
+		}
+		if !hardlinked {
+			cloned, cloneErr := tryReflinkRegularFile(stagedSource, stagedCopy, 0o600)
+			if cloneErr != nil {
+				return Prepared{}, fmt.Errorf("stage %s: %w", relative, cloneErr)
+			}
+			stagedStorageMethod = "reflink"
+			if cloned {
+				tracker.omitPhase(index, "stage")
+			} else {
+				if options.RequireReflinkStaging {
+					return Prepared{}, fmt.Errorf("stage %s: reflink is required by prepare policy", relative)
+				}
+				stagedStorageMethod = "copy"
+				if err := tracker.copyVerified(index, stagedSource, stagedCopy, 0o600, desiredHash, "stage"); err != nil {
+					return Prepared{}, fmt.Errorf("stage %s: %w", relative, err)
+				}
 			}
 		}
 		// Staging is either a filesystem clone of the just-verified private
@@ -243,9 +305,18 @@ func PrepareWithOptions(gameRoot, stateRoot string, changes []ChangeSpec, select
 		// Re-reading the complete staged file here adds no independent boundary.
 		tracker.skipPhase(index, "verify_staged")
 
+		stagedInfo, statErr := os.Stat(stagedCopy)
+		if statErr != nil || !stagedInfo.Mode().IsRegular() {
+			if statErr == nil {
+				statErr = fmt.Errorf("staged payload is not a regular file")
+			}
+			return Prepared{}, fmt.Errorf("inspect staged %s: %w", relative, statErr)
+		}
+		snapshot := preparedFileSnapshot{staged: stagedInfo}
 		record := FileRecord{
 			RelativePath:        filepath.ToSlash(relative),
 			DesiredSHA256:       desiredHash,
+			DesiredBytes:        stagedInfo.Size(),
 			StagedPath:          filepath.ToSlash(stagedRelative),
 			StagedStorageMethod: stagedStorageMethod,
 			CommitState:         "pending",
@@ -303,7 +374,7 @@ func PrepareWithOptions(gameRoot, stateRoot string, changes []ChangeSpec, select
 			}
 			backupStorageMethod := "hardlink"
 			if err := os.Link(backupSource, backup); err == nil {
-				tracker.skipPhase(index, "backup")
+				tracker.omitPhase(index, "backup")
 			} else {
 				if options.RequireHardlinkBackup {
 					return Prepared{}, fmt.Errorf("backup %s: hardlink is required by prepare policy", relative)
@@ -314,7 +385,7 @@ func PrepareWithOptions(gameRoot, stateRoot string, changes []ChangeSpec, select
 				}
 				backupStorageMethod = "reflink"
 				if cloned {
-					tracker.skipPhase(index, "backup")
+					tracker.omitPhase(index, "backup")
 				} else {
 					backupStorageMethod = "copy"
 					if err := tracker.copyVerified(index, backupSource, backup, info.Mode().Perm(), record.OriginalSHA256, "backup"); err != nil {
@@ -342,6 +413,15 @@ func PrepareWithOptions(gameRoot, stateRoot string, changes []ChangeSpec, select
 				}
 			}
 			tracker.skipPhase(index, "verify_backup")
+			postInfo, postErr := os.Stat(target)
+			if postErr != nil || !os.SameFile(info, postInfo) || postInfo.Size() != info.Size() || !postInfo.ModTime().Equal(info.ModTime()) {
+				if postErr == nil {
+					postErr = fmt.Errorf("target identity changed during prepare")
+				}
+				return Prepared{}, fmt.Errorf("verify stable current target %s: %w", relative, postErr)
+			}
+			snapshot.target = postInfo
+			snapshot.targetExisted = true
 			record.BackupPath = filepath.ToSlash(backupRelative)
 			record.BackupStorageMethod = backupStorageMethod
 		case errors.Is(statErr, os.ErrNotExist):
@@ -356,6 +436,7 @@ func PrepareWithOptions(gameRoot, stateRoot string, changes []ChangeSpec, select
 		case statErr != nil:
 			return Prepared{}, fmt.Errorf("inspect target %s: %w", target, statErr)
 		}
+		fastSnapshot.files[strings.ToLower(filepath.ToSlash(relative))] = snapshot
 		records = append(records, record)
 	}
 
@@ -363,7 +444,7 @@ func PrepareWithOptions(gameRoot, stateRoot string, changes []ChangeSpec, select
 	journal := Journal{
 		Type: JournalType, FormatVersion: JournalFormatVersion,
 		TransactionID: id, Status: StatusPrepared, CreatedUTC: now, UpdatedUTC: now,
-		GameRoot: gameRoot, TransactionRoot: transactionRoot, BackupRoot: backupRoot,
+		GameRoot: gameRoot, TransactionRoot: transactionRoot, StagingRoot: stagingRoot, BackupRoot: backupRoot,
 		SelectedModules: sortedUnique(selectedModules), Files: records,
 		Metadata: cloneMetadata(metadata),
 	}
@@ -371,6 +452,7 @@ func PrepareWithOptions(gameRoot, stateRoot string, changes []ChangeSpec, select
 	if err := writeJournal(journalPath, journal); err != nil {
 		return Prepared{}, err
 	}
+	preparedFastPaths.Store(filepath.Clean(journalPath), fastSnapshot)
 	cleanup = false
 	tracker.finish()
 	return Prepared{JournalPath: journalPath, Journal: journal}, nil
@@ -423,12 +505,19 @@ func DiscardPrepared(journalPath string) (Journal, error) {
 	if err != nil {
 		return Journal{}, err
 	}
-	staged, err := secureJoin(journal.TransactionRoot, "staged")
+	stagedBase := journal.TransactionRoot
+	if journal.StagingRoot != "" {
+		stagedBase = journal.StagingRoot
+	}
+	staged, err := secureJoin(stagedBase, "staged")
 	if err != nil {
 		return Journal{}, err
 	}
 	if err := os.RemoveAll(staged); err != nil {
 		return Journal{}, fmt.Errorf("remove transaction staged payloads: %w", err)
+	}
+	if journal.StagingRoot != "" {
+		_ = os.RemoveAll(journal.StagingRoot)
 	}
 	if journal.BackupRoot != "" {
 		if err := os.RemoveAll(journal.BackupRoot); err != nil {
@@ -491,12 +580,23 @@ func PruneCommittedStaged(journalPath string) error {
 	if journal.Status != StatusCommitted {
 		return fmt.Errorf("cannot prune staged payload for transaction in status %s", journal.Status)
 	}
-	staged, err := secureJoin(journal.TransactionRoot, "staged")
+	stagedBase := journal.TransactionRoot
+	if journal.StagingRoot != "" {
+		stagedBase = journal.StagingRoot
+	}
+	staged, err := secureJoin(stagedBase, "staged")
 	if err != nil {
 		return err
 	}
 	if err := os.RemoveAll(staged); err != nil {
 		return fmt.Errorf("remove committed staged payloads: %w", err)
+	}
+	if journal.StagingRoot != "" {
+		parent := filepath.Dir(journal.StagingRoot)
+		if err := os.RemoveAll(journal.StagingRoot); err != nil {
+			return fmt.Errorf("remove external staging root: %w", err)
+		}
+		return syncParent(filepath.Join(parent, filepath.Base(journal.StagingRoot)))
 	}
 	return syncParent(staged)
 }
@@ -517,6 +617,8 @@ func CommitWithProgress(journalPath string, progress ProgressFunc) (Journal, err
 		return Journal{}, fmt.Errorf("cannot commit transaction in status %s", journal.Status)
 	}
 	tracker := newProgressTracker("commit", journal, progress)
+	fastValue, fastAvailable := preparedFastPaths.Load(filepath.Clean(journalPath))
+	fastSnapshot, _ := fastValue.(preparedFastSnapshot)
 	journal.Status = StatusCommitting
 	if err := writeJournal(journalPath, journal); err != nil {
 		return Journal{}, err
@@ -527,9 +629,23 @@ func CommitWithProgress(journalPath string, progress ProgressFunc) (Journal, err
 		if err != nil {
 			return journal, err
 		}
-		currentHash, exists, err := tracker.currentRegularHash(index, target, "verify_current")
-		if err != nil {
-			return journal, err
+		key := strings.ToLower(filepath.ToSlash(record.RelativePath))
+		fileSnapshot, hasFastFile := fastSnapshot.files[key]
+		currentHash := ""
+		exists := false
+		fastCurrent := fastAvailable && hasFastFile && preparedPathStillMatches(target, fileSnapshot.target, fileSnapshot.targetExisted)
+		if fastCurrent {
+			tracker.omitPhase(index, "verify_current")
+			exists = fileSnapshot.targetExisted
+			if exists {
+				currentHash = record.OriginalSHA256
+			}
+		} else {
+			var hashErr error
+			currentHash, exists, hashErr = tracker.currentRegularHash(index, target, "verify_current")
+			if hashErr != nil {
+				return journal, hashErr
+			}
 		}
 		if exists && currentHash == record.DesiredSHA256 {
 			tracker.skipPhase(index, "install")
@@ -552,9 +668,21 @@ func CommitWithProgress(journalPath string, progress ProgressFunc) (Journal, err
 		if record.OriginalExisted && record.OriginalMode != 0 {
 			mode = fs.FileMode(record.OriginalMode)
 		}
-		installedStorageMethod, err := tracker.atomicInstallVerified(index, staged, target, mode, record.DesiredSHA256, "install")
-		if err != nil {
-			return journal, fmt.Errorf("commit %s: %w", record.RelativePath, err)
+		installedStorageMethod := ""
+		fastStaged := fastAvailable && hasFastFile && preparedPathStillMatches(staged, fileSnapshot.staged, true)
+		if fastCurrent && fastStaged {
+			if method, linked, linkErr := tracker.atomicInstallTrustedHardlink(index, staged, target, mode, "install"); linkErr != nil {
+				return journal, fmt.Errorf("commit %s: %w", record.RelativePath, linkErr)
+			} else if linked {
+				installedStorageMethod = method
+			}
+		}
+		if installedStorageMethod == "" {
+			var installErr error
+			installedStorageMethod, installErr = tracker.atomicInstallVerified(index, staged, target, mode, record.DesiredSHA256, "install")
+			if installErr != nil {
+				return journal, fmt.Errorf("commit %s: %w", record.RelativePath, installErr)
+			}
 		}
 		record.InstalledStorageMethod = installedStorageMethod
 		record.CommitState = "committed"
@@ -569,6 +697,7 @@ func CommitWithProgress(journalPath string, progress ProgressFunc) (Journal, err
 	if err := writeJournal(journalPath, journal); err != nil {
 		return journal, err
 	}
+	preparedFastPaths.Delete(filepath.Clean(journalPath))
 	return journal, nil
 }
 
@@ -704,6 +833,21 @@ func Load(journalPath string) (Journal, error) {
 	}
 	journal.GameRoot = gameRoot
 	journal.TransactionRoot = root
+	if journal.StagingRoot != "" {
+		actualStagingRoot, err := filepath.Abs(journal.StagingRoot)
+		if err != nil {
+			return Journal{}, err
+		}
+		expectedStagingRoot, err := filepath.Abs(siblingFilesystemStagingRoot(gameRoot, journal.TransactionID))
+		if err != nil {
+			return Journal{}, err
+		}
+		actualStagingRoot = filepath.Clean(actualStagingRoot)
+		if actualStagingRoot != filepath.Clean(expectedStagingRoot) {
+			return Journal{}, fmt.Errorf("journal staging root mismatch")
+		}
+		journal.StagingRoot = actualStagingRoot
+	}
 	if journal.BackupRoot != "" {
 		actualBackupRoot, err := filepath.Abs(journal.BackupRoot)
 		if err != nil {
@@ -739,12 +883,20 @@ func siblingFilesystemBackupRoot(gameRoot, transactionID string) string {
 	return filepath.Join(filepath.Dir(gameRoot), ".unburger-patcher-transaction-backups", filepath.Base(gameRoot), transactionID)
 }
 
+func siblingFilesystemStagingRoot(gameRoot, transactionID string) string {
+	return filepath.Join(filepath.Dir(gameRoot), ".unburger-patcher-transaction-staging", filepath.Base(gameRoot), transactionID)
+}
+
 func resolveRecordPaths(journal Journal, record FileRecord) (string, string, string, error) {
 	target, err := secureGameJoin(journal.GameRoot, record.RelativePath)
 	if err != nil {
 		return "", "", "", err
 	}
-	staged, err := secureJoin(journal.TransactionRoot, record.StagedPath)
+	stagedBase := journal.TransactionRoot
+	if journal.StagingRoot != "" {
+		stagedBase = journal.StagingRoot
+	}
+	staged, err := secureJoin(stagedBase, record.StagedPath)
 	if err != nil {
 		return "", "", "", err
 	}
@@ -838,6 +990,17 @@ func regularFile(path, label string) (string, error) {
 		return "", fmt.Errorf("%s is not a regular file: %s", label, absolute)
 	}
 	return absolute, nil
+}
+
+func preparedPathStillMatches(path string, previous fs.FileInfo, shouldExist bool) bool {
+	info, err := os.Stat(path)
+	if !shouldExist {
+		return errors.Is(err, os.ErrNotExist)
+	}
+	if err != nil || previous == nil || !info.Mode().IsRegular() {
+		return false
+	}
+	return os.SameFile(previous, info) && previous.Size() == info.Size() && previous.ModTime().Equal(info.ModTime())
 }
 
 func currentRegularHash(path string) (string, bool, error) {

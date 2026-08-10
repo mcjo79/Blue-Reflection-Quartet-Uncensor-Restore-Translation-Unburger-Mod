@@ -159,7 +159,7 @@ func commandStart(args []string) error {
 	var noPrompt bool
 	var moduleList, output, projectRoot, payloadOutput string
 	var guidedPrepare, guidedInstall, guidedRemove, confirmed, buildLocal bool
-	var legacySource, legacySteam, legacySCLabels, legacySaveRoot string
+	var legacySource, secondLightSource, dlcSources, legacySteam, legacySCLabels, legacySaveRoot string
 	filteredArgs, legacyAssets, err := consumeHiddenLegacyAssets(args)
 	if err != nil {
 		return err
@@ -177,7 +177,9 @@ func commandStart(args []string) error {
 	flags.BoolVar(&guidedRemove, "remove", false, "remove all patcher-installed modules and restore the persistent baseline")
 	flags.BoolVar(&confirmed, "yes", false, "confirm game-file modification for non-interactive --install or --remove")
 	flags.BoolVar(&buildLocal, "build-local", false, "rebuild current local Translation payloads before guided preparation or installation")
-	flags.StringVar(&legacySource, "legacy-source", "", "BLUE REFLECTION (2017) game folder used when legacy content is selected")
+	flags.StringVar(&legacySource, "legacy-source", "", "BLUE REFLECTION (2017) game folder used when BLUE REFLECTION DLC restoration is selected")
+	flags.StringVar(&secondLightSource, "second-light-source", "", "standalone BLUE REFLECTION: Second Light game folder used for Second Light DLC restoration")
+	flags.StringVar(&dlcSources, "dlc-sources", "", "DLC source games for non-interactive use: blue_reflection,second_light (default: both)")
 	flags.StringVar(&legacySteam, "legacy-steam", "", "Steam installation or Steam library folder used to locate BLUE REFLECTION (2017)")
 	flags.BoolVar(&legacyNoAuto, "legacy-no-auto", false, "disable automatic Steam discovery for the BLUE REFLECTION (2017) source")
 	flags.StringVar(&legacySCLabels, "legacy-sc-labels", "blank", "Simplified Chinese restored labels: blank or hant")
@@ -286,7 +288,7 @@ func commandStart(args []string) error {
 		return legacyErr
 	} else if requested {
 		legacyResult, runErr := runQuartetContentGuided(chosen, legacyContentStartOptions{
-			ProjectRoot: projectRoot, ReleaseRoot: releaseRoot, SourceRoot: legacySource, SteamRoot: legacySteam, AssetRoot: legacyAssets, DisableAutoSource: legacyNoAuto,
+			ProjectRoot: projectRoot, ReleaseRoot: releaseRoot, SourceRoot: legacySource, SecondLightSourceRoot: secondLightSource, DLCSourceGames: dlcSources, SteamRoot: legacySteam, AssetRoot: legacyAssets, DisableAutoSource: legacyNoAuto,
 			SimplifiedLabels: legacySCLabels,
 			SaveRoot:         legacySaveRoot, SyncSaves: legacySyncSaves, BuildLocal: buildLocal,
 			Prepare: guidedPrepare, Install: guidedInstall, Confirmed: confirmed, Prompt: prompt,

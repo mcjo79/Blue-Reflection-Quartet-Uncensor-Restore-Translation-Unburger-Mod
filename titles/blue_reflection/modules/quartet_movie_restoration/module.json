@@ -1,0 +1,35 @@
+{
+  "type": "br_module_manifest",
+  "format_version": 1,
+  "module_id": "quartet_movie_restoration",
+  "project": "blue_reflection",
+  "module_type": "restoration_addon",
+  "status": "integrated_pending_runtime_validation",
+  "default_enabled": true,
+  "targets": [
+    "blue_reflection_quartet"
+  ],
+  "dependencies": [
+    "quartet_restoration"
+  ],
+  "source_requirements": [],
+  "distribution_policy": {
+    "public_payload": "embedded_preconverted_webm",
+    "developer_source_assets_bundle_changed": false,
+    "runtime_conversion_required": false
+  },
+  "content_scope": {
+    "target_relative_dir": "Data/B1/x64/Movie",
+    "files": [
+      "CNG_PC00_00.webm",
+      "CNG_PC01_00.webm",
+      "CNG_PC02_00.webm"
+    ],
+    "video_profile": "VP9 Profile 0, 1920x1080, yuv420p, 30000/1001, BT.709 limited, 916 frames",
+    "audio_profile": "Opus 48000 Hz stereo"
+  },
+  "runtime_validation": {
+    "quartet_path_usage": "pending",
+    "transactional_install_and_rollback": "covered_by_core_transaction_engine"
+  }
+}

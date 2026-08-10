@@ -3,6 +3,7 @@ package br1rebuild
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"local/blue-reflection-patcher/internal/plan/transaction"
@@ -73,7 +74,7 @@ func TestRejectNonTerminalTransactionsDiscardsOnlyRecoverableMalformedPrepare(t 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := rejectNonTerminalTransactions(state, nil); err != nil {
+	if err := rejectNonTerminalTransactions(state, false, nil); err != nil {
 		t.Fatal(err)
 	}
 	journal, err := transaction.Load(prepared.JournalPath)
@@ -114,7 +115,7 @@ func TestRejectNonTerminalTransactionsKeepsValidPreparedTransactionBlocked(t *te
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := rejectNonTerminalTransactions(state, nil); err == nil {
+	if err := rejectNonTerminalTransactions(state, false, nil); err == nil {
 		t.Fatal("valid prepared transaction was not kept as a blocker")
 	}
 	journal, err := transaction.Load(prepared.JournalPath)
@@ -123,5 +124,58 @@ func TestRejectNonTerminalTransactionsKeepsValidPreparedTransactionBlocked(t *te
 	}
 	if journal.Status != transaction.StatusPrepared {
 		t.Fatalf("valid prepared journal status changed to %s", journal.Status)
+	}
+}
+
+func TestRejectNonTerminalTransactionsAllowsCommittedHistoryWhenActiveStateExists(t *testing.T) {
+	root := t.TempDir()
+	game := filepath.Join(root, "game")
+	state := filepath.Join(root, "state")
+	payload := filepath.Join(root, "payload")
+	if err := os.MkdirAll(game, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(game, "B1.dll"), []byte("original"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(payload, []byte("patched"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	prepared, err := transaction.Prepare(game, state, []transaction.ChangeSpec{{RelativePath: "B1.dll", StagedPath: payload}}, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := transaction.Commit(prepared.JournalPath); err != nil {
+		t.Fatal(err)
+	}
+	if err := rejectNonTerminalTransactions(state, true, nil); err != nil {
+		t.Fatalf("committed managed history blocked candidate build: %v", err)
+	}
+}
+
+func TestRejectNonTerminalTransactionsBlocksOrphanCommittedWithoutActiveState(t *testing.T) {
+	root := t.TempDir()
+	game := filepath.Join(root, "game")
+	state := filepath.Join(root, "state")
+	payload := filepath.Join(root, "payload")
+	if err := os.MkdirAll(game, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(game, "B1.dll"), []byte("original"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(payload, []byte("patched"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	prepared, err := transaction.Prepare(game, state, []transaction.ChangeSpec{{RelativePath: "B1.dll", StagedPath: payload}}, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := transaction.Commit(prepared.JournalPath); err != nil {
+		t.Fatal(err)
+	}
+	err = rejectNonTerminalTransactions(state, false, nil)
+	if err == nil || !strings.Contains(err.Error(), "orphan committed transaction") {
+		t.Fatalf("orphan committed transaction was not classified explicitly: %v", err)
 	}
 }
