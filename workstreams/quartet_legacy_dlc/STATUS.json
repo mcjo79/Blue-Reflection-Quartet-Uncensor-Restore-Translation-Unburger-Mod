@@ -3,7 +3,7 @@
   "format_version": 2,
   "workstream_id": "quartet_legacy_dlc",
   "version": "0.2.2",
-  "status": "a21_runtime_root_fixed_full_dlc_validation_pending",
+  "status": "a21_runtime_root_fixed_linux_full_dlc_pass_windows_validation_pending",
   "production_owner": "unified_go_patcher",
   "core_capability": "quartet_content_composition_v2",
   "scope": {
@@ -33,7 +33,7 @@
   "runtime_validation": {
     "blue_reflection_dlc": "pass",
     "second_light_reference_implementation": "pass",
-    "second_light_unburger_go_implementation": "0.0.104 runtime root proven: BR-seeded regenerated A21 .xml.e crashes; identical stream encrypted with Second Light A21 seeds PASS. Core 0.0.105 applies the minimal seed-profile fix; full DLC Windows/Linux runtime pending."
+    "second_light_unburger_go_implementation": "Core 0.0.105 full Second Light DLC runtime PASS on Linux: Second Light starts, restored costumes load, and restored scenes triggered after loading an external/converted save and returning to school. Windows full-DLC runtime validation remains pending. Core 0.0.106 changes only Windows progress rendering."
   },
   "implementation_contract": {
     "reference_python_code_copied": false,
@@ -55,5 +55,5 @@
     ],
     "translation_last": true
   },
-  "next_stage": "full Second Light DLC runtime validation of core 0.0.105 on Windows and Linux using the already-verified combined assets bundle; then restored-content and translation-intersection verification"
+  "next_stage": "Windows full Second Light DLC runtime validation, then restored-content and Translation coverage/intersection verification"
 }

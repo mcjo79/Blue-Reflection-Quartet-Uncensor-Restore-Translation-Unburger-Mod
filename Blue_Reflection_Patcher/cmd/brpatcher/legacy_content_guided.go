@@ -949,7 +949,7 @@ type br1BuildProgressRenderer struct {
 	out               io.Writer
 	terminal          bool
 	active            bool
-	started           bool
+	drawState         progressTerminalDrawState
 	startedAt         time.Time
 	workflowStartedAt time.Time
 	lastDraw          time.Time
@@ -988,7 +988,11 @@ func (r *br1BuildProgressRenderer) Callback(item br1rebuild.BuildProgress) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.ensureActiveLocked()
+	previousPhase := r.lastItem.Phase
 	r.lastItem = item
+	if r.terminal && windowsProgressLayout() && previousPhase == item.Phase && !r.lastDraw.IsZero() && time.Since(r.lastDraw) < 300*time.Millisecond {
+		return
+	}
 	r.renderLocked(false)
 }
 
@@ -997,7 +1001,7 @@ func (r *br1BuildProgressRenderer) ensureActiveLocked() {
 		return
 	}
 	r.active = true
-	r.started = false
+	r.drawState = progressTerminalDrawState{}
 	r.startedAt = time.Now()
 	r.lastDraw = time.Time{}
 	r.spinner = 0
@@ -1043,12 +1047,15 @@ func (r *br1BuildProgressRenderer) renderLocked(heartbeat bool) {
 		return
 	}
 
-	item := r.lastItem
-	if !r.started {
-		fmt.Fprint(r.out, "\n\n\n\n\n\n\n")
-		r.started = true
+	if windowsProgressLayout() && heartbeat && !r.lastDraw.IsZero() && now.Sub(r.lastDraw) < 900*time.Millisecond {
+		return
 	}
-	fmt.Fprint(r.out, "\033[7A")
+
+	item := r.lastItem
+	legacyFixedRows := beginProgressTerminalDraw(r.out, &r.drawState, !r.lastDraw.IsZero())
+	if legacyFixedRows {
+		fmt.Fprint(r.out, "\033[7A")
+	}
 	line := strings.Repeat("─", 92)
 	fmt.Fprintf(r.out, "\r\033[2K%s╭─ UNBURGER · CONTENT BUILD %s%s\n", ansiCyan+ansiBold, strings.Repeat("─", 64), ansiReset)
 	fmt.Fprintf(r.out, "\r\033[2K%s│%s %-10s %s%-76s%s\n", ansiCyan, ansiReset, "Stage", ansiBold, compactLegacyProgress(legacyPhaseLabel(item.Phase), 76), ansiReset)
@@ -1056,7 +1063,8 @@ func (r *br1BuildProgressRenderer) renderLocked(heartbeat bool) {
 	fmt.Fprintf(r.out, "\r\033[2K%s│%s %-10s %s %6s  %s\n", ansiCyan, ansiReset, "Current", legacyProgressBar(item.CurrentDone, item.CurrentTotal, 32), legacyPercentText(item.CurrentDone, item.CurrentTotal), legacyProgressBytes(item.CurrentDone, item.CurrentTotal))
 	fmt.Fprintf(r.out, "\r\033[2K%s│%s %-10s %s\n", ansiCyan, ansiReset, "File", compactLegacyProgress(strings.TrimSpace(item.CurrentFile), 78))
 	spin := []string{"◐", "◓", "◑", "◒"}[r.spinner%4]
-	fmt.Fprintf(r.out, "\r\033[2K%s│%s %-10s %s%s%s  %s  %s·%s phase elapsed %s · total elapsed %s\n", ansiCyan, ansiReset, "Activity", ansiYellow, spin, ansiReset, legacyActivityLabel(item.Phase), ansiGray, ansiReset, formatElapsed(now.Sub(r.startedAt)), formatElapsed(now.Sub(r.workflowStartedAt)))
+	activity := progressActivityText(legacyActivityLabel(item.Phase), now.Sub(r.startedAt), now.Sub(r.workflowStartedAt))
+	fmt.Fprintf(r.out, "\r\033[2K%s│%s %-10s %s%s%s  %s%s%s\n", ansiCyan, ansiReset, "Activity", ansiYellow, spin, ansiReset, ansiGray, activity, ansiReset)
 	fmt.Fprintf(r.out, "\r\033[2K%s╰%s╯%s\n", ansiCyan, line, ansiReset)
 	r.lastDraw = now
 }
@@ -1068,7 +1076,7 @@ func (r *br1BuildProgressRenderer) Finish() {
 		return
 	}
 	stop, done := r.stop, r.done
-	if r.terminal && r.started {
+	if r.terminal && r.drawState.started {
 		r.spinner++
 		r.renderLocked(false)
 	}

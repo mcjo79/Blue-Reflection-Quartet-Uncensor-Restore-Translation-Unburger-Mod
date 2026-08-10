@@ -15,11 +15,12 @@ type transactionProgressRenderer struct {
 	out               io.Writer
 	terminal          bool
 	active            bool
-	started           bool
+	drawState         progressTerminalDrawState
 	startedAt         time.Time
 	workflowStartedAt time.Time
 	lastDraw          time.Time
 	lastKey           string
+	lastStageKey      string
 	lastEvent         transaction.ProgressEvent
 	spinner           int
 	stop              chan struct{}
@@ -58,15 +59,26 @@ func (r *transactionProgressRenderer) Callback(event transaction.ProgressEvent) 
 	r.lastEvent = event
 	now := time.Now()
 	key := event.Operation + "|" + event.Phase + "|" + event.RelativePath
+	stageKey := event.Operation + "|" + event.Phase
 	complete := event.OverallBytesTotal > 0 && event.OverallBytesDone >= event.OverallBytesTotal || event.Phase == "complete"
 	interval := 200 * time.Millisecond
 	if !r.terminal {
 		interval = 4 * time.Second
 	}
-	if key == r.lastKey && !complete && !r.lastDraw.IsZero() && now.Sub(r.lastDraw) < interval {
+	if windowsProgressLayout() && r.terminal {
+		// File names can change dozens of times per second. Repainting the whole
+		// Windows panel for each one creates visible flashing; phase changes still
+		// render immediately.
+		interval = 300 * time.Millisecond
+		if stageKey == r.lastStageKey && !complete && !r.lastDraw.IsZero() && now.Sub(r.lastDraw) < interval {
+			r.lastKey = key
+			return
+		}
+	} else if key == r.lastKey && !complete && !r.lastDraw.IsZero() && now.Sub(r.lastDraw) < interval {
 		return
 	}
 	r.lastKey = key
+	r.lastStageKey = stageKey
 	r.renderLocked(false)
 }
 
@@ -75,7 +87,7 @@ func (r *transactionProgressRenderer) ensureActiveLocked() {
 		return
 	}
 	r.active = true
-	r.started = false
+	r.drawState = progressTerminalDrawState{}
 	r.startedAt = time.Now()
 	r.lastDraw = time.Time{}
 	r.spinner = 0
@@ -120,12 +132,15 @@ func (r *transactionProgressRenderer) renderLocked(heartbeat bool) {
 		return
 	}
 
-	event := r.lastEvent
-	if !r.started {
-		fmt.Fprint(r.out, "\n\n\n\n\n\n\n")
-		r.started = true
+	if windowsProgressLayout() && heartbeat && !r.lastDraw.IsZero() && now.Sub(r.lastDraw) < 900*time.Millisecond {
+		return
 	}
-	fmt.Fprint(r.out, "\033[7A")
+
+	event := r.lastEvent
+	legacyFixedRows := beginProgressTerminalDraw(r.out, &r.drawState, !r.lastDraw.IsZero())
+	if legacyFixedRows {
+		fmt.Fprint(r.out, "\033[7A")
+	}
 	line := strings.Repeat("─", 92)
 	title := transactionOperationLabel(event.Operation)
 	fmt.Fprintf(r.out, "\r\033[2K%s╭─ UNBURGER · %s %s%s\n", ansiCyan+ansiBold, title, strings.Repeat("─", maxInt(1, 72-len(title))), ansiReset)
@@ -138,7 +153,8 @@ func (r *transactionProgressRenderer) renderLocked(heartbeat bool) {
 	}
 	fmt.Fprintf(r.out, "\r\033[2K%s│%s %-10s %s\n", ansiCyan, ansiReset, "File", compactLegacyProgress(fileLabel, 78))
 	spin := []string{"◐", "◓", "◑", "◒"}[r.spinner%4]
-	fmt.Fprintf(r.out, "\r\033[2K%s│%s %-10s %s%s%s  %s  %s·%s phase elapsed %s · total elapsed %s\n", ansiCyan, ansiReset, "Activity", ansiYellow, spin, ansiReset, transactionActivityLabel(event.Phase), ansiGray, ansiReset, formatElapsed(now.Sub(r.startedAt)), formatElapsed(now.Sub(r.workflowStartedAt)))
+	activity := progressActivityText(transactionActivityLabel(event.Phase), now.Sub(r.startedAt), now.Sub(r.workflowStartedAt))
+	fmt.Fprintf(r.out, "\r\033[2K%s│%s %-10s %s%s%s  %s%s%s\n", ansiCyan, ansiReset, "Activity", ansiYellow, spin, ansiReset, ansiGray, activity, ansiReset)
 	fmt.Fprintf(r.out, "\r\033[2K%s╰%s╯%s\n", ansiCyan, line, ansiReset)
 	r.lastDraw = now
 }
@@ -150,7 +166,7 @@ func (r *transactionProgressRenderer) Finish() {
 		return
 	}
 	stop, done := r.stop, r.done
-	if r.terminal && r.started {
+	if r.terminal && r.drawState.started {
 		r.spinner++
 		r.renderLocked(false)
 	}
