@@ -111,15 +111,17 @@ The current text should therefore be treated as a working translation rather tha
 
 The restoration work compares the original PC release directly against Quartet. The comparison covers the relevant archives, models, textures, materials, effects and runtime behaviour. A change is restored only when it can be tied back to the original game.
 
-The bathroom water restoration is already runtime validated and restores the original water visibility and transparency behaviour in the affected scene.
+The bathroom water restoration is runtime validated and is a canonical part of the normal UNCENSOR module. When UNCENSOR is selected, the patcher applies the approved checksum-gated `PACK10_03` restoration automatically.
 
-The wet-clothing system is more complicated. Controlled runtime testing has reproduced the missing wet-surface and droplet component and confirmed more of the original wet rendering path. Those experimental wet changes are not part of the normal restoration module yet.
+The normal public `.unburger` also carries the three canonical restored Quartet-compatible movie files (`CNG_PC00_00.webm`, `CNG_PC01_00.webm`, `CNG_PC02_00.webm`). Movie restoration is a default-enabled child of UNCENSOR. `BUILD_RELEASE.sh` requires and validates these WebM files; they are not part of `.unburger-assets`.
+
+The wet-clothing system is more complicated. Controlled runtime testing has reproduced the missing wet-surface and droplet component and confirmed more of the original wet rendering path. Those experimental wet changes are not part of the normal restoration module yet. The remaining `ce01_040` clothing-opacity difference has been narrowed to one main-PBB RenderDoc comparison between Original and Quartet rather than another broad static search.
 
 In the original game, wetness affects more than the uniform. Clothing, skin and hair participate in the wet state, and switching wetness causes the game to resolve a wider character rendering state. The remaining transparency difference is therefore being traced through the native wetness path instead of forcing a texture change that only happens to look close in one scene.
 
 Other differences discovered during comparison remain under investigation. They will only become part of the normal restoration module after they have survived runtime testing and can be reproduced without damaging unrelated scenes or assets.
 
-## Restoring the original DLC
+## Restoring removed DLC in Quartet
 
 Quartet removed a large part of the first game's DLC.
 
@@ -143,11 +145,11 @@ A compatible `.unburger-assets` source bundle can be used instead of keeping the
 
 The public mod release does not distribute those proprietary game assets. They must come from the user's own copy of the game, either directly from the installation or through a compatible source bundle created from it.
 
-### Save access for restored DLC
+### Save access for restored BLUE REFLECTION DLC
 
-Restoring the Quartet game files does not retroactively change the DLC access flags already stored inside an existing save.
+For the restored **BLUE REFLECTION (2017)** DLC path, restoring the Quartet game files does not retroactively change the wardrobe/Tropical Island access state already stored inside an existing save.
 
-When **Legacy DLC Restoration** is installed, the patcher handles Save Access as part of the same guided installation flow. After the game files have been prepared, it looks for existing Quartet saves and can process all current save slots found in the selected save location. The update enables access to the expanded 122-entry wardrobe roster and the restored Tropical Island event flag.
+When the BLUE REFLECTION source family of **DLC Restoration** is installed, the patcher handles BR1 Save Access as part of the same guided installation flow. After the game files have been prepared, it looks for existing Quartet saves and can process all current save slots found in the selected save location. The update enables access to the expanded 122-entry wardrobe roster and the restored Tropical Island event flag.
 
 Standard native Windows and Steam/Proton save locations are detected automatically where possible. For Heroic, a custom Wine/Proton setup or another loose prefix, the prefix root containing `drive_c` can be selected manually. A save directory or an individual `.pcsave` file can also be selected directly when automatic detection is not suitable.
 
@@ -157,7 +159,9 @@ Save files are backed up before they are changed and the result is verified afte
 
 This extra step for newly created saves is a temporary limitation of the current restoration method. A future version may move restored DLC access into the game's runtime initialization so new saves receive it automatically.
 
-Work is also underway to restore DLC removed from the **Second Light** version included in Quartet. That work is still experimental and is not part of the current public restoration module.
+The Quartet **Second Light** partition is restored by the same DLC module. The restoration includes the removed costume/content families, DLC maps and battle fields, event/dialogue/notification data, facility/story routing, Resonance Tide and Ryza-related content covered by the current workstream. Core 0.0.107 was user-runtime validated with this DLC restoration on both Linux and Windows.
+
+Second Light uses a different access strategy from BR1: native Quartet Second Light saves do **not** require mandatory save modification. DLC access is restored through game-data/story re-gating. Optional entitlement parity handling for converted/external saves remains separate and is not a requirement for normal native Quartet saves.
 
 ## Installation
 
@@ -173,20 +177,19 @@ If the patcher does not detect the path on its own, place all the files from the
 | --- | --- |
 | **BLUE REFLECTION (2017)** | Translation |
 | **BLUE REFLECTION: Second Light** | Translation |
-| **BLUE REFLECTION Quartet** | Translation for BLUE REFLECTION, Second Light, SUN and RAY |
-| **BLUE REFLECTION Quartet, BLUE REFLECTION module** | Restoration / Uncensor, Legacy DLC Restoration |
+| **BLUE REFLECTION Quartet** | Translation for BLUE REFLECTION, Second Light, SUN and RAY; UNCENSOR/restoration for the BLUE REFLECTION partition; DLC restoration for the BLUE REFLECTION and Second Light partitions |
 
-The modules are independent. Translation can be installed without Restoration or DLC. Restoration can be used without the translation.
+Translation, UNCENSOR and DLC remain independently selectable. The restored-movie component is a default-enabled child of UNCENSOR.
 
 ### Optional DLC source bundle
 
-Legacy DLC Restoration needs source data from **BLUE REFLECTION** 2017. This can come directly from an installed PC copy of the game or from a compatible `.unburger-assets` bundle previously created from a verified copy. Only the base game is required; separate ownership of its costume DLC is not required.
+DLC Restoration needs source data from the corresponding standalone games. BLUE REFLECTION content can come from an installed 2017 PC copy; Second Light content can come from the standalone Second Light installation. A compatible combined `.unburger-assets` bundle can instead carry the reduced source subsets for both families. For BLUE REFLECTION, the base PC installation is enough; separate ownership of its costume DLC is not required because the required PC costume assets are already present in that installation.
 
-If you already have a compatible `.unburger-assets` file, place it beside the release's normal `.unburger` payload. The patcher detects it automatically and uses it as the BR1 source, so it does not need to ask for the complete first-game installation. If no compatible bundle is present, the patcher uses the installed **BLUE REFLECTION** 2017 source and allows its location to be selected manually when automatic detection is not suitable.
+If a compatible `.unburger-assets` file is placed beside the release's normal `.unburger` payload, the patcher detects it automatically and uses the capabilities present in the bundle. Missing source-family capabilities can fall back to the corresponding installed standalone game. The current frozen logical source subsets are 1,682 BR1 members plus 2,942 Second Light members (4,624 combined logical members).
 
-The optional source bundle is only used by Legacy DLC Restoration. Translation and Restoration / Uncensor do not require it.
+The optional source bundle is used by DLC Restoration. Translation and UNCENSOR do not require it. The three restored movie WebMs are explicitly **not** stored in `.unburger-assets`; they are carried in the normal public `.unburger`.
 
-As part of the Legacy DLC installation flow, the patcher also offers Save Access so existing Quartet save slots can use the restored costumes and Tropical Island immediately. `SAVE_ACCESS.sh` on Linux and `SAVE_ACCESS.cmd` on Windows are only needed later for a newly created save or as a manual fallback when save detection is not suitable.
+As part of the BLUE REFLECTION DLC installation flow, the patcher also offers BR1 Save Access so existing Quartet save slots can use the restored costumes and Tropical Island immediately. `SAVE_ACCESS.sh` on Linux and `SAVE_ACCESS.cmd` on Windows are only needed later for a newly created save or as a manual fallback when save detection is not suitable.
 
 Before writing game files, the patcher checks the current installation and the inputs needed by the selected modules. Compatibility is determined from the game structure and the contents being changed rather than requiring one exact whole-game version.
 
@@ -198,11 +201,13 @@ Large operations use a structured terminal interface that reports the current st
 
 When several selected modules affect the same content, the changes are composed before the final files are written.
 
-For Quartet the composition order is:
+For Quartet the effective composition order is:
 
 ```text
-Legacy DLC Restoration
-Restoration / Uncensor
+BLUE REFLECTION DLC restoration, if selected
+Second Light DLC restoration, if selected
+Restoration / UNCENSOR
+Restored movie child content
 Translation
 ```
 
@@ -212,13 +217,11 @@ Translation is applied last. Restoring DLC therefore does not put the original r
 
 The translation remains beta and will continue to receive substantial revision.
 
-Quartet DLC restoration for the first **BLUE REFLECTION** is functional. The restored costume set, costume names, character routing and Tropical Island have been confirmed in game.
+Quartet DLC restoration for the first **BLUE REFLECTION** is functional. The restored costume set, costume names, character routing and Tropical Island have been confirmed in game. The Second Light DLC restoration also has user-runtime PASS on both Linux and Windows with core 0.0.107; restored costumes/content routing and Translation composition are active. Individual restored-content spot checks can continue without treating the DLC stack as a startup blocker.
 
-The complete Quartet uncensor is still in development. Bathroom water restoration is validated. Parts of the original wet rendering have also been reproduced in controlled tests, while the remaining wet-clothing transparency and related rendering differences are still under investigation.
+The complete Quartet uncensor is still in development. Bathroom water restoration is validated and canonical. The three restored movie cutscenes are canonical public-release content. Wet-clothing transparency, camera/framing restoration candidates, UDW coverage selector restorations and towel/occluder candidates remain separate evidence-gated work.
 
 Twenty-four deleted first-game costume records cannot be restored from the PC release because the required models were never shipped with that version.
-
-DLC restoration for Second Light in Quartet is still being researched.
 
 Steam updates or file verification may replace modified game files. If that happens, run the patcher again so it can rebuild the selected modules against the new current installation.
 
@@ -340,11 +343,11 @@ Use the script's built-in help for the options supported by the current branch:
 
 A normal release build runs the Go regression suite, stages the verified module content, builds Linux and Windows patcher binaries and produces the public `Blue-Reflection-Unburger-Mod_<version>.zip` package together with its SHA-256 sidecar. The ZIP contains the platform launchers/binaries and the versioned `.unburger` runtime payload.
 
-For local testing or repeated DLC builds, `BUILD_RELEASE.sh --assets --assets-source <path>` can additionally create a versioned `.unburger-assets` source bundle beside the normal release. The builder verifies the required **BLUE REFLECTION** 2017 source data against the project's clean member-level fingerprints and stores only the source material needed by the restoration rather than copying complete PAK archives.
+For local testing or repeated DLC builds, `BUILD_RELEASE.sh --assets` also emits the combined `.unburger-assets` source bundle beside the normal release. It **reuses an existing verified bundle by default** instead of rebuilding it from full source games every time. A normal reusable bundle uses its matching SHA-256 sidecar plus the current encrypted-manifest/1,682 BR1 + 2,942 Second Light contract checks. If a compatible older bundle predates sidecar creation, the builder performs one full decrypt/materialize/object/member verification and only then bootstraps the missing sidecar; it does not rebuild from retail sources just to create that sidecar. The last reusable bundle path is remembered under project-local `.local/release/`. If no compatible bundle exists, the builder falls back to source rebuild. On that rebuild path only, the actual BR1 and standalone Second Light retail input files are size/SHA-256 gated against the frozen production provenance contract; remembered source paths are hints and stale ones are rejected before local-config/Steam autodetection fallback. Quartet remains structure/capability-gated rather than whole-file hash-locked. Use `--assets-bundle PATH` to select an existing bundle explicitly and `--assets-rebuild` to force a source rebuild. Source-path flags remain available only for the rebuild path.
 
-A compatible `.unburger-assets` bundle placed beside the normal `.unburger` payload can be detected by the patcher automatically, so later DLC restoration runs do not need to rescan or keep the complete first-game installation available.
+A compatible `.unburger-assets` bundle placed beside the normal `.unburger` payload can be detected by the patcher automatically. Capabilities missing from the bundle can fall back to the corresponding user-owned standalone installation.
 
-The release builder must fail closed if required translation content is stale or incomplete, or if required BR1 source data differs from the verified clean source. Proprietary restoration source assets must never be embedded in the public mod ZIP or the normal `.unburger` payload.
+The release builder must fail closed if required translation content is stale or incomplete or if required source data differs from the verified clean source. Raw proprietary source-game restoration assets must never be embedded in the public mod ZIP or normal `.unburger` payload. The three canonical restored WebM cutscenes are a separate, approved public UNCENSOR payload and are not source-bundle material.
 
 ### Validation and local state
 
@@ -370,4 +373,4 @@ Public releases contain the patcher, authored translation content, module rules 
 
 Do not place full game PAKs, extracted proprietary models, textures, maps, `.unburger-assets` source bundles or other source-game payloads in the public repository/release bundle.
 
-The normal `.unburger` payload contains project-authored runtime data and restoration rules, not the proprietary first-game assets used by Legacy DLC Restoration. Missing first-game assets must come from the user's own **BLUE REFLECTION** 2017 copy, either directly from the installation or through a compatible `.unburger-assets` bundle created locally from that copy. The same rule applies to any future restoration that needs copyrighted content from another installed release.
+The normal `.unburger` payload contains project-authored runtime data, restoration rules and the approved restored-movie payload. It does not contain the raw BR1/Second Light source assets used by DLC Restoration. Those source assets must come from the user's own standalone installations or a compatible locally created `.unburger-assets` bundle.

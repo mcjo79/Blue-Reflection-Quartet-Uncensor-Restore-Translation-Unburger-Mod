@@ -79,16 +79,23 @@ type sourceAssetBuildResult struct {
 }
 
 func BuildSourceAssetBundle(sourceRoot, outputPath, anchorPath string) (SourceAssetManifest, error) {
+	return BuildSourceAssetBundleWithProgress(sourceRoot, outputPath, anchorPath, nil)
+}
+
+func BuildSourceAssetBundleWithProgress(sourceRoot, outputPath, anchorPath string, progress BuildProgressFunc) (SourceAssetManifest, error) {
 	stage, err := workspace.MkdirTemp("unburger-br1-assets-")
 	if err != nil {
 		return SourceAssetManifest{}, err
 	}
 	defer os.RemoveAll(stage)
+	if progress != nil {
+		progress(BuildProgress{Phase: "source_bundle_build_br1", CurrentFile: "BLUE REFLECTION (2017) reduced DLC source"})
+	}
 	manifest, err := buildBR1SourceAssetStage(sourceRoot, stage, anchorPath)
 	if err != nil {
 		return SourceAssetManifest{}, err
 	}
-	if err := packageSourceAssetImageV3(stage, outputPath, manifest); err != nil {
+	if err := packageSourceAssetImageV3WithProgress(stage, outputPath, manifest, progress); err != nil {
 		return SourceAssetManifest{}, err
 	}
 	return manifest, nil
@@ -254,21 +261,24 @@ func buildBR1SourceAssetStage(sourceRoot, stage, anchorPath string) (SourceAsset
 }
 
 func sourceCharacterCatalogBlob(sourceRoot string) ([]byte, error) {
-	_, loc, err := readSourceCharacterCatalog(sourceRoot)
+	// The developer .unburger-assets builder must be provenance-stable.  A loose
+	// DATA/saves_en/chara/charabase.xml can legitimately exist in a modified
+	// working installation, but it must never override the canonical retail
+	// member when capturing the reusable source bundle.
+	dataRoot, err := sourceDataDirectory(sourceRoot)
 	if err != nil {
 		return nil, err
 	}
-	if loc.Kind == "loose" {
-		return os.ReadFile(loc.Path)
-	}
-	p, err := OpenA18(loc.Path)
+	archivePath := casePath(dataRoot, "PACK02_1.PAK")
+	p, err := OpenA18(archivePath)
 	if err != nil {
 		return nil, err
 	}
 	defer p.Close()
-	e, ok := p.Find(loc.Member)
+	const wanted = `\saves_en\chara\charabase.xml`
+	e, ok := p.Find(wanted)
 	if !ok {
-		return nil, fmt.Errorf("source catalog member disappeared: %s", loc.Member)
+		return nil, fmt.Errorf("canonical source catalog member missing: %s#%s", archivePath, wanted)
 	}
 	return p.Read(e)
 }
@@ -837,6 +847,48 @@ func locateSourceAssetBundle(raw, anchorPath string, progress BuildProgressFunc)
 		return SourceLocation{}, fmt.Errorf("materialized source bundle is invalid: %w", err)
 	}
 	return SourceLocation{Root: root, Origin: "asset_bundle", CleanupRoot: cleanupRoot}, nil
+}
+
+// VerifySourceAssetBundle performs the expensive, content-level verification
+// used when bootstrapping a missing whole-file SHA-256 sidecar.  Unlike
+// FindCompatibleSourceAssetBundle, this materializes the container, checks each
+// image digest, every BR1 source member, and every supplemental source member,
+// then removes the transient workspace.
+func VerifySourceAssetBundle(path, anchorPath string) (SourceAssetManifest, error) {
+	return VerifySourceAssetBundleWithProgress(path, anchorPath, nil)
+}
+
+func VerifySourceAssetBundleWithProgress(path, anchorPath string, progress BuildProgressFunc) (SourceAssetManifest, error) {
+	anchors, err := ReadSourceAnchorManifest(anchorPath)
+	if err != nil {
+		return SourceAssetManifest{}, fmt.Errorf("clean-source anchors are required for source bundle verification: %w", err)
+	}
+	if err := validateSourceAnchorManifest(anchors); err != nil {
+		return SourceAssetManifest{}, fmt.Errorf("clean-source anchors are invalid: %w", err)
+	}
+	abs, err := filepath.Abs(strings.Trim(strings.TrimSpace(path), `"`))
+	if err != nil {
+		return SourceAssetManifest{}, err
+	}
+	manifest, err := ReadSourceAssetManifest(abs)
+	if err != nil {
+		return SourceAssetManifest{}, err
+	}
+	if err := validateSourceAssetManifest(manifest); err != nil {
+		return SourceAssetManifest{}, err
+	}
+	if !sourceAssetManifestMatchesAnchors(manifest, anchors) {
+		return SourceAssetManifest{}, fmt.Errorf("source assets bundle does not match approved clean-source anchors")
+	}
+	root, cleanupRoot, err := materializeSourceAssetBundle(abs, manifest, progress)
+	if err != nil {
+		return SourceAssetManifest{}, err
+	}
+	defer os.RemoveAll(cleanupRoot)
+	if err := validateSourceInstall(root); err != nil {
+		return SourceAssetManifest{}, fmt.Errorf("materialized source bundle is invalid: %w", err)
+	}
+	return manifest, nil
 }
 
 func compatibleAssetBundles(dir string, anchors SourceAnchorManifest) ([]string, error) {

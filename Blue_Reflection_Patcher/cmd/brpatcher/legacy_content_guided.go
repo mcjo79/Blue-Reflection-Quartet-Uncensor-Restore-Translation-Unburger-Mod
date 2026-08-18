@@ -39,19 +39,20 @@ type legacyContentStartOptions struct {
 }
 
 type legacyContentResult struct {
-	Survey             br1rebuild.SurveyReport              `json:"survey"`
-	Build              br1rebuild.ReconstructionBuildReport `json:"build,omitempty"`
-	SecondLightDLC     *quartetdlc.SecondLightBuildAudit    `json:"second_light_dlc,omitempty"`
-	DLCSourceGames     []string                             `json:"dlc_source_games,omitempty"`
-	Restoration        *br1rebuild.RestorationLayerAudit    `json:"restoration,omitempty"`
-	Translation        *br1rebuild.TranslationLayerAudit    `json:"translation,omitempty"`
-	TranslationRecords *translationbundle.ApplyAudit        `json:"translation_records,omitempty"`
-	FinalAudit         *br1rebuild.CrossFileAudit           `json:"final_cross_file_audit,omitempty"`
-	TitleMarker        *br1rebuild.QuartetTitleMarkerAudit  `json:"title_marker,omitempty"`
-	JournalPath        string                               `json:"journal_path,omitempty"`
-	TransactionID      string                               `json:"transaction_id,omitempty"`
-	Status             string                               `json:"status"`
-	GameModified       bool                                 `json:"game_modified"`
+	Survey             br1rebuild.SurveyReport               `json:"survey"`
+	Build              br1rebuild.ReconstructionBuildReport  `json:"build,omitempty"`
+	SecondLightDLC     *quartetdlc.SecondLightBuildAudit     `json:"second_light_dlc,omitempty"`
+	DLCSourceGames     []string                              `json:"dlc_source_games,omitempty"`
+	WetRestoration     *br1rebuild.WetSchoolRestorationAudit `json:"wet_restoration,omitempty"`
+	Restoration        *br1rebuild.RestorationLayerAudit     `json:"restoration,omitempty"`
+	Translation        *br1rebuild.TranslationLayerAudit     `json:"translation,omitempty"`
+	TranslationRecords *translationbundle.ApplyAudit         `json:"translation_records,omitempty"`
+	FinalAudit         *br1rebuild.CrossFileAudit            `json:"final_cross_file_audit,omitempty"`
+	TitleMarker        *br1rebuild.QuartetTitleMarkerAudit   `json:"title_marker,omitempty"`
+	JournalPath        string                                `json:"journal_path,omitempty"`
+	TransactionID      string                                `json:"transaction_id,omitempty"`
+	Status             string                                `json:"status"`
+	GameModified       bool                                  `json:"game_modified"`
 }
 
 func selectionUsesIntegratedQuartetContent(selection model.SelectionResult) (model.TargetSelection, bool, error) {
@@ -232,6 +233,50 @@ func runQuartetContentGuided(selection model.SelectionResult, opts legacyContent
 		fmt.Fprintf(out, "%sSecond Light DLC source ready:%s %s\n", ansiCyan+ansiBold, ansiReset, secondLightSourceOrigin)
 	}
 
+	wetSchoolSource := ""
+	wetSchoolSourceOrigin := ""
+	if restorationSelected {
+		canonicalPayload := filepath.Join(opts.ProjectRoot, filepath.FromSlash(br1rebuild.WetSchoolCanonicalRelativeRoot), "..")
+		canonicalPayload = filepath.Clean(canonicalPayload)
+		if validateErr := br1rebuild.ValidateWetSchoolCanonicalPayload(canonicalPayload); validateErr == nil {
+			wetSchoolSource = filepath.Join(canonicalPayload, "source")
+			wetSchoolSourceOrigin = "canonical_runtime_bundle"
+		} else if _, manifestErr := os.Stat(filepath.Join(opts.ProjectRoot, "RELEASE_MANIFEST.json")); manifestErr == nil {
+			return result, fmt.Errorf("canonical UNCENSOR runtime payload is missing or invalid: %w", validateErr)
+		}
+
+		// Repository/developer runs may still use a verified retail BR1 source.
+		// Public releases never reach this fallback because their encrypted .unburger
+		// is required to carry the canonical wet-school payload.
+		if wetSchoolSource == "" && legacySelected && result.Survey.Source.Origin != "asset_bundle" {
+			wetSchoolSource = result.Survey.Source.Root
+			wetSchoolSourceOrigin = result.Survey.Source.Origin
+		}
+		if wetSchoolSource == "" {
+			locator := source
+			locator.AssetRoot = ""
+			location, locateErr := br1rebuild.LocateSourceInstall(locator)
+			if locateErr != nil && opts.Prompt {
+				chosen, chooseErr := chooseLegacySourceLocation(os.Stdin, os.Stdout)
+				if chooseErr != nil {
+					return result, chooseErr
+				}
+				chosen.AssetRoot = ""
+				chosen.AnchorPath = source.AnchorPath
+				location, locateErr = br1rebuild.LocateSourceInstall(chosen)
+			}
+			if locateErr != nil {
+				return result, fmt.Errorf("developer UNCENSOR run requires either the canonical runtime payload or a retail BLUE REFLECTION (2017) source installation: %w", locateErr)
+			}
+			wetSchoolSource = location.Root
+			wetSchoolSourceOrigin = location.Origin
+			if location.CleanupRoot != "" {
+				defer os.RemoveAll(location.CleanupRoot)
+			}
+		}
+		fmt.Fprintf(out, "%sWet-school UNCENSOR source ready:%s %s\n", ansiCyan+ansiBold, ansiReset, wetSchoolSourceOrigin)
+	}
+
 	action := guidedActionCancel
 	switch {
 	case opts.Prepare:
@@ -334,13 +379,23 @@ func runQuartetContentGuided(selection model.SelectionResult, opts legacyContent
 	}
 	overlayDir := filepath.Join(workspace, "composed")
 	if restorationSelected {
+		if _, exists := candidates["Data/PACK10_02.PAK"]; !exists {
+			candidates["Data/PACK10_02.PAK"] = filepath.Join(target.Root, "Data", "PACK10_02.PAK")
+		}
 		if _, exists := candidates["Data/PACK10_03.PAK"]; !exists {
 			candidates["Data/PACK10_03.PAK"] = filepath.Join(target.Root, "Data", "PACK10_03.PAK")
 		}
-	}
-	if restorationSelected {
-		renderer.Status("restoration_build", "Composing approved UNCENSOR restoration layer")
-		audit, updated, err := br1rebuild.ApplyApprovedRestoration(overlayDir, candidates, renderer.Callback)
+		renderer.Status("wet_school_restoration", "Restoring validated Original wet school-uniform assets for PC00-PC14")
+		wetAudit, updated, wetErr := br1rebuild.ApplyWetSchoolRestoration(filepath.Join(overlayDir, "wet-school"), wetSchoolSource, candidates, renderer.Callback)
+		renderer.Finish()
+		if wetErr != nil {
+			return result, wetErr
+		}
+		candidates = updated
+		result.WetRestoration = &wetAudit
+
+		renderer.Status("restoration_build", "Composing approved bathroom-water UNCENSOR restoration layer")
+		audit, updated, err := br1rebuild.ApplyApprovedRestoration(filepath.Join(overlayDir, "bathroom-water"), candidates, renderer.Callback)
 		renderer.Finish()
 		if err != nil {
 			return result, err
@@ -502,6 +557,9 @@ func runQuartetContentGuided(selection model.SelectionResult, opts legacyContent
 	}
 	if secondLightSelected {
 		metadata["second_light_source_origin"] = secondLightSourceOrigin
+	}
+	if restorationSelected {
+		metadata["wet_school_source_origin"] = wetSchoolSourceOrigin
 	}
 	prepProgress := newTransactionProgressRendererWithWorkflowStart(out, workflowStartedAt)
 	prepProgress.Status("prepare", "baseline", "Hashing final artifacts and preserving one game-side rollback baseline")
@@ -1114,11 +1172,19 @@ func legacyPhaseLabel(phase string) string {
 	case "legacy_source":
 		return "Read legacy source"
 	case "source_bundle_manifest":
-		return "Check BR1 source bundle"
+		return "Check DLC source bundle"
+	case "source_bundle_source_hashes":
+		return "Verify DLC source games"
+	case "source_bundle_build_br1":
+		return "Build BR1 DLC source"
+	case "source_bundle_build_sl":
+		return "Build Second Light DLC source"
+	case "source_bundle_encrypt":
+		return "Encrypt DLC source bundle"
 	case "source_bundle_extract":
-		return "Materialize BR1 source bundle"
+		return "Materialize DLC source bundle"
 	case "source_bundle_verify":
-		return "Verify BR1 source members"
+		return "Verify DLC source bundle"
 	case "title_marker":
 		return "Build title-screen marker"
 	case "second_light_models":
@@ -1168,11 +1234,19 @@ func legacyActivityLabel(phase string) string {
 	case "legacy_source":
 		return "Reading and validating source/target game archives"
 	case "source_bundle_manifest":
-		return "Reading bundle metadata and clean-source binding"
+		return "Reading encrypted bundle metadata and clean-source binding"
+	case "source_bundle_source_hashes":
+		return "SHA-256 checking the canonical BR1 and Second Light source archives"
+	case "source_bundle_build_br1":
+		return "Reading BLUE REFLECTION and building the reduced 1,682-member DLC source"
+	case "source_bundle_build_sl":
+		return "Reading Second Light and building the reduced 2,942-member DLC source"
+	case "source_bundle_encrypt":
+		return "Compressing and AES-256-GCM encrypting the reusable DLC source bundle"
 	case "source_bundle_extract":
-		return "Extracting and SHA-256 checking source images while writing them"
+		return "Decrypting, extracting and SHA-256 checking source images while writing them"
 	case "source_bundle_verify":
-		return "Checking the approved BR1 members used by the reconstruction"
+		return "Checking the approved BR1 and Second Light DLC source members"
 	case "title_marker":
 		return "Replacing the stock KOEI/legal strip with selected module indicators"
 	case "second_light_models":

@@ -31,14 +31,24 @@ var secondLightRequiredSourceDataMembers = map[string]bool{
 }
 
 func BuildCombinedSourceAssetBundle(br1Root, secondLightRoot, quartetRoot, outputPath, anchorPath string) (SourceAssetManifest, error) {
+	return BuildCombinedSourceAssetBundleWithProgress(br1Root, secondLightRoot, quartetRoot, outputPath, anchorPath, nil)
+}
+
+func BuildCombinedSourceAssetBundleWithProgress(br1Root, secondLightRoot, quartetRoot, outputPath, anchorPath string, progress BuildProgressFunc) (SourceAssetManifest, error) {
 	stage, err := workspace.MkdirTemp("unburger-dlc-assets-")
 	if err != nil {
 		return SourceAssetManifest{}, err
 	}
 	defer os.RemoveAll(stage)
+	if progress != nil {
+		progress(BuildProgress{Phase: "source_bundle_build_br1", CurrentFile: "BLUE REFLECTION (2017) reduced DLC source"})
+	}
 	manifest, err := buildBR1SourceAssetStage(br1Root, stage, anchorPath)
 	if err != nil {
 		return SourceAssetManifest{}, err
+	}
+	if progress != nil {
+		progress(BuildProgress{Phase: "source_bundle_build_sl", CurrentFile: "BLUE REFLECTION: Second Light reduced DLC source"})
 	}
 	supplement, err := buildSecondLightSourceAssetStage(secondLightRoot, quartetRoot, stage)
 	if err != nil {
@@ -52,7 +62,7 @@ func BuildCombinedSourceAssetBundle(br1Root, secondLightRoot, quartetRoot, outpu
 	if err := validateSourceAssetManifest(manifest); err != nil {
 		return SourceAssetManifest{}, err
 	}
-	if err := packageSourceAssetImageV3(stage, outputPath, manifest); err != nil {
+	if err := packageSourceAssetImageV3WithProgress(stage, outputPath, manifest, progress); err != nil {
 		return SourceAssetManifest{}, err
 	}
 	return manifest, nil
@@ -270,6 +280,75 @@ func buildSecondLightSourceAssetStage(sourceRoot, quartetRoot, stage string) (Su
 		return SupplementalSourceAssetManifest{}, fmt.Errorf("Second Light supplemental source is empty")
 	}
 	return supplement, nil
+}
+
+// VerifySecondLightSourceRootAgainstBundle confirms that a standalone Second
+// Light installation still contains the exact logical source members preserved
+// in a previously verified combined .unburger-assets bundle.  It intentionally
+// does not depend on the Quartet minimization target, so it can be used as a
+// read-only provenance check before capturing whole-retail-file hashes.
+func VerifySecondLightSourceRootAgainstBundle(sourceRoot, bundlePath string) (string, error) {
+	if err := validateSecondLightBundleSource(sourceRoot); err != nil {
+		return "", err
+	}
+	manifest, err := ReadSourceAssetManifest(bundlePath)
+	if err != nil {
+		return "", err
+	}
+	if err := validateSourceAssetManifest(manifest); err != nil {
+		return "", err
+	}
+	var supplement *SupplementalSourceAssetManifest
+	for i := range manifest.SupplementalSources {
+		if manifest.SupplementalSources[i].Capability == SecondLightSourceAssetsCapability {
+			supplement = &manifest.SupplementalSources[i]
+			break
+		}
+	}
+	if supplement == nil {
+		return "", fmt.Errorf("source assets bundle has no %s supplement", SecondLightSourceAssetsCapability)
+	}
+	if len(supplement.SourceMembers) != 2942 {
+		return "", fmt.Errorf("Second Light source supplement contains %d members, expected 2942", len(supplement.SourceMembers))
+	}
+	var currentPath string
+	var current *ArchiveReader
+	closeCurrent := func() {
+		if current != nil {
+			_ = current.Close()
+			current = nil
+			currentPath = ""
+		}
+	}
+	defer closeCurrent()
+	for _, item := range supplement.SourceMembers {
+		path := filepath.Join(sourceRoot, filepath.FromSlash(item.ArchivePath))
+		if item.MemberPath == "whole_file" {
+			closeCurrent()
+			digest, size, err := hashPath(path)
+			if err != nil || size != item.Size || !strings.EqualFold(digest, item.SHA256) {
+				return "", fmt.Errorf("Second Light whole-file source mismatch: %s", item.ArchivePath)
+			}
+			continue
+		}
+		if current == nil || !strings.EqualFold(currentPath, path) {
+			closeCurrent()
+			p, err := OpenA22(path)
+			if err != nil {
+				return "", err
+			}
+			current, currentPath = p, path
+		}
+		e, ok := current.Find(item.MemberPath)
+		if !ok {
+			return "", fmt.Errorf("Second Light source member missing: %s#%s", item.ArchivePath, item.MemberPath)
+		}
+		digest, err := current.PlainDigest(e)
+		if err != nil || int64(e.Size) != item.Size || !strings.EqualFold(digest, item.SHA256) {
+			return "", fmt.Errorf("Second Light source member mismatch: %s#%s", item.ArchivePath, item.MemberPath)
+		}
+	}
+	return supplement.SourceFingerprint, nil
 }
 
 func copyFileExact(src, dst string) error {

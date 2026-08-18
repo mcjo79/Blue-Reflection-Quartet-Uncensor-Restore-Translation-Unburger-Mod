@@ -14,18 +14,25 @@ import (
 func main() {
 	fs := flag.NewFlagSet("unburger-assets", flag.ExitOnError)
 	var source, secondLightSource, quartetRoot, output, anchors string
-	var inspect, captureAnchors bool
+	var inspect, verify, captureAnchors bool
 	fs.StringVar(&source, "source-root", "", "BLUE REFLECTION (2017) source game folder")
 	fs.StringVar(&secondLightSource, "second-light-source-root", "", "standalone BLUE REFLECTION: Second Light source game folder; with --quartet-root builds a combined DLC source bundle")
 	fs.StringVar(&quartetRoot, "quartet-root", "", "BLUE REFLECTION Quartet game folder used to minimize the Second Light source subset")
 	fs.StringVar(&output, "output", "", "output .unburger-assets path")
 	fs.StringVar(&anchors, "anchors", "", "clean-source member anchor manifest")
 	fs.BoolVar(&inspect, "inspect", false, "inspect and validate a .unburger-assets manifest")
+	fs.BoolVar(&verify, "verify", false, "fully materialize and verify every object/member in a .unburger-assets bundle")
 	fs.BoolVar(&captureAnchors, "capture-anchor-proposal", false, "write a metadata-only clean-source anchor proposal")
 	_ = fs.Parse(os.Args[1:])
 
-	if inspect && captureAnchors {
-		fatal("--inspect and --capture-anchor-proposal are mutually exclusive")
+	modeCount := 0
+	for _, enabled := range []bool{inspect, verify, captureAnchors} {
+		if enabled {
+			modeCount++
+		}
+	}
+	if modeCount > 1 {
+		fatal("--inspect, --verify and --capture-anchor-proposal are mutually exclusive")
 	}
 	if inspect {
 		if strings.TrimSpace(output) == "" {
@@ -34,6 +41,26 @@ func main() {
 		manifest, err := br1rebuild.ReadSourceAssetManifest(output)
 		if err != nil {
 			fatal(err.Error())
+		}
+		blob, _ := json.MarshalIndent(manifest, "", "  ")
+		fmt.Println(string(blob))
+		return
+	}
+	if verify {
+		if strings.TrimSpace(output) == "" {
+			fatal("--verify requires --output FILE")
+		}
+		if strings.TrimSpace(anchors) == "" {
+			fatal("--verify requires --anchors FILE")
+		}
+		manifest, err := br1rebuild.VerifySourceAssetBundle(output, anchors)
+		if err != nil {
+			fatal(err.Error())
+		}
+		if strings.TrimSpace(secondLightSource) != "" {
+			if _, err := br1rebuild.VerifySecondLightSourceRootAgainstBundle(secondLightSource, output); err != nil {
+				fatal("Second Light source provenance check failed: " + err.Error())
+			}
 		}
 		blob, _ := json.MarshalIndent(manifest, "", "  ")
 		fmt.Println(string(blob))

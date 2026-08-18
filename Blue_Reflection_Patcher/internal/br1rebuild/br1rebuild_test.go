@@ -426,6 +426,28 @@ func TestSourceCharacterCatalogFromA18WhenLooseFileIsAbsent(t *testing.T) {
 	}
 }
 
+func TestSourceCharacterCatalogBlobIgnoresLooseOverride(t *testing.T) {
+	game := t.TempDir()
+	data := filepath.Join(game, "DATA")
+	if err := os.MkdirAll(filepath.Join(data, "saves_en", "chara"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	archiveBlob := []byte("<root>\r\n<chara BaseTag=\"PC00_SCL\" Model=\"archive\" defaultTexture=\"archive\"/>\r\n</root>\r\n")
+	looseBlob := []byte("<root>\r\n<chara BaseTag=\"PC00_SCL\" Model=\"loose\" defaultTexture=\"loose\"/>\r\n</root>\r\n")
+	fixture := writeA18Fixture(t, filepath.Join(data, "PACK02_1.PAK"), map[string][]byte{`\saves_en\chara\charabase.xml`: archiveBlob})
+	fixture.Close()
+	if err := os.WriteFile(filepath.Join(data, "saves_en", "chara", "charabase.xml"), looseBlob, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got, err := sourceCharacterCatalogBlob(game)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(got, archiveBlob) {
+		t.Fatalf("source bundle catalog used loose override instead of PACK02_1.PAK: %q", got)
+	}
+}
+
 func TestLocateSourceInstallLooseFolderUppercaseDATA(t *testing.T) {
 	game := t.TempDir()
 	for _, rel := range []string{"BLUE_REFLECTION.exe", "DATA/PACK00_02.PAK", "DATA/PACK00_03.PAK", "DATA/PACK01.PAK", "DATA/saves_en/chara/charabase.xml"} {

@@ -15,9 +15,11 @@ Developer/bootstrap helper for a fresh project workspace. It creates missing
 Quartet-compatible WEBM movie-restoration files from the original BLUE REFLECTION
 WMV video while copying the matching Opus audio stream from Quartet.
 
-Existing .local/Video/restored_webm/*.webm files are preserved unless --force is
-explicitly supplied. This script is not part of the public installer and does
-not modify .unburger-assets.
+Existing already-canonical .local/Video/restored_webm/*.webm files are preserved
+unless --force is explicitly supplied. Compatible existing files missing the
+final BT.709 transfer/primaries tags are normalized once in place by stream
+copy. This script is not part of the public installer and does not modify
+.unburger-assets.
 TXT
 }
 
@@ -95,5 +97,8 @@ for n in "${MOVIES[@]}"; do
   }
   mv -f "$tmp" "$out"
 done
+
+echo "==> Finalize canonical movie metadata"
+"$PROJECT_ROOT/NORMALIZE_MOVIE_RESTORATION_ASSETS.sh" --movie-root "$OUT_DIR"
 
 echo "Movie restoration workspace ready: $OUT_DIR"

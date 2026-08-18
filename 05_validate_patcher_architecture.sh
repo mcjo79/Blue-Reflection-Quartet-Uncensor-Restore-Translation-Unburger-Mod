@@ -71,6 +71,51 @@ python3 "$PROJECT_ROOT/workstreams/translation_tooling/blue_reflection_title_mar
 # shellcheck source=/dev/null
 source "$PATHS_FILE"
 
+# Machine-local game roots are inputs only to the checks that actually need them.
+# BR1 Original + Quartet remain required because this validator explicitly exercises
+# current-directory detection and the real Quartet module-selection envelope.
+# Standalone Second Light is optional here: source-assets workflows are validated
+# independently and normal runtime/build commands accept explicit source paths.
+for required_name in BR1_ORIGINAL_ROOT BR1_QUARTET_ROOT; do
+  required_value="${!required_name:-}"
+  [[ -n "$required_value" && -d "$required_value" ]] || \
+    fail "Required local validation root $required_name is missing or invalid: ${required_value:-<unset>}"
+done
+
+DETECTION_ROOT_ARGS=(
+  --root "$BR1_ORIGINAL_ROOT"
+  --root "$BR1_QUARTET_ROOT"
+)
+EXPECTED_DETECTION_TARGETS=(
+  blue_reflection_original
+  blue_reflection_quartet
+)
+
+# The real Quartet `start` command runs the integrated-content survey even for
+# selection-only/default-state validation. Never make that survey rediscover BR1
+# from default Steam paths: use the already configured explicit source root.
+QUARTET_START_SOURCE_ARGS=(
+  --legacy-source "$BR1_ORIGINAL_ROOT"
+  --legacy-no-auto
+)
+
+if [[ -n "${BR_SECOND_LIGHT_ROOT:-}" && -d "$BR_SECOND_LIGHT_ROOT" ]]; then
+  DETECTION_ROOT_ARGS+=(--root "$BR_SECOND_LIGHT_ROOT")
+  EXPECTED_DETECTION_TARGETS+=(second_light_original)
+  QUARTET_START_SOURCE_ARGS+=(
+    --second-light-source "$BR_SECOND_LIGHT_ROOT"
+    --dlc-sources blue_reflection,second_light
+  )
+  printf 'Second Light local validation root: PRESENT (%s)\n' "$BR_SECOND_LIGHT_ROOT"
+else
+  # Keep the outer Quartet DLC module selected (that is the production default),
+  # but scope this machine-local source survey to the BR1 family that is actually
+  # present. Standalone Second Light parity is covered by static/composer tests and
+  # by the already validated combined .unburger-assets workflow.
+  QUARTET_START_SOURCE_ARGS+=(--dlc-sources blue_reflection)
+  printf 'Second Light local validation root: SKIPPED_MISSING_LOCAL_ROOT (%s)\n' "${BR_SECOND_LIGHT_ROOT:-<unset>}" >&2
+fi
+
 mkdir -p -- "$REPORT_DIR" "$BUILD_DIR"
 
 python3 "$TOOL" validate \
@@ -108,27 +153,21 @@ if command -v go >/dev/null 2>&1; then
   done
 
   "$BUILD_DIR/blue-reflection-patcher-linux-x86_64" detect \
-    --root "$BR1_ORIGINAL_ROOT" \
-    --root "$BR1_QUARTET_ROOT" \
-    --root "$BR_SECOND_LIGHT_ROOT" \
+    "${DETECTION_ROOT_ARGS[@]}" \
     --json "$DETECTION_REPORT"
 
-  python3 - "$DETECTION_REPORT" <<'PY'
+  python3 - "$DETECTION_REPORT" "${EXPECTED_DETECTION_TARGETS[@]}" <<'PY'
 import json
 import sys
 from pathlib import Path
 
 path = Path(sys.argv[1])
 data = json.loads(path.read_text(encoding="utf-8"))
-expected = {
-    "blue_reflection_original",
-    "blue_reflection_quartet",
-    "second_light_original",
-}
+expected = set(sys.argv[2:])
 found = {item["target_id"] for item in data}
 if found != expected:
     raise SystemExit(f"Detection mismatch: expected {sorted(expected)}, found {sorted(found)}")
-print("Detected all three configured PC installations.")
+print("Detected all configured local validation roots that are present.")
 PY
 
   (
@@ -164,6 +203,7 @@ PY
 
   "$BUILD_DIR/blue-reflection-patcher-linux-x86_64" start \
     --game-dir "$BR1_QUARTET_ROOT" \
+    "${QUARTET_START_SOURCE_ARGS[@]}" \
     --no-prompt \
     --json "$QUARTET_SELECTION_REPORT"
 
@@ -192,9 +232,20 @@ if [m["module_id"] for m in br1_target.get("available_modules", [])] != ["blue_r
 q_target = quartet["targets"][0]
 if q_target.get("target_id") != "blue_reflection_quartet":
     raise SystemExit(f"Unexpected Quartet target: {q_target!r}")
-if q_target.get("selected_module_ids") != ["blue_reflection_translation", "quartet_restoration"]:
+expected_selected_q = [
+    "blue_reflection_translation",
+    "quartet_legacy_dlc",
+    "quartet_movie_restoration",
+    "quartet_restoration",
+]
+if q_target.get("selected_module_ids") != expected_selected_q:
     raise SystemExit(f"Unexpected default Quartet selection: {q_target!r}")
-expected_q = {"blue_reflection_translation", "quartet_restoration", "quartet_legacy_dlc"}
+expected_q = {
+    "blue_reflection_translation",
+    "quartet_restoration",
+    "quartet_movie_restoration",
+    "quartet_legacy_dlc",
+}
 found_q = {m["module_id"] for m in q_target.get("available_modules", [])}
 if found_q != expected_q:
     raise SystemExit(f"Unexpected Quartet module catalog: {sorted(found_q)}")
@@ -203,7 +254,7 @@ manifest_modules = {m["module_id"]: m for m in manifest["modules"]}
 catalog_modules = {m["module_id"]: m for m in catalog["modules"]}
 if manifest_modules != catalog_modules:
     raise SystemExit("Embedded module catalog diverges from the development bundle manifest")
-print("Target-aware defaults, Quartet translation/restoration defaults, and embedded catalog parity are valid.")
+print("Target-aware defaults, full Quartet default module set, explicit legacy-source routing, and embedded catalog parity are valid.")
 PYSEL
 
   rm -rf -- "$TRANSACTION_TEST_ROOT"
@@ -438,7 +489,7 @@ if prepared.get("type") != "br_transaction_prepare_report" or prepared.get("stat
     raise SystemExit(f"Translation transaction was not prepared: {prepared!r}")
 if prepared.get("commit_enabled") is not True:
     raise SystemExit(f"Prepared transaction does not expose explicit commit: {prepared!r}")
-if prepared.get("format_version") != 5:
+if prepared.get("format_version") != 6:
     raise SystemExit(f"Unexpected transaction prepare format: {prepared!r}")
 if prepared.get("baseline_action") != "created" or not prepared.get("baseline_id"):
     raise SystemExit(f"Persistent baseline was not created: {prepared!r}")
@@ -466,6 +517,26 @@ if status.get("transaction_count") != 1 or status.get("transactions", [{}])[0].g
     raise SystemExit(f"Prepared transaction was not discoverable: {status!r}")
 print("Verified translation payloads were staged from an immutable persistent baseline with backups and a journal; installation still required explicit confirmation.")
 PYTRANSACTIONPREPARE
+
+  # While the transaction is still prepared, its verified rollback store is alive.
+  # This is the correct point to prove baseline classification semantics. Terminal
+  # rollback/removal intentionally retires first-install baseline storage afterwards.
+  printf 'synthetic-game-update' > "$PAYLOAD_PREVIEW_TEST_ROOT/game/DATA/PACK01.PAK"
+  XDG_STATE_HOME="$TRANSACTION_PREPARE_STATE_ROOT" \
+    "$BUILD_DIR/blue-reflection-patcher-linux-x86_64" baseline-status \
+      --game-dir "$PAYLOAD_PREVIEW_TEST_ROOT/game" \
+      --json "$BASELINE_CHANGED_STATUS_REPORT"
+  printf 'stock-DATA/PACK01.PAK' > "$PAYLOAD_PREVIEW_TEST_ROOT/game/DATA/PACK01.PAK"
+
+  python3 - "$BASELINE_CHANGED_STATUS_REPORT" <<'PYPREPAREDBASELINECHANGE'
+import json
+import sys
+from pathlib import Path
+changed = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))["inspection"]
+if changed.get("status") != "mixed_changes":
+    raise SystemExit(f"Prepared persistent baseline did not conservatively classify a changed installation: {changed!r}")
+print("Prepared persistent baseline classifies changed files conservatively while its rollback source is still live.")
+PYPREPAREDBASELINECHANGE
 
   if XDG_STATE_HOME="$TRANSACTION_PREPARE_STATE_ROOT" \
       "$BUILD_DIR/blue-reflection-patcher-linux-x86_64" transaction-prepare \
@@ -579,22 +650,30 @@ PYTRANSACTIONCOMMIT
       --game-dir "$PAYLOAD_PREVIEW_TEST_ROOT/game" \
       --json "$INSTALLATION_ROLLED_BACK_STATUS_REPORT"
 
+  XDG_STATE_HOME="$TRANSACTION_PREPARE_STATE_ROOT" \
+    "$BUILD_DIR/blue-reflection-patcher-linux-x86_64" baseline-status \
+      --game-dir "$PAYLOAD_PREVIEW_TEST_ROOT/game" \
+      --json "$BASELINE_STATUS_REPORT"
+
   game_hashes_after_rollback="$(find "$PAYLOAD_PREVIEW_TEST_ROOT/game" -type f -print0 | sort -z | xargs -0 sha256sum)"
   [[ "$game_hashes_after_rollback" == "$game_hashes_before" ]] || fail "Public rollback did not restore synthetic game files"
 
-  python3 - "$TRANSACTION_ROLLBACK_REPORT" "$INSTALLATION_ROLLED_BACK_STATUS_REPORT" <<'PYTRANSACTIONROLLBACK'
+  python3 - "$TRANSACTION_ROLLBACK_REPORT" "$INSTALLATION_ROLLED_BACK_STATUS_REPORT" "$BASELINE_STATUS_REPORT" <<'PYTRANSACTIONROLLBACK'
 import json
 import sys
 from pathlib import Path
 rollback = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
 status = json.loads(Path(sys.argv[2]).read_text(encoding="utf-8"))
+baseline = json.loads(Path(sys.argv[3]).read_text(encoding="utf-8"))["inspection"]
 if rollback.get("status") != "rolled_back" or rollback.get("game_files_modified") is not True:
     raise SystemExit(f"Transaction was not publicly rolled back: {rollback!r}")
 if rollback.get("active_after_rollback") is not False:
     raise SystemExit(f"First-install rollback unexpectedly retained an active state: {rollback!r}")
-if status.get("status") != "inactive_matches_known_baseline":
-    raise SystemExit(f"Rolled-back installation does not match its persistent baseline: {status!r}")
-print("Explicit rollback restored the persistent baseline and cleared the first active installation state.")
+if status.get("status") != "untracked":
+    raise SystemExit(f"Terminal first-install rollback did not clear managed installation state: {status!r}")
+if baseline.get("status") != "not_captured" or baseline.get("baseline_count") != 0:
+    raise SystemExit(f"Terminal first-install rollback retained obsolete baseline storage: {baseline!r}")
+print("Explicit rollback restored the original files, cleared active state, and retired now-unneeded first-install baseline storage.")
 PYTRANSACTIONROLLBACK
 
   printf '{"status":"ok","archives":[]}\n' \
@@ -738,41 +817,23 @@ PYGUIDEDCHECK
       --game-dir "$PAYLOAD_PREVIEW_TEST_ROOT/game" \
       --json "$GUIDED_INSTALL_STATUS_REPORT"
 
-  python3 - "$GUIDED_INSTALL_STATUS_REPORT" <<'PYGUIDEDREMOVECHECK'
-import json
-import sys
-from pathlib import Path
-status = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
-if status.get("status") != "inactive_matches_known_baseline":
-    raise SystemExit(f"Guided complete removal did not retire active state at baseline: {status!r}")
-print("Guided start manages an active installation and removes the complete managed update chain back to the persistent baseline only after explicit confirmation.")
-PYGUIDEDREMOVECHECK
-
   XDG_STATE_HOME="$TRANSACTION_PREPARE_STATE_ROOT" \
     "$BUILD_DIR/blue-reflection-patcher-linux-x86_64" baseline-status \
       --game-dir "$PAYLOAD_PREVIEW_TEST_ROOT/game" \
       --json "$BASELINE_STATUS_REPORT"
 
-  printf 'synthetic-game-update' > "$PAYLOAD_PREVIEW_TEST_ROOT/game/DATA/PACK01.PAK"
-  XDG_STATE_HOME="$TRANSACTION_PREPARE_STATE_ROOT" \
-    "$BUILD_DIR/blue-reflection-patcher-linux-x86_64" baseline-status \
-      --game-dir "$PAYLOAD_PREVIEW_TEST_ROOT/game" \
-      --json "$BASELINE_CHANGED_STATUS_REPORT"
-  python3 - "$BASELINE_STATUS_REPORT" "$BASELINE_CHANGED_STATUS_REPORT" <<'PYBASELINESTATUS'
+  python3 - "$GUIDED_INSTALL_STATUS_REPORT" "$BASELINE_STATUS_REPORT" <<'PYGUIDEDREMOVECHECK'
 import json
 import sys
 from pathlib import Path
-
-steady = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))["inspection"]
-changed = json.loads(Path(sys.argv[2]).read_text(encoding="utf-8"))["inspection"]
-if steady.get("status") != "matches_known_baseline" or steady.get("baseline_count") != 1:
-    raise SystemExit(f"Persistent baseline was lost after transaction discard: {steady!r}")
-if changed.get("status") != "mixed_changes":
-    raise SystemExit(f"Changed installation was not classified conservatively: {changed!r}")
-print("Persistent baselines survive transaction discard and classify a changed installation without assuming whether it is a game update or an external modification.")
-PYBASELINESTATUS
-
-  printf 'stock-DATA/PACK01.PAK' > "$PAYLOAD_PREVIEW_TEST_ROOT/game/DATA/PACK01.PAK"
+status = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+baseline = json.loads(Path(sys.argv[2]).read_text(encoding="utf-8"))["inspection"]
+if status.get("status") != "untracked":
+    raise SystemExit(f"Guided complete removal did not clear managed installation state: {status!r}")
+if baseline.get("status") != "not_captured" or baseline.get("baseline_count") != 0:
+    raise SystemExit(f"Guided complete removal retained obsolete baseline storage: {baseline!r}")
+print("Guided complete removal restored original files, cleared managed state and retired terminal baseline storage after explicit confirmation.")
+PYGUIDEDREMOVECHECK
 
   rm -rf -- "$COMPOSITION_PREVIEW_TEST_ROOT"
   mkdir -p -- "$COMPOSITION_PREVIEW_TEST_ROOT/project/workstreams/core" \
@@ -1187,9 +1248,7 @@ PYCOMPOSEBAD
     --bundle "$DEVELOPMENT_BUNDLE" >/dev/null
   "$BUILD_DIR/blue-reflection-patcher-linux-x86_64" plan \
     --bundle "$DEVELOPMENT_BUNDLE" \
-    --root "$BR1_ORIGINAL_ROOT" \
-    --root "$BR1_QUARTET_ROOT" \
-    --root "$BR_SECOND_LIGHT_ROOT" \
+    "${DETECTION_ROOT_ARGS[@]}" \
     --json "$REPORT_DIR/BR_PATCHER_DEVELOPMENT_PLAN.json"
 else
   printf 'go\tskipped\t-\tGo compiler not installed; source validation only\n' \

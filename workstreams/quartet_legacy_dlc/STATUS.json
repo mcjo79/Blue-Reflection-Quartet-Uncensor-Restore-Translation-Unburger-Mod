@@ -3,7 +3,7 @@
   "format_version": 2,
   "workstream_id": "quartet_legacy_dlc",
   "version": "0.2.2",
-  "status": "a21_runtime_root_fixed_linux_full_dlc_pass_windows_validation_pending",
+  "status": "runtime_validated_pc",
   "production_owner": "unified_go_patcher",
   "core_capability": "quartet_content_composition_v2",
   "scope": {
@@ -33,7 +33,7 @@
   "runtime_validation": {
     "blue_reflection_dlc": "pass",
     "second_light_reference_implementation": "pass",
-    "second_light_unburger_go_implementation": "Core 0.0.105 full Second Light DLC runtime PASS on Linux: Second Light starts, restored costumes load, and restored scenes triggered after loading an external/converted save and returning to school. Windows full-DLC runtime validation remains pending. Core 0.0.106 changes only Windows progress rendering."
+    "second_light_unburger_go_implementation": "Core 0.0.107 user runtime PASS on Windows and Linux: DLC restoration works, Translation is inserted, and combined .unburger-assets build/read works."
   },
   "implementation_contract": {
     "reference_python_code_copied": false,
@@ -51,9 +51,22 @@
       "blue_reflection_dlc_if_selected",
       "second_light_dlc_if_selected",
       "quartet_restoration",
+      "quartet_movie_restoration",
       "blue_reflection_translation"
     ],
     "translation_last": true
   },
-  "next_stage": "Windows full Second Light DLC runtime validation, then restored-content and Translation coverage/intersection verification"
+  "next_stage": "Ongoing content spot-checks and UNCENSOR work; no Windows/Linux core 0.0.107 DLC blocker remains.",
+  "runtime_status": {
+    "second_light_unburger_go_implementation": "Core 0.0.107 user runtime PASS on Windows and Linux: DLC restoration works, Translation is inserted, and combined .unburger-assets build/read works."
+  },
+  "current_runtime_summary": {
+    "core_baseline": "0.0.107 user runtime PASS on Windows and Linux",
+    "blue_reflection_dlc": "PASS",
+    "second_light_dlc": "PASS",
+    "translation_composition": "PASS",
+    "combined_unburger_assets_build_and_read": "PASS",
+    "br1_save_access": "required for restored BR1 wardrobe/Tropical Island access in existing/new saves under current method",
+    "second_light_native_quartet_save_access": "no mandatory save patch; story/data re-gating is canonical"
+  }
 }

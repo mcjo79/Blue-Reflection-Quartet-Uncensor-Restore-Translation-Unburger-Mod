@@ -50,7 +50,7 @@
     {
       "module_id": "blue_reflection_translation",
       "display_name": "BLUE REFLECTION translation revision",
-      "description": "Revised English translation and UNBURGER MOD title marker for the original game or all four Quartet partitions (b1 BLUE REFLECTION, b2 RAY, b3 SUN, b4 Second Light).",
+      "description": "Revised English translation for the original game or all four Quartet partitions (b1 BLUE REFLECTION, b2 RAY, b3 SUN, b4 Second Light).",
       "module_type": "translation",
       "supported_targets": [
         "blue_reflection_original",
@@ -68,7 +68,7 @@
     {
       "module_id": "quartet_restoration",
       "display_name": "Quartet restoration / UNCENSOR",
-      "description": "Restoration / UNCENSOR module for BLUE REFLECTION Quartet. Installation combinations remain fail-closed until the selected profiles are runtime-validated.",
+      "description": "Runtime-validated Quartet restoration / UNCENSOR module. The standard release currently includes the approved bathroom water restoration; experimental restoration research is not included.",
       "module_type": "restoration",
       "supported_targets": [
         "blue_reflection_quartet"
@@ -82,25 +82,43 @@
       "source_targets": []
     },
     {
-      "module_id": "quartet_legacy_dlc",
-      "display_name": "Quartet legacy DLC adapter",
-      "description": "Manifest-driven dry BKN legacy-DLC adapter. The DLC workstream owns the active generation; core enforces a bounded two-PAK all-or-none policy and publishes shared PACK12 only once when combined with Translation.",
-      "module_type": "dlc_adapter",
+      "module_id": "quartet_movie_restoration",
+      "display_name": "UNCENSOR · Restored movie cutscenes",
+      "description": "Optional restored versions of the three censored BLUE REFLECTION movie cutscenes, installed as Quartet-compatible VP9/WebM files.",
+      "module_type": "restoration_addon",
       "supported_targets": [
         "blue_reflection_quartet"
       ],
-      "default_targets": [],
+      "default_targets": [
+        "blue_reflection_quartet"
+      ],
+      "dependencies": [
+        "quartet_restoration"
+      ],
+      "conflicts": [],
+      "selectable": true,
+      "source_targets": []
+    },
+    {
+      "module_id": "quartet_legacy_dlc",
+      "display_name": "Quartet DLC restoration",
+      "description": "Restores DLC and bonus content from BLUE REFLECTION (2017) and BLUE REFLECTION: Second Light into their Quartet partitions. Choose either source game or both; both are enabled by default.",
+      "module_type": "dlc_restoration",
+      "supported_targets": [
+        "blue_reflection_quartet"
+      ],
+      "default_targets": [
+        "blue_reflection_quartet"
+      ],
       "dependencies": [],
       "conflicts": [],
       "selectable": true,
-      "source_targets": [
-        "blue_reflection_original"
-      ]
+      "source_targets": []
     },
     {
       "module_id": "second_light_translation",
       "display_name": "BLUE REFLECTION: Second Light translation revision",
-      "description": "Revised English translation and UNBURGER MOD title marker for Second Light.",
+      "description": "Revised English translation for Second Light.",
       "module_type": "translation",
       "supported_targets": [
         "second_light_original"

@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 
+	"local/blue-reflection-patcher/internal/br1rebuild"
 	"local/blue-reflection-patcher/internal/translationbundle"
 )
 
@@ -23,17 +24,21 @@ type releaseManifest struct {
 	ModuleOrder            []string       `json:"quartet_module_order"`
 	LargeGameArchives      bool           `json:"large_game_archives_included"`
 	RuntimeMaterialization bool           `json:"runtime_materialization"`
+	CanonicalRestoration   bool           `json:"canonical_restoration_payload_embedded"`
 }
+
+var buildWetSchoolCanonicalPayload = br1rebuild.BuildWetSchoolCanonicalPayload
 
 func main() {
 	fs := flag.NewFlagSet("unburger-release", flag.ExitOnError)
 	project := fs.String("project-root", "", "project root")
 	stage := fs.String("stage-root", "", "release staging root")
+	br1CanonicalSource := fs.String("br1-canonical-source", "", "verified BLUE REFLECTION (2017) source used only at release-build time for canonical UNCENSOR payload")
 	_ = fs.Parse(os.Args[1:])
-	if *project == "" || *stage == "" {
-		fatal("--project-root and --stage-root are required")
+	if *project == "" || *stage == "" || *br1CanonicalSource == "" {
+		fatal("--project-root, --stage-root and --br1-canonical-source are required")
 	}
-	if err := stageRelease(*project, *stage); err != nil {
+	if err := stageRelease(*project, *stage, *br1CanonicalSource); err != nil {
 		fatal(err.Error())
 	}
 }
@@ -50,7 +55,7 @@ func readVersion(path string) (string, error) {
 	return v, nil
 }
 
-func stageRelease(project, stage string) error {
+func stageRelease(project, stage, br1CanonicalSource string) error {
 	project, _ = filepath.Abs(project)
 	stage, _ = filepath.Abs(stage)
 	if err := os.RemoveAll(stage); err != nil {
@@ -85,12 +90,20 @@ func stageRelease(project, stage string) error {
 	if err := os.WriteFile(reportPath, append(reportData, '\n'), 0o644); err != nil {
 		return err
 	}
+	wetRoot := filepath.Join(stage, "content", "restoration", "wet-school")
+	wetManifest, err := buildWetSchoolCanonicalPayload(br1CanonicalSource, wetRoot)
+	if err != nil {
+		return fmt.Errorf("build canonical wet-school UNCENSOR payload: %w", err)
+	}
+	if len(wetManifest.SourceMembers) != 30 {
+		return fmt.Errorf("canonical wet-school payload contains %d members, expected 30", len(wetManifest.SourceMembers))
+	}
 	targets := make([]string, 0, len(stats.TargetMembers))
 	for id := range stats.TargetMembers {
 		targets = append(targets, id)
 	}
 	sort.Strings(targets)
-	manifest := releaseManifest{Type: "unburger_release_manifest", FormatVersion: 3, CoreVersion: coreVersion, TranslationVersion: translationVersion, TranslationTargets: targets, TranslationMembers: stats.TargetMembers, TranslationRecords: stats.TargetRecords, ModuleOrder: []string{"quartet_legacy_dlc", "quartet_restoration", "quartet_movie_restoration", "blue_reflection_translation"}, LargeGameArchives: false, RuntimeMaterialization: true}
+	manifest := releaseManifest{Type: "unburger_release_manifest", FormatVersion: 4, CoreVersion: coreVersion, TranslationVersion: translationVersion, TranslationTargets: targets, TranslationMembers: stats.TargetMembers, TranslationRecords: stats.TargetRecords, ModuleOrder: []string{"quartet_legacy_dlc", "quartet_restoration", "quartet_movie_restoration", "blue_reflection_translation"}, LargeGameArchives: false, RuntimeMaterialization: true, CanonicalRestoration: true}
 	data, _ := json.MarshalIndent(manifest, "", "  ")
 	return os.WriteFile(filepath.Join(stage, "RELEASE_MANIFEST.json"), append(data, '\n'), 0o644)
 }

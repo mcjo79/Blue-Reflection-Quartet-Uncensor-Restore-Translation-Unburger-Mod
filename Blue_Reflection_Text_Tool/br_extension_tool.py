@@ -152,16 +152,37 @@ def validate_module_manifest(
     unknown_dependencies = sorted(set(manifest["dependencies"]) - known_modules)
     if unknown_dependencies:
         errors.append(f"unknown dependencies: {', '.join(unknown_dependencies)}")
-    if manifest["module_type"] in {"restoration", "dlc_adapter"}:
-        if manifest["default_enabled"]:
-            errors.append("optional module must not be enabled by default")
-        policy = manifest.get("distribution_policy", {})
-        if manifest["module_type"] == "restoration":
-            if policy.get("contains_proprietary_assets") is not False:
-                errors.append("restoration policy must forbid bundled proprietary assets")
-        if manifest["module_type"] == "dlc_adapter":
-            if policy.get("contains_paid_dlc_assets") is not False:
-                errors.append("DLC policy must forbid bundled paid DLC assets")
+    module_type = manifest["module_type"]
+    allowed_module_types = {
+        "translation", "restoration", "restoration_addon",
+        "dlc_restoration", "dlc_adapter",
+    }
+    if module_type not in allowed_module_types:
+        errors.append(f"unsupported module_type: {module_type}")
+    policy = manifest.get("distribution_policy", {})
+    if module_type == "restoration":
+        # A canonical restoration may either be fully data-driven or carry a
+        # bounded proprietary donor subset when that subset is part of the
+        # always-shipped encrypted runtime bundle.  In the latter case the
+        # public package must remain self-contained and must not expose the
+        # donor files as loose release artifacts.
+        if policy.get("contains_proprietary_assets") is True:
+            if policy.get("canonical_payload_encrypted") is not True:
+                errors.append("restoration proprietary payload must be encrypted")
+            if policy.get("canonical_payload_always_shipped") is not True:
+                errors.append("restoration proprietary payload must be always shipped")
+            if policy.get("public_loose_proprietary_assets") is not False:
+                errors.append("restoration policy must forbid loose public proprietary assets")
+            if policy.get("requires_external_source_for_runtime") is not False:
+                errors.append("canonical restoration must not require an external source at runtime")
+        elif policy.get("contains_proprietary_assets") is not False:
+            errors.append("restoration contains_proprietary_assets must be boolean")
+    if module_type in {"dlc_restoration", "dlc_adapter"}:
+        # DLC source material is read from user-owned installations or the
+        # local encrypted .unburger-assets source bundle.  The public payload
+        # must never embed the raw source-game archives/assets.
+        if policy.get("contains_raw_game_assets") is not False and policy.get("contains_paid_dlc_assets") is not False:
+            errors.append("DLC policy must forbid bundled raw source-game assets")
     return errors
 
 
@@ -437,14 +458,22 @@ def cmd_validate_project(args: argparse.Namespace) -> int:
         errors.extend(f"{row['module_id']}: {message}" for message in module_errors)
 
         registries = manifest.get("registries", {})
-        if row["module_type"] == "restoration":
-            reg_path = project_root / registries.get("items", "")
-            reg_errors = validate_restoration_registry(load_json(reg_path))
-            errors.extend(f"quartet_restoration registry: {message}" for message in reg_errors)
-        elif row["module_type"] == "dlc_adapter":
-            reg_path = project_root / registries.get("content", "")
-            reg_errors = validate_dlc_registry(load_json(reg_path))
-            errors.extend(f"quartet_legacy_dlc registry: {message}" for message in reg_errors)
+        if row["module_id"] == "quartet_restoration":
+            rel = registries.get("items")
+            if not rel:
+                errors.append("quartet_restoration: missing registries.items")
+            else:
+                reg_path = project_root / rel
+                reg_errors = validate_restoration_registry(load_json(reg_path))
+                errors.extend(f"quartet_restoration registry: {message}" for message in reg_errors)
+        elif row["module_id"] == "quartet_legacy_dlc":
+            rel = registries.get("content")
+            if not rel:
+                errors.append("quartet_legacy_dlc: missing registries.content")
+            else:
+                reg_path = project_root / rel
+                reg_errors = validate_dlc_registry(load_json(reg_path))
+                errors.extend(f"quartet_legacy_dlc registry: {message}" for message in reg_errors)
 
     # Validate independent composition profiles.
     profiles_report: list[dict[str, Any]] = []
@@ -519,6 +548,9 @@ def cmd_validate_project(args: argparse.Namespace) -> int:
     dlc_deps = set(module_by_id["quartet_legacy_dlc"].get("dependencies", []))
     if "quartet_legacy_dlc" in restoration_deps or "quartet_restoration" in dlc_deps:
         errors.append("restoration and DLC adapter must remain independently selectable")
+    movie_deps = set(module_by_id["quartet_movie_restoration"].get("dependencies", []))
+    if "quartet_restoration" not in movie_deps:
+        errors.append("movie restoration must remain a child dependency of quartet_restoration")
 
     report = {
         "type": "br_project_base_validation",
@@ -531,10 +563,12 @@ def cmd_validate_project(args: argparse.Namespace) -> int:
         "profiles": profiles_report,
         "translation": translation_report,
         "policy": {
-            "restoration_default_enabled": False,
-            "dlc_default_enabled": False,
+            "restoration_default_enabled": bool(module_by_id["quartet_restoration"].get("default_enabled")),
+            "movie_restoration_default_enabled": bool(module_by_id["quartet_movie_restoration"].get("default_enabled")),
+            "dlc_default_enabled": bool(module_by_id["quartet_legacy_dlc"].get("default_enabled")),
+            "movie_depends_on_restoration": "quartet_restoration" in set(module_by_id["quartet_movie_restoration"].get("dependencies", [])),
             "restoration_and_dlc_independent": True,
-            "public_module_assets_forbidden": True,
+            "public_raw_source_game_assets_forbidden": True,
             "switch_adapters_share_canonical_translation": True,
         },
         "proprietary_files_under_modules": proprietary_files,

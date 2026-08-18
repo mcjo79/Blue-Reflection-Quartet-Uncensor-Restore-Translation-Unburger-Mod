@@ -31,6 +31,13 @@ ALLOWED_CONFLICT_POLICIES = {
     "skip_unknown",
     "user_choice",
 }
+ALLOWED_MODULE_TYPES = {
+    "translation",
+    "restoration",
+    "restoration_addon",
+    "dlc_restoration",
+    "dlc_adapter",  # historical/back-compat manifests only
+}
 PROPRIETARY_EXTENSIONS = {
     ".pak", ".ebm", ".ebd", ".g1m", ".g1t", ".ktid", ".kts",
     ".awb", ".acb", ".hca", ".ogg", ".wav", ".mp4", ".wmv",
@@ -126,14 +133,22 @@ def validate_manifest(manifest: dict[str, Any]) -> list[str]:
             continue
         module_ids.add(module_id)
         module_map[module_id] = module
+        module_type = module.get("module_type")
+        if module_type not in ALLOWED_MODULE_TYPES:
+            errors.append(f"module {module_id} has unsupported module_type {module_type!r}")
         supported = set(module.get("supported_targets", []))
         if not supported or not supported <= target_ids:
             errors.append(f"module {module_id} has invalid supported targets")
         defaults = set(module.get("default_targets", []))
         if not defaults <= supported:
             errors.append(f"module {module_id} defaults outside supported targets")
-        if module.get("module_type") == "dlc_adapter" and defaults:
-            errors.append(f"DLC adapter module {module_id} must remain opt-in")
+        if module_type == "dlc_adapter" and defaults:
+            errors.append(f"historical DLC adapter module {module_id} must remain opt-in")
+        dependencies = module.get("dependencies", [])
+        if not isinstance(dependencies, list):
+            errors.append(f"module {module_id} dependencies must be an array")
+        elif module_type == "restoration_addon" and not dependencies:
+            errors.append(f"restoration add-on {module_id} must declare its parent dependency")
         source_targets = set(module.get("source_targets", []))
         if not source_targets <= target_ids:
             errors.append(f"module {module_id} has invalid source targets")

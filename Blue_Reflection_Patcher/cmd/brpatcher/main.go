@@ -45,6 +45,8 @@ func main() {
 		err = commandDetect(os.Args[2:])
 	case "inspect-bundle":
 		err = commandInspectBundle(os.Args[2:])
+	case "create-dlc-assets":
+		err = commandCreateDLCAssets(os.Args[2:])
 	case "plan":
 		err = commandPlan(os.Args[2:])
 	case "state-path":
@@ -256,6 +258,8 @@ func commandStart(args []string) error {
 			return managementErr
 		}
 		switch managementAction {
+		case guidedManagementCreateDLCAssets:
+			return chooseCreateDLCAssetsFromStartup(items[0], projectRoot, releaseRoot, legacySource, legacySteam, secondLightSource, os.Stdin, os.Stdout)
 		case guidedManagementRemove:
 			progress := newTransactionProgressRenderer(os.Stdout)
 			progress.Status("rollback", "load_state", "Reading rollback metadata")
@@ -547,6 +551,7 @@ Commands:
   version
   detect [--game-dir PATH] [--prompt] [--json FILE]
   inspect-bundle --bundle FILE
+  create-dlc-assets --project-root PATH --quartet-root PATH [--source-root PATH|--legacy-steam PATH] [--second-light-source PATH] [--output FILE] [--force] [--no-prompt]
   plan --bundle FILE [--modules ID,ID] [--root PATH] [--json FILE]
   state-path [--app-id ID]
   payload-preview [--game-dir PATH] [--modules ID,ID|none] [--project-root PATH] [--json FILE]
@@ -575,7 +580,7 @@ Commands:
   quartet-field-profile-rollback --project-root PATH --game-root PATH
   quartet-local-profile-list --project-root PATH --game-root PATH
 
-The guided start command detects the game, selects target-aware modules, previews verified payloads,
+The guided start command detects the game, exposes a read-only reusable encrypted DLC source-bundle builder for Quartet, selects target-aware modules, previews verified payloads,
 shows and manages an existing active installation, offers complete removal to the preserved baseline, offers a local rebuild when development payloads are missing or stale, and then offers Install / update now, Prepare only, or Cancel. Installation preserves versioned baselines,
 stages verified payloads, commits atomically per file, records active state and remains rollback-capable.
 Run the binary directly from a game directory to use the complete guided workflow.

@@ -29,9 +29,14 @@ python3 "$TOOL" validate-project \
   --require-translation \
   --output "$REPORT_JSON"
 
+python3 -m unittest -q \
+  workstreams.core.tests.test_distribution_catalog_parity \
+  workstreams.core.tests.test_canonical_state_consistency
+
 rm -f -- "$REPORT_PACKAGE"
 tar -C "$PROJECT_ROOT" --zstd -cf "$REPORT_PACKAGE" \
   config/project_version \
+  config/canonical_state.json \
   config/modules.tsv \
   config/series_targets.tsv \
   config/quartet_archive_equivalence.tsv \
@@ -41,12 +46,13 @@ tar -C "$PROJECT_ROOT" --zstd -cf "$REPORT_PACKAGE" \
   titles/blue_reflection/modules/translation/module.json \
   titles/blue_reflection/modules/quartet_restoration/module.json \
   titles/blue_reflection/modules/quartet_restoration/registry/restoration_items.json \
+  titles/blue_reflection/modules/quartet_movie_restoration/module.json \
   titles/blue_reflection/modules/quartet_legacy_dlc/module.json \
   titles/blue_reflection/modules/quartet_legacy_dlc/registry/content_registry.json \
   titles/second_light/config/project.json \
   titles/second_light/translation/translation_manifest.json \
   titles/second_light/modules/translation/module.json
 
-printf '\nValidated canonical translation bases and optional-module architecture.\n'
-printf 'Restoration and DLC modules remain disabled until stable text repack.\n'
+printf '\nValidated canonical translation bases and current module architecture.\n'
+printf 'Quartet Translation, UNCENSOR/movie restoration and DLC metadata agree with the current embedded catalog.\n'
 printf '\nCreated report package:\n  %s\n' "$REPORT_PACKAGE"

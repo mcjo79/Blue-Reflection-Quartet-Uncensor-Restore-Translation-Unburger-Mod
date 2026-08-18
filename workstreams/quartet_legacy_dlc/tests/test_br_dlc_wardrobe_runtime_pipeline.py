@@ -19,7 +19,8 @@ class PipelineTests(unittest.TestCase):
             self.assertEqual(r["field1c"],0)
             self.assertTrue(r["visible"])
     def test_manifest_scope(self):
-        with open(ROOT/"runtime_payloads/bkn_dry_generation10/manifest.json") as f:\n            d=json.load(f)
+        with open(ROOT/"runtime_payloads/bkn_dry_generation10/manifest.json") as f:
+            d=json.load(f)
         self.assertEqual(d["runtime_semantics"]["logical_indices"],list(range(56,64)))
         self.assertFalse(d["runtime_semantics"]["global_show_all"])
         self.assertFalse(d["scope"]["pc08"])

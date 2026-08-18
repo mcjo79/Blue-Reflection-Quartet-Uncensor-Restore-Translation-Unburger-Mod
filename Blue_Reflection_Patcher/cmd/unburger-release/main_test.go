@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"local/blue-reflection-patcher/internal/br1rebuild"
 )
 
 func writeFixtureFile(t *testing.T, root, rel string, data []byte) {
@@ -45,10 +47,26 @@ func minimalProject(t *testing.T) string {
 	return project
 }
 
+func installCanonicalStageFixture(t *testing.T) {
+	t.Helper()
+	original := buildWetSchoolCanonicalPayload
+	buildWetSchoolCanonicalPayload = func(sourceRoot, payloadRoot string) (br1rebuild.WetSchoolCanonicalSourceManifest, error) {
+		if err := os.MkdirAll(filepath.Join(payloadRoot, "source", "DATA"), 0o755); err != nil {
+			return br1rebuild.WetSchoolCanonicalSourceManifest{}, err
+		}
+		writeFixtureFile(t, payloadRoot, "MANIFEST.json", []byte("{\"type\":\"fixture\"}\n"))
+		writeFixtureFile(t, payloadRoot, "source/DATA/PACK00_02.PAK", []byte("fixture"))
+		members := make([]br1rebuild.SourceAssetMember, 30)
+		return br1rebuild.WetSchoolCanonicalSourceManifest{SourceMembers: members}, nil
+	}
+	t.Cleanup(func() { buildWetSchoolCanonicalPayload = original })
+}
+
 func TestStageReleaseBuildsCanonicalRecordBundle(t *testing.T) {
 	project := minimalProject(t)
+	installCanonicalStageFixture(t)
 	stage := filepath.Join(t.TempDir(), "stage")
-	if err := stageRelease(project, stage); err != nil {
+	if err := stageRelease(project, stage, "fixture-source"); err != nil {
 		t.Fatalf("stageRelease: %v", err)
 	}
 	for _, rel := range []string{"content/translation/records.v1.json", "content/translation/build-report.json", "RELEASE_MANIFEST.json"} {
@@ -64,7 +82,7 @@ func TestStageReleaseBuildsCanonicalRecordBundle(t *testing.T) {
 	if err := json.Unmarshal(blob, &manifest); err != nil {
 		t.Fatal(err)
 	}
-	if manifest.FormatVersion != 3 || manifest.TranslationVersion != "0.0.203" || manifest.LargeGameArchives || !manifest.RuntimeMaterialization {
+	if manifest.FormatVersion != 4 || manifest.TranslationVersion != "0.0.203" || manifest.LargeGameArchives || !manifest.RuntimeMaterialization || !manifest.CanonicalRestoration {
 		t.Fatalf("unexpected manifest: %+v", manifest)
 	}
 	if manifest.TranslationRecords["blue_reflection_original"] != 1 || manifest.TranslationRecords["blue_reflection_quartet"] != 1 {
@@ -74,11 +92,12 @@ func TestStageReleaseBuildsCanonicalRecordBundle(t *testing.T) {
 
 func TestStageReleaseDoesNotRequireLooseOrRepackedArchives(t *testing.T) {
 	project := minimalProject(t)
+	installCanonicalStageFixture(t)
 	stage := filepath.Join(t.TempDir(), "stage")
 	if _, err := os.Stat(filepath.Join(project, ".local")); !os.IsNotExist(err) {
 		t.Fatalf("fixture unexpectedly has .local")
 	}
-	if err := stageRelease(project, stage); err != nil {
-		t.Fatalf("record-only release should not require developer repacks: %v", err)
+	if err := stageRelease(project, stage, "fixture-source"); err != nil {
+		t.Fatalf("release staging should not require developer repacks: %v", err)
 	}
 }

@@ -1,0 +1,119 @@
+{
+  "type": "br_canonical_project_state",
+  "format_version": 1,
+  "core_version": "0.0.116",
+  "runtime_baseline": "0.0.108",
+  "cleanup_scope": "core 0.0.116 exposes the reusable encrypted DLC source-bundle builder directly in the Quartet installer while preserving core 0.0.115 self-contained UNCENSOR and quartet_restoration 0.2.05",
+  "source_of_truth_order": [
+    "current production code and BUILD_RELEASE.sh",
+    "config/canonical_state.json",
+    "latest explicit user runtime confirmations",
+    "latest accepted evidence returns",
+    "historical reports/prompts"
+  ],
+  "modules": {
+    "blue_reflection_translation": {
+      "version": "0.0.203",
+      "default_enabled": true,
+      "runtime": "user-confirmed composition PASS"
+    },
+    "quartet_restoration": {
+      "version": "0.2.05",
+      "default_enabled": true,
+      "canonical": [
+        "approved bathroom water restoration",
+        "runtime-validated PC00-PC14 wet-school SCL_W restoration"
+      ],
+      "experimental_research": "remaining restoration research is not automatically included; wet-school opacity is production-closed"
+    },
+    "quartet_movie_restoration": {
+      "default_enabled": true,
+      "dependency": "quartet_restoration",
+      "public_unburger_embedded": true,
+      "files": [
+        "CNG_PC00_00.webm",
+        "CNG_PC01_00.webm",
+        "CNG_PC02_00.webm"
+      ],
+      "runtime_playback_validation": "not asserted by this cleanup",
+      "release_input_policy": "three .local/Video/restored_webm WEBMs are normalized once and then treated as ready immutable canonical inputs; BUILD_RELEASE verifies/copies only and never remuxes them"
+    },
+    "quartet_legacy_dlc": {
+      "version": "0.2.2",
+      "default_enabled": true,
+      "source_families_default": [
+        "blue_reflection",
+        "second_light"
+      ],
+      "runtime_windows": "PASS",
+      "runtime_linux": "PASS",
+      "translation_composition": "PASS"
+    },
+    "second_light_translation": {
+      "default_enabled": true
+    }
+  },
+  "source_assets": {
+    "combined_bundle_build_and_read": "user runtime PASS",
+    "br1_frozen_logical_members": 1682,
+    "second_light_frozen_logical_members": 2942,
+    "combined_logical_members": 4624,
+    "movies_in_unburger_assets": false,
+    "release_assets_default": "reuse a verified current combined DLC bundle containing BR1 1682 + Second Light 2942; otherwise rebuild only for DLC source needs",
+    "release_assets_rebuild": "not required by wet-school UNCENSOR; --assets-rebuild remains an explicit DLC source-bundle rebuild control",
+    "reuse_verification": "existing sidecar SHA-256 when present; otherwise one-time full encrypted container/object/member verification before sidecar bootstrap; current BR1 anchor fingerprint + exact 1682 BR1 / 2942 Second Light logical counts",
+    "source_rebuild_provenance": "BR1 and standalone Second Light retail inputs are whole-file size+SHA-256 gated by DLC_SOURCE_ARCHIVE_HASHES_V1.json only when a new .unburger-assets bundle is actually rebuilt",
+    "quartet_minimization_provenance": "Quartet target is structure/capability-gated and intentionally not whole-file hash-locked",
+    "remembered_path_policy": "remembered source roots are hints only; stale roots are rejected with the exact missing path before local config/autodetection fallback",
+    "br1_catalog_source": "asset rebuild always reads canonical charabase from DATA/PACK02_1.PAK; loose overrides are ignored",
+    "wet_school_frozen_logical_members": 30,
+    "wet_school_supplement": "none: canonical wet-school donors are embedded in the always-shipped encrypted .unburger runtime v4 payload, not .unburger-assets",
+    "local_user_bundle_builder": "core 0.0.116: Quartet startup menu can build and fully verify reusable encrypted UNBURGER_DLC_ASSETS_v3.unburger-assets from installed BR1 + Second Light; games are read-only and the bundle is DLC-only",
+    "local_builder_compression": "per-object zstd-19 when external zstd is available; pure-Go DEFLATE best-compression fallback otherwise (including dependency-free Windows public builds)",
+    "local_builder_output": "bundle plus whole-file .sha256 sidecar and local .build.json report; existing output is kept only after current combined 1682+2942 compatibility validation"
+  },
+  "save_policy": {
+    "blue_reflection_dlc": "Save Access remains required by current BR1 restoration method",
+    "second_light_dlc_native_quartet_save": "no mandatory save modification"
+  },
+  "uncensor": {
+    "ce01_040_wet_opacity": "CLOSED/PASS: true visible blouse mapped to phase-9 DrawIndexed(20559,0,0); H5ER3 minimal PC00 donor passed; H6 roster-wide exact Original SCL_W parent+G1T transplant passed visually for PC00-PC14 in gallery; production restoration integrated in core 0.0.115 / quartet_restoration 0.2.05",
+    "te01_290_pc04_udw": "ready inactive test profile; visually equivalent base UDW restoration proven; event save-gated",
+    "pc00_base_udw": "VISUALLY_EQUIVALENT_BASE_UDW per accepted true-camera/type8 return",
+    "true_camera_global": "336 true camera-bearing block diffs; 72 proven authored framing blocks; Type 8 is CameraCFieldMap with inline 0x741 state",
+    "towel_occlusion": "strong correlations exist but no towel promoted to PROVEN_VISUAL_OCCLUDER",
+    "wet_school_restoration": "runtime validated PC00-PC14; production replaces exactly 30 Quartet PACK10_02 members from canonical wet-school source embedded in the always-shipped encrypted .unburger runtime v4 payload; no external source game, .unburger-assets, GDB, or shader reconnect required"
+  },
+  "agent_role_policy": {
+    "codex": "large read-only research/RE only",
+    "primary_orchestrator": "implementation, cleanup, builds, patcher, assets, runtime-test packaging"
+  },
+  "latest_research": {
+    "codex_task_active": false,
+    "latest_return": {
+      "name": "BR_WET_VISIBLE_TORSO_VBIB_GROUP_AB_MAPPER_H4_20260817T205159Z.tar.zst",
+      "sha256": "0c30342e96df0d22a594d56c61c6210919053cbe08d41cec73c1ad970e6baafc",
+      "self_verify": "PASS",
+      "role": "runtime_visible_target_identity_evidence"
+    },
+    "wet_current_b1_profile": "3e1ac6e1304c42b0050839fbeada6e952722bdb486fbf1585d75ff4d82c7fed4",
+    "wet_secondary_static_b1_profile": "dd9977855bcd09cec66eb975636f891293d02cd60b1bd16ac674964b5ebc8087",
+    "wet_current_state_doc": "workstreams/quartet_restoration/WET_VISIBLE_BLOUSE_RUNTIME_TARGET_20260817.md",
+    "wet_next_owner": "production integration complete; next UNCENSOR investigation may proceed beyond wet-school opacity",
+    "wet_runtime_next_action": "none; H6 roster-wide gallery validation PASS",
+    "anti_loop": "Wet-school opacity is closed and production-integrated. Do not return to 2619/2559/0, S4 reconnect, DSGb, GDB capture, or further blouse-renderer search unless new contradictory runtime evidence appears."
+  },
+  "runtime_bundle": {
+    "format_version": 4,
+    "container": "opaque-encrypted-v4",
+    "encryption": "aes-256-gcm-chunked",
+    "compression": "tar+zstd-level-19",
+    "canonical_wet_school_members": 30,
+    "canonical_wet_school_capability": "quartet_wet_school_canonical_source_v1",
+    "quartet_movies_embedded": 3,
+    "translation_self_contained": true,
+    "uncensor_self_contained": true,
+    "unburger_assets_required_for_uncensor": false,
+    "retail_br1_required_for_uncensor_runtime": false
+  }
+}

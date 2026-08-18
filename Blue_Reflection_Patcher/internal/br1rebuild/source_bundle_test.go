@@ -66,6 +66,13 @@ func TestSourceAssetBundleLoadsAsHiddenSource(t *testing.T) {
 	if err := packageSourceAssetImage(stage, bundle, manifest); err != nil {
 		t.Fatal(err)
 	}
+	verifiedManifest, err := VerifySourceAssetBundle(bundle, anchorPath)
+	if err != nil {
+		t.Fatalf("deep source bundle verification failed: %v", err)
+	}
+	if verifiedManifest.SourceFingerprint != manifest.SourceFingerprint {
+		t.Fatalf("deep verification returned wrong manifest fingerprint: %s", verifiedManifest.SourceFingerprint)
+	}
 	foundBundle, found, err := FindCompatibleSourceAssetBundle(bundleDir, anchorPath)
 	if err != nil {
 		t.Fatal(err)
@@ -266,6 +273,67 @@ func TestEncryptedSourceAssetV3IsOpaqueAndRoundTrips(t *testing.T) {
 	}
 	if !bytes.Equal(roundtrip, payload) {
 		t.Fatal("encrypted v3 object did not round-trip byte-for-byte")
+	}
+}
+
+func TestEncryptedSourceAssetV3DeflateFallbackIsOpaqueAndRoundTrips(t *testing.T) {
+	oldLookup := sourceAssetsZstdLookup
+	sourceAssetsZstdLookup = func(string) (string, error) { return "", exec.ErrNotFound }
+	t.Cleanup(func() { sourceAssetsZstdLookup = oldLookup })
+	assetkey.InstallEmbeddedSeed(bytes.Repeat([]byte{0x6b}, 32))
+
+	stage := t.TempDir()
+	rel := "source/DATA/fallback-debug-name.bin"
+	payload := bytes.Repeat([]byte("FALLBACK-PLAINTEXT-CONTENT\n"), 256)
+	path := filepath.Join(stage, filepath.FromSlash(rel))
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, payload, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	manifest := SourceAssetManifest{
+		Type: "unburger_br1_dlc_source_assets", FormatVersion: SourceAssetsFormatVersion,
+		Capability: SourceAssetsCapability, ReconstructionCapability: "br1_legacy_content_rebuild_v1",
+		CleanAnchorCapability: SourceAnchorsCapability,
+		SourceMembers:         []SourceAssetMember{{Group: "fixture", ArchivePath: "DATA/PACK01.PAK", MemberPath: `\fixture\asset.bin`, Size: int64(len(payload)), SHA256: shaBytes(payload)}},
+		ImageFiles:            []SourceAssetImageFile{{Path: rel, Size: int64(len(payload)), SHA256: shaBytes(payload)}},
+	}
+	manifest.SourceFingerprint = sourceAssetFingerprint(manifest.SourceMembers)
+	manifest.CleanAnchorFingerprint = manifest.SourceFingerprint
+	bundle := filepath.Join(t.TempDir(), "fallback.unburger-assets")
+	if err := packageSourceAssetImageV3(stage, bundle, manifest); err != nil {
+		t.Fatal(err)
+	}
+	blob, err := os.ReadFile(bundle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(blob, []byte("fallback-debug-name")) || bytes.Contains(blob, []byte("FALLBACK-PLAINTEXT-CONTENT")) {
+		t.Fatal("encrypted deflate fallback leaks plaintext")
+	}
+	container, err := readSourceAssetV3Manifest(bundle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(container.Objects) != 1 || container.Objects[0].Compression != "deflate" {
+		t.Fatalf("fallback object did not record deflate compression: %+v", container.Objects)
+	}
+	in, err := os.Open(bundle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer in.Close()
+	dst := filepath.Join(t.TempDir(), "roundtrip.bin")
+	if err := extractSourceAssetV3Object(in, container.Objects[0], dst, manifest.ImageFiles[0], nil); err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(dst)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(got, payload) {
+		t.Fatal("encrypted deflate fallback did not round-trip byte-for-byte")
 	}
 }
 

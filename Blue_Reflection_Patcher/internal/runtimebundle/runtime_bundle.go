@@ -98,6 +98,14 @@ func PruneOlderRuntimeBundles(root string) ([]string, error) {
 }
 
 func runtimeBundleCoreVersion(path string) (string, error) {
+	if encrypted, err := isRuntimeV4(path); err == nil && encrypted {
+		r, err := openRuntimeV4(path)
+		if err != nil {
+			return "", err
+		}
+		defer r.Close()
+		return runtimeTarCoreVersion(r, 4, "encrypted runtime v4")
+	}
 	if zstd, err := isZstdRuntimeBundle(path); err != nil {
 		return "", err
 	} else if zstd {
@@ -106,28 +114,7 @@ func runtimeBundleCoreVersion(path string) (string, error) {
 			return "", err
 		}
 		defer f.Close()
-		tr := tar.NewReader(zstddec.NewReader(f))
-		for {
-			hdr, err := tr.Next()
-			if err == io.EOF {
-				break
-			}
-			if err != nil {
-				return "", fmt.Errorf("read zstd runtime bundle: %w", err)
-			}
-			if filepath.ToSlash(hdr.Name) != "RELEASE_MANIFEST.json" {
-				continue
-			}
-			var manifest releaseManifest
-			if err := json.NewDecoder(io.LimitReader(tr, 1<<20)).Decode(&manifest); err != nil {
-				return "", err
-			}
-			if manifest.Type != "unburger_release_manifest" || manifest.FormatVersion < 3 || strings.TrimSpace(manifest.CoreVersion) == "" {
-				return "", fmt.Errorf("unsupported zstd runtime bundle manifest")
-			}
-			return strings.TrimSpace(manifest.CoreVersion), nil
-		}
-		return "", fmt.Errorf("runtime bundle is missing RELEASE_MANIFEST.json")
+		return runtimeTarCoreVersion(f, 3, "zstd runtime")
 	}
 
 	// Legacy .unburger v2: ZIP/Deflate.
@@ -157,6 +144,34 @@ func runtimeBundleCoreVersion(path string) (string, error) {
 	}
 	return "", fmt.Errorf("runtime bundle is missing RELEASE_MANIFEST.json")
 }
+
+func runtimeTarCoreVersion(r io.Reader, minimumManifestVersion int, label string) (string, error) {
+	tr := tar.NewReader(zstddec.NewReader(r))
+	for {
+		hdr, err := tr.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return "", fmt.Errorf("read %s bundle: %w", label, err)
+		}
+		if filepath.ToSlash(hdr.Name) != "RELEASE_MANIFEST.json" {
+			continue
+		}
+		var manifest releaseManifest
+		if err := json.NewDecoder(io.LimitReader(tr, 1<<20)).Decode(&manifest); err != nil {
+			return "", err
+		}
+		if manifest.Type != "unburger_release_manifest" || manifest.FormatVersion < minimumManifestVersion || strings.TrimSpace(manifest.CoreVersion) == "" {
+			return "", fmt.Errorf("unsupported %s bundle manifest", label)
+		}
+		return strings.TrimSpace(manifest.CoreVersion), nil
+	}
+	return "", fmt.Errorf("runtime bundle is missing RELEASE_MANIFEST.json")
+}
+
+// CoreVersion reads the release version without materializing the bundle.
+func CoreVersion(path string) (string, error) { return runtimeBundleCoreVersion(path) }
 
 func isZstdRuntimeBundle(path string) (bool, error) {
 	f, err := os.Open(path)
@@ -261,6 +276,14 @@ func ResolveProjectRootTransient(root string) (string, func(), error) {
 }
 
 func extractRuntimeBundle(bundlePath, dst string) error {
+	if encrypted, err := isRuntimeV4(bundlePath); err == nil && encrypted {
+		r, err := openRuntimeV4(bundlePath)
+		if err != nil {
+			return err
+		}
+		defer r.Close()
+		return extractTarZstdReader(r, dst)
+	}
 	zstd, err := isZstdRuntimeBundle(bundlePath)
 	if err != nil {
 		return err
@@ -277,7 +300,11 @@ func extractTarZstd(bundlePath, dst string) error {
 		return fmt.Errorf("open .unburger payload: %w", err)
 	}
 	defer f.Close()
-	tr := tar.NewReader(zstddec.NewReader(f))
+	return extractTarZstdReader(f, dst)
+}
+
+func extractTarZstdReader(r io.Reader, dst string) error {
+	tr := tar.NewReader(zstddec.NewReader(r))
 	for {
 		hdr, err := tr.Next()
 		if err == io.EOF {
@@ -420,6 +447,20 @@ func validateMaterialized(root string) error {
 		}
 	}
 	return nil
+}
+
+// VerifyBundleFile decrypts/materializes one runtime bundle into a temporary
+// directory and validates its inner SHA256SUMS contract.
+func VerifyBundleFile(path string) error {
+	stage, err := workspace.MkdirTemp("unburger-runtime-verify-")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(stage)
+	if err := extractRuntimeBundle(path, stage); err != nil {
+		return err
+	}
+	return validateMaterialized(stage)
 }
 
 func readSums(path string) (map[string]string, error) {

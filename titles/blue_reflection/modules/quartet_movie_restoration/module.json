@@ -4,7 +4,7 @@
   "module_id": "quartet_movie_restoration",
   "project": "blue_reflection",
   "module_type": "restoration_addon",
-  "status": "integrated_pending_runtime_validation",
+  "status": "integrated",
   "default_enabled": true,
   "targets": [
     "blue_reflection_quartet"
@@ -29,7 +29,9 @@
     "audio_profile": "Opus 48000 Hz stereo"
   },
   "runtime_validation": {
-    "quartet_path_usage": "pending",
+    "release_packaging": "canonical_required_input_and_default_on_child_of_uncensor",
+    "quartet_path_usage": "not_separately_asserted_by_core_0.0.108_cleanup",
     "transactional_install_and_rollback": "covered_by_core_transaction_engine"
-  }
+  },
+  "build_namespace": "quartet_restoration"
 }

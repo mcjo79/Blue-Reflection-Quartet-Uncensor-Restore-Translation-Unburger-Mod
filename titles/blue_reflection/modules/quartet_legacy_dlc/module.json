@@ -4,10 +4,11 @@
   "module_id": "quartet_legacy_dlc",
   "project": "blue_reflection",
   "module_type": "dlc_restoration",
-  "status": "runtime_validation_pending",
-  "default_enabled": false,
+  "status": "active_pc_switch_unverified",
+  "default_enabled": true,
   "targets": [
-    "blue_reflection_quartet"
+    "blue_reflection_quartet",
+    "blue_reflection_quartet_switch"
   ],
   "dependencies": [],
   "source_requirements": [
@@ -54,11 +55,17 @@
   },
   "core_capability": "quartet_content_composition_v2",
   "runtime_validation": {
-    "blue_reflection_dlc": "runtime_validated",
-    "second_light_reference_behavior": "runtime_validated_by_reference_implementation",
-    "second_light_unburger_go_implementation": "0.0.103 runtime FAIL; causal parity audit isolated dangling DEFAULT costume rows; 0.0.104 fix pending user runtime validation",
-    "second_light_asset_bundle": "2942/2942 required Steam 1.04 inputs exact; not causal"
+    "blue_reflection_dlc": "user_runtime_pass",
+    "second_light_unburger_go_implementation": "user_runtime_pass_windows_and_linux_on_core_0.0.107",
+    "translation_composition": "user_runtime_pass_translation_inserted_after_restored_content",
+    "second_light_asset_bundle": "user_runtime_pass_combined_bundle_build_and_read; frozen source subset remains 2942/2942",
+    "blue_reflection_asset_subset": "user_runtime_pass_combined bundle; frozen source subset remains 1682 members",
+    "switch": "unverified"
   },
-  "workstream_version": "0.2.1",
-  "workstream_status": "runtime_fix_candidate_validation_pending"
+  "workstream_version": "0.2.2",
+  "workstream_status": "runtime_validated_pc",
+  "registries": {
+    "content": "titles/blue_reflection/modules/quartet_legacy_dlc/registry/content_registry.json"
+  },
+  "build_namespace": "quartet_legacy_dlc"
 }

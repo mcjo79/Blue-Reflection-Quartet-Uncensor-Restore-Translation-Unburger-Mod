@@ -1,6 +1,7 @@
 package br1rebuild
 
 import (
+	"compress/flate"
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
@@ -22,6 +23,7 @@ import (
 )
 
 var sourceAssetsV3Magic = [8]byte{'U', 'N', 'B', 'A', 'S', '3', 0, 1}
+var sourceAssetsZstdLookup = exec.LookPath
 
 const (
 	sourceAssetsV3HeaderSize = 64
@@ -79,9 +81,10 @@ func sourceAssetsAEAD() (cipher.AEAD, error) {
 }
 
 func packageSourceAssetImageV3(stage, outputPath string, manifest SourceAssetManifest) error {
-	if _, err := exec.LookPath("zstd"); err != nil {
-		return fmt.Errorf("zstd is required to build encrypted .unburger-assets v3: %w", err)
-	}
+	return packageSourceAssetImageV3WithProgress(stage, outputPath, manifest, nil)
+}
+
+func packageSourceAssetImageV3WithProgress(stage, outputPath string, manifest SourceAssetManifest, progress BuildProgressFunc) error {
 	aead, err := sourceAssetsAEAD()
 	if err != nil {
 		return fmt.Errorf("assets encryption key: %w", err)
@@ -107,12 +110,25 @@ func packageSourceAssetImageV3(stage, outputPath string, manifest SourceAssetMan
 	objects := make([]sourceAssetV3Object, 0, len(manifest.ImageFiles))
 	files := append([]SourceAssetImageFile(nil), manifest.ImageFiles...)
 	sort.Slice(files, func(i, j int) bool { return files[i].Path < files[j].Path })
+	var totalPlain int64
+	for _, item := range files {
+		totalPlain += item.Size
+	}
+	var completedPlain int64
 	for _, item := range files {
 		path := filepath.Join(stage, filepath.FromSlash(item.Path))
-		obj, err := writeSourceAssetV3Object(f, path, item, aead)
+		if progress != nil {
+			progress(BuildProgress{Phase: "source_bundle_encrypt", CurrentFile: item.Path, CurrentDone: 0, CurrentTotal: item.Size, OverallDone: completedPlain, OverallTotal: totalPlain})
+		}
+		obj, err := writeSourceAssetV3Object(f, path, item, aead, func(done int64) {
+			if progress != nil {
+				progress(BuildProgress{Phase: "source_bundle_encrypt", CurrentFile: item.Path, CurrentDone: min64(done, item.Size), CurrentTotal: item.Size, OverallDone: min64(completedPlain+done, totalPlain), OverallTotal: totalPlain})
+			}
+		})
 		if err != nil {
 			return err
 		}
+		completedPlain += item.Size
 		objects = append(objects, obj)
 	}
 
@@ -176,7 +192,7 @@ func readSourceAssetsV3Header(f *os.File) (sourceAssetsV3Header, error) {
 	return out, nil
 }
 
-func writeSourceAssetV3Object(out *os.File, path string, expected SourceAssetImageFile, aead cipher.AEAD) (sourceAssetV3Object, error) {
+func writeSourceAssetV3Object(out *os.File, path string, expected SourceAssetImageFile, aead cipher.AEAD, report func(done int64)) (sourceAssetV3Object, error) {
 	var result sourceAssetV3Object
 	start, err := out.Seek(0, io.SeekCurrent)
 	if err != nil {
@@ -190,24 +206,20 @@ func writeSourceAssetV3Object(out *os.File, path string, expected SourceAssetIma
 		return result, err
 	}
 
-	cmd := exec.Command("zstd", "-q", "-19", "--no-progress", "-c", path)
-	stdout, err := cmd.StdoutPipe()
+	reader, wait, compression, err := sourceAssetCompressedReader(path)
 	if err != nil {
 		return result, err
 	}
-	var stderr strings.Builder
-	cmd.Stderr = &stderr
-	if err := cmd.Start(); err != nil {
-		return result, err
-	}
+	defer reader.Close()
+
 	buf := make([]byte, sourceAssetsV3ChunkSize)
 	var chunkIndex uint64
+	var compressedDone int64
 	for {
-		n, readErr := stdout.Read(buf)
+		n, readErr := reader.Read(buf)
 		if n > 0 {
 			var nonce [12]byte
 			if _, err := io.ReadFull(rand.Reader, nonce[:]); err != nil {
-				_ = cmd.Process.Kill()
 				return result, err
 			}
 			aad := sourceAssetChunkAAD(id, chunkIndex)
@@ -215,29 +227,35 @@ func writeSourceAssetV3Object(out *os.File, path string, expected SourceAssetIma
 			var lenBuf [4]byte
 			binary.LittleEndian.PutUint32(lenBuf[:], uint32(len(sealed)))
 			if _, err := out.Write(lenBuf[:]); err != nil {
-				_ = cmd.Process.Kill()
 				return result, err
 			}
 			if _, err := out.Write(nonce[:]); err != nil {
-				_ = cmd.Process.Kill()
 				return result, err
 			}
 			if _, err := out.Write(sealed); err != nil {
-				_ = cmd.Process.Kill()
 				return result, err
 			}
 			chunkIndex++
+			compressedDone += int64(n)
+			if report != nil {
+				// Compression can make compressed bytes smaller or slightly larger than
+				// the source. The progress renderer uses this only as bounded activity;
+				// clamp at the source size so percentages never exceed 100%.
+				report(min64(compressedDone, expected.Size))
+			}
 		}
 		if readErr == io.EOF {
 			break
 		}
 		if readErr != nil {
-			_ = cmd.Process.Kill()
 			return result, readErr
 		}
 	}
-	if err := cmd.Wait(); err != nil {
-		return result, fmt.Errorf("zstd %s: %w: %s", expected.Path, err, strings.TrimSpace(stderr.String()))
+	if err := wait(); err != nil {
+		return result, fmt.Errorf("compress %s: %w", expected.Path, err)
+	}
+	if report != nil {
+		report(expected.Size)
 	}
 	end, err := out.Seek(0, io.SeekCurrent)
 	if err != nil {
@@ -245,9 +263,60 @@ func writeSourceAssetV3Object(out *os.File, path string, expected SourceAssetIma
 	}
 	result = sourceAssetV3Object{
 		ID: hex.EncodeToString(id), Path: expected.Path, Size: expected.Size, SHA256: expected.SHA256,
-		Offset: start, StoredBytes: end - start, Compression: "zstd", Encryption: "aes-256-gcm-chunked",
+		Offset: start, StoredBytes: end - start, Compression: compression, Encryption: "aes-256-gcm-chunked",
 	}
 	return result, nil
+}
+
+func sourceAssetCompressedReader(path string) (io.ReadCloser, func() error, string, error) {
+	if zstdPath, err := sourceAssetsZstdLookup("zstd"); err == nil {
+		cmd := exec.Command(zstdPath, "-q", "-19", "--no-progress", "-c", path)
+		stdout, err := cmd.StdoutPipe()
+		if err != nil {
+			return nil, nil, "", err
+		}
+		var stderr strings.Builder
+		cmd.Stderr = &stderr
+		if err := cmd.Start(); err != nil {
+			return nil, nil, "", err
+		}
+		wait := func() error {
+			if err := cmd.Wait(); err != nil {
+				return fmt.Errorf("zstd: %w: %s", err, strings.TrimSpace(stderr.String()))
+			}
+			return nil
+		}
+		return stdout, wait, "zstd", nil
+	}
+
+	// Public Windows builds deliberately have no external runtime dependencies.
+	// When zstd is not installed, stream DEFLATE directly into the same encrypted
+	// v3 object container. Readers support both encodings, so locally-created
+	// bundles remain fully compatible with release-built zstd bundles.
+	in, err := os.Open(path)
+	if err != nil {
+		return nil, nil, "", err
+	}
+	pr, pw := io.Pipe()
+	done := make(chan error, 1)
+	go func() {
+		defer in.Close()
+		zw, err := flate.NewWriter(pw, flate.BestCompression)
+		if err != nil {
+			_ = pw.CloseWithError(err)
+			done <- err
+			return
+		}
+		_, copyErr := io.CopyBuffer(zw, in, make([]byte, 8<<20))
+		closeErr := zw.Close()
+		if copyErr == nil {
+			copyErr = closeErr
+		}
+		_ = pw.CloseWithError(copyErr)
+		done <- copyErr
+	}()
+	wait := func() error { return <-done }
+	return pr, wait, "deflate", nil
 }
 
 func sourceAssetChunkAAD(id []byte, index uint64) []byte {
@@ -296,7 +365,7 @@ func readSourceAssetV3Manifest(path string) (sourceAssetV3Manifest, error) {
 	seenID := map[string]bool{}
 	seenPath := map[string]bool{}
 	for _, obj := range result.Objects {
-		if len(obj.ID) != 32 || obj.Offset < sourceAssetsV3HeaderSize || obj.StoredBytes <= 16 || uint64(obj.Offset+obj.StoredBytes) > h.ManifestOffset || obj.Compression != "zstd" || obj.Encryption != "aes-256-gcm-chunked" {
+		if len(obj.ID) != 32 || obj.Offset < sourceAssetsV3HeaderSize || obj.StoredBytes <= 16 || uint64(obj.Offset+obj.StoredBytes) > h.ManifestOffset || (obj.Compression != "zstd" && obj.Compression != "deflate") || obj.Encryption != "aes-256-gcm-chunked" {
 			return result, fmt.Errorf("invalid encrypted asset object metadata")
 		}
 		if seenID[obj.ID] || seenPath[obj.Path] {
@@ -388,7 +457,20 @@ func extractSourceAssetV3Object(bundle *os.File, obj sourceAssetV3Object, dst st
 	if err != nil {
 		return err
 	}
-	zr := zstddec.NewReader(decrypt)
+	var plain io.Reader
+	var closePlain func() error
+	switch obj.Compression {
+	case "zstd":
+		plain = zstddec.NewReader(decrypt)
+		closePlain = func() error { return nil }
+	case "deflate":
+		zr := flate.NewReader(decrypt)
+		plain = zr
+		closePlain = zr.Close
+	default:
+		return fmt.Errorf("unsupported encrypted asset compression %q", obj.Compression)
+	}
+	defer closePlain()
 	out, err := os.Create(dst)
 	if err != nil {
 		return err
@@ -397,7 +479,7 @@ func extractSourceAssetV3Object(bundle *os.File, obj sourceAssetV3Object, dst st
 	buf := make([]byte, 8<<20)
 	var done int64
 	for {
-		n, readErr := zr.Read(buf)
+		n, readErr := plain.Read(buf)
 		if n > 0 {
 			if _, err := out.Write(buf[:n]); err != nil {
 				_ = out.Close()
