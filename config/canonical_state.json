@@ -1,9 +1,9 @@
 {
   "type": "br_canonical_project_state",
   "format_version": 1,
-  "core_version": "0.0.116",
+  "core_version": "0.0.117",
   "runtime_baseline": "0.0.108",
-  "cleanup_scope": "core 0.0.116 exposes the reusable encrypted DLC source-bundle builder directly in the Quartet installer while preserving core 0.0.115 self-contained UNCENSOR and quartet_restoration 0.2.05",
+  "cleanup_scope": "core 0.0.117 adds repository/release hygiene validation while preserving the 0.0.116 DLC bundle builder and core 0.0.115 self-contained UNCENSOR architecture",
   "source_of_truth_order": [
     "current production code and BUILD_RELEASE.sh",
     "config/canonical_state.json",
@@ -115,5 +115,11 @@
     "uncensor_self_contained": true,
     "unburger_assets_required_for_uncensor": false,
     "retail_br1_required_for_uncensor_runtime": false
+  },
+  "release_hygiene": {
+    "tracked_and_release_artifacts": "must not contain developer-specific absolute paths, local account identifiers, or other machine-specific environment leakage",
+    "local_runtime_state": "machine-specific paths are allowed only in ignored/private runtime state such as .local, cache, temporary outputs, and local configuration",
+    "validation": "07_validate_release_hygiene.sh checks Git-tracked and release-facing artifacts and also evaluates constant Python string construction",
+    "release_gate": "BUILD_RELEASE.sh and 04_validate_project_base.sh run the release-hygiene validator"
   }
 }

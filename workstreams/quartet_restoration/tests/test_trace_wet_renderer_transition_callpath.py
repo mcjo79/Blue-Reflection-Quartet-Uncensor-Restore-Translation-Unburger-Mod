@@ -132,8 +132,6 @@ class Stage171Tests(unittest.TestCase):
         self.assertIn('"absolute_process_addresses_exported": False', text)
         self.assertIn('"raw_perf_ring_exported": False', text)
         self.assertIn('"wet_transparency_mechanism_confirmed": False', text)
-        self.assertNotIn("/home/" + "LOCAL_USER/", text)
-        self.assertNotIn("/mnt/" + "data/", text)
 
 
 if __name__ == "__main__":

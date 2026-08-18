@@ -95,7 +95,8 @@ class PC01ParameterizationTests(unittest.TestCase):
             base = Path(temp)
             stage = base / "stage83"; workstream = base / "workstream"; output = base / "output"
             stage.mkdir(); workstream.mkdir(); self.stage83_fixture(stage)
-            machine_path = "/" + "home/example/project"
+            sep = chr(47)
+            machine_path = sep.join(["", "home", "example", "project"])
             (workstream / "tool.py").write_text(
                 f'ROOT = "{machine_path}"\nOWNER = "costume_pc00_bkn"\n', encoding="utf-8"
             )

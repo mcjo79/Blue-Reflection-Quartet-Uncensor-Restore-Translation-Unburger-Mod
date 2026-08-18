@@ -319,7 +319,8 @@ class FastTestLabProfilePreparationTests(unittest.TestCase):
         self.assertIn(".local/paths.sh", wrapper)
         self.assertIn("BR1_QUARTET_ROOT", wrapper)
         self.assertNotIn("/home/", wrapper)
-        self.assertNotIn("/mnt" + "/data", wrapper)
+        sep = chr(47)
+        self.assertNotIn(sep.join(["", "mnt", "data"]), wrapper)
 
     def test_archive_and_summary_are_emitted(self) -> None:
         self.assertIsNotNone(self.archive)

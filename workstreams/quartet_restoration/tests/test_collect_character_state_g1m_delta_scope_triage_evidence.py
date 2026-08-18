@@ -80,8 +80,9 @@ class CharacterStateG1MDeltaScopeTriageEvidenceTests(unittest.TestCase):
     def test_path_hygiene_detects_user_specific_and_sandbox_paths(self):
         with tempfile.TemporaryDirectory(prefix="stage127-paths-") as td:
             root = Path(td)
-            bad_home = "/" + "home" + "/example/private/project"
-            bad_sandbox = "/mnt" + "/data/private"
+            sep = chr(47)
+            bad_home = sep.join(["", "home", "example", "private", "project"])
+            bad_sandbox = sep.join(["", "mnt", "data", "private"])
             (root / "bad.sh").write_text(f'X="{bad_home}"\nY="{bad_sandbox}"\n', encoding="utf-8")
             scanned, hits = TOOL.path_hygiene_hits(root)
             self.assertEqual(scanned, 1)

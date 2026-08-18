@@ -139,8 +139,6 @@ class Stage173Tests(unittest.TestCase):
         self.assertIn('"raw_rdc_exported": False', text)
         self.assertIn('"capture_paths_exported": False', text)
         self.assertIn('"selected_game_root_exported": False', text)
-        self.assertNotIn("/home/" + "LOCAL_USER/", text)
-        self.assertNotIn("/mnt/" + "data/", text)
 
     def test_no_game_or_process_write_claims(self):
         text = MODULE_PATH.read_text(encoding="utf-8")

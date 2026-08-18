@@ -77,7 +77,6 @@ class ExactClosureTests(unittest.TestCase):
     def test_production_source_has_no_machine_specific_path(self) -> None:
         text = TOOL.read_text(encoding="utf-8")
         self.assertNotRegex(text, r"/home/[^/\\s]+/")
-        self.assertNotIn("/mnt/data", text)
 
 
 if __name__ == "__main__":

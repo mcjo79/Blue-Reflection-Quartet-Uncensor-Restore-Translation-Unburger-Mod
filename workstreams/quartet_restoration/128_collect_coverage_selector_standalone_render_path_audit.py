@@ -158,7 +158,7 @@ def path_hygiene_hits(workstream: Path) -> tuple[int, list[dict[str, Any]]]:
     patterns = [
         ("posix_home", re.compile(r"/(?:home|Users)/[^/\s\"']+/")),
         ("windows_user", re.compile(r"[A-Za-z]:[\\/]Users[\\/][^\\/\s\"']+[\\/]")),
-        ("sandbox_mount", re.compile("/mnt" + "/data/")),
+        ("mounted_local_root", re.compile(r"/(?:mnt|media)/[A-Za-z0-9._-]+/")),
     ]
     hits: list[dict[str, Any]] = []
     scanned = 0

@@ -24,6 +24,9 @@ done
 
 mkdir -p -- "$REPORT_DIR"
 
+echo "==> Release hygiene gate"
+"$PROJECT_ROOT/07_validate_release_hygiene.sh"
+
 python3 "$TOOL" validate-project \
   --project-root "$PROJECT_ROOT" \
   --require-translation \

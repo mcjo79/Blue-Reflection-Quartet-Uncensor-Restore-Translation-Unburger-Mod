@@ -267,6 +267,9 @@ if ((REFRESH)); then
   "$PROJECT_ROOT/04_validate_project_base.sh"
 fi
 
+echo "==> Release hygiene gate"
+"$PROJECT_ROOT/07_validate_release_hygiene.sh"
+
 echo "==> Go regression"
 (
   cd "$PATCHER_ROOT"

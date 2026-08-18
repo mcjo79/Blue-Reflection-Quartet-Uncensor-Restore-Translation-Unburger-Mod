@@ -284,7 +284,7 @@ def keyword_signature_rows(parameter_rows: list[dict[str, str]]) -> tuple[list[d
 def path_hygiene_hits(workstream: Path) -> tuple[int, list[dict[str, Any]]]:
     posix_home = re.compile(r"/(?:home|Users)/[^/\\\s\"'`]+/")
     windows_home = re.compile(r"[A-Za-z]:[\\/]+Users[\\/]+[^\\/\s\"'`]+[\\/]")
-    sandbox = re.compile(re.escape("/mnt" + "/data") + r"(?:/|\b)")
+    mounted_local = re.compile(r"/(?:mnt|media)/[A-Za-z0-9._-]+(?:/|\b)")
     scanned = 0
     hits: list[dict[str, Any]] = []
     for path in sorted(workstream.rglob("*")):
@@ -301,7 +301,7 @@ def path_hygiene_hits(workstream: Path) -> tuple[int, list[dict[str, Any]]]:
                 classifications.append("user_specific_posix_home")
             if windows_home.search(line):
                 classifications.append("user_specific_windows_home")
-            if sandbox.search(line):
+            if mounted_local.search(line):
                 classifications.append("sandbox_mount_path")
             if classifications:
                 hits.append({

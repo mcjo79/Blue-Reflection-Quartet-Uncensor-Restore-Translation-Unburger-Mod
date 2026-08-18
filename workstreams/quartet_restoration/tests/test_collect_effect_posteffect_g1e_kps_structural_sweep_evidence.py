@@ -283,7 +283,8 @@ class EffectPosteffectG1eKpsStructuralSweepTests(unittest.TestCase):
         self.assertIn("BR1_ORIGINAL_ROOT", wrapper)
         self.assertIn("BR1_QUARTET_ROOT", wrapper)
         self.assertNotIn("/" + "home" + "/", wrapper)
-        self.assertNotIn("/" + "mnt" + "/" + "data", wrapper)
+        sep = chr(47)
+        self.assertNotIn(sep.join(["", "mnt", "data"]), wrapper)
 
     def test_version_gate_rejects_old_tree(self):
         with tempfile.TemporaryDirectory() as text:

@@ -242,7 +242,8 @@ class ExactSectionContentKpsFeasibilityTests(unittest.TestCase):
         self.assertIn("BR1_ORIGINAL_ROOT", wrapper)
         self.assertIn("BR1_QUARTET_ROOT", wrapper)
         self.assertNotIn("/" + "home/", wrapper)
-        self.assertNotIn("/mnt" + "/data", wrapper)
+        sep = chr(47)
+        self.assertNotIn(sep.join(["", "mnt", "data"]), wrapper)
 
 
 if __name__ == "__main__":

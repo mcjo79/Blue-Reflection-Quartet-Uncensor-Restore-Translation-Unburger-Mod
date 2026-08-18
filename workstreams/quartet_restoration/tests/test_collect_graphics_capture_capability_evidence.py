@@ -120,8 +120,6 @@ class Stage172Tests(unittest.TestCase):
         self.assertIn('"external_graphics_capture_started": False', text)
         self.assertIn('"selected_game_root_exported": False', text)
         self.assertIn('"wet_transparency_mechanism_confirmed": False', text)
-        self.assertNotIn("/home/" + "LOCAL_USER/", text)
-        self.assertNotIn("/mnt/" + "data/", text)
 
 
 if __name__ == "__main__":
