@@ -27,18 +27,18 @@ type releaseManifest struct {
 	CanonicalRestoration   bool           `json:"canonical_restoration_payload_embedded"`
 }
 
-var buildWetSchoolCanonicalPayload = br1rebuild.BuildWetSchoolCanonicalPayload
+var copyWetSchoolCanonicalPayload = br1rebuild.CopyWetSchoolCanonicalPayload
 
 func main() {
 	fs := flag.NewFlagSet("unburger-release", flag.ExitOnError)
 	project := fs.String("project-root", "", "project root")
 	stage := fs.String("stage-root", "", "release staging root")
-	br1CanonicalSource := fs.String("br1-canonical-source", "", "verified BLUE REFLECTION (2017) source used only at release-build time for canonical UNCENSOR payload")
+	wetSchoolCanonicalPayload := fs.String("wet-school-canonical-payload", "", "validated local canonical wet-school UNCENSOR source cache")
 	_ = fs.Parse(os.Args[1:])
-	if *project == "" || *stage == "" || *br1CanonicalSource == "" {
-		fatal("--project-root, --stage-root and --br1-canonical-source are required")
+	if *project == "" || *stage == "" || *wetSchoolCanonicalPayload == "" {
+		fatal("--project-root, --stage-root and --wet-school-canonical-payload are required")
 	}
-	if err := stageRelease(*project, *stage, *br1CanonicalSource); err != nil {
+	if err := stageRelease(*project, *stage, *wetSchoolCanonicalPayload); err != nil {
 		fatal(err.Error())
 	}
 }
@@ -55,7 +55,7 @@ func readVersion(path string) (string, error) {
 	return v, nil
 }
 
-func stageRelease(project, stage, br1CanonicalSource string) error {
+func stageRelease(project, stage, wetSchoolCanonicalPayload string) error {
 	project, _ = filepath.Abs(project)
 	stage, _ = filepath.Abs(stage)
 	if err := os.RemoveAll(stage); err != nil {
@@ -91,7 +91,7 @@ func stageRelease(project, stage, br1CanonicalSource string) error {
 		return err
 	}
 	wetRoot := filepath.Join(stage, "content", "restoration", "wet-school")
-	wetManifest, err := buildWetSchoolCanonicalPayload(br1CanonicalSource, wetRoot)
+	wetManifest, err := copyWetSchoolCanonicalPayload(wetSchoolCanonicalPayload, wetRoot)
 	if err != nil {
 		return fmt.Errorf("build canonical wet-school UNCENSOR payload: %w", err)
 	}

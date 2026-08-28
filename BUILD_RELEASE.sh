@@ -18,7 +18,8 @@ ASSET_ANCHORS="$PROJECT_ROOT/workstreams/core/contracts/release/BR1_LEGACY_SOURC
 ASSET_SOURCE_HASH_CONTRACT="$PROJECT_ROOT/workstreams/core/contracts/release/DLC_SOURCE_ARCHIVE_HASHES_V1.json"
 LOCAL_PATHS_FILE="$PROJECT_ROOT/.local/paths.sh"
 ASSET_SOURCE_STATE="$PROJECT_ROOT/.local/release/BR1_ASSETS_SOURCE_PATH"
-CANONICAL_SOURCE_STATE="$PROJECT_ROOT/.local/release/BR1_CANONICAL_RUNTIME_SOURCE_PATH"
+CANONICAL_PAYLOAD_ROOT="$PROJECT_ROOT/.local/Uncensor/quartet_wet_school_canonical_source_v1"
+LEGACY_CANONICAL_PAYLOAD_ROOT="$PROJECT_ROOT/.local/release/quartet_wet_school_canonical_source_v1"
 SECOND_LIGHT_ASSET_SOURCE_STATE="$PROJECT_ROOT/.local/release/SECOND_LIGHT_ASSETS_SOURCE_PATH"
 QUARTET_ASSET_TARGET_STATE="$PROJECT_ROOT/.local/release/QUARTET_ASSETS_TARGET_PATH"
 ASSET_BUNDLE_STATE="$PROJECT_ROOT/.local/release/UNBURGER_ASSETS_BUNDLE_PATH"
@@ -43,8 +44,9 @@ Options:
   --assets-bundle PATH      Existing verified .unburger-assets bundle to reuse.
   --assets-rebuild          Force rebuilding .unburger-assets from source games even when
                             a compatible existing bundle is available.
-  --canonical-source PATH   BLUE REFLECTION (2017) source used at release-build time only to
-                            embed the canonical wet-school UNCENSOR payload in .unburger.
+  --canonical-source PATH   One-time refresh/import source for the local canonical UNCENSOR cache.
+                            Normal release builds use only .local/Uncensor/quartet_wet_school_canonical_source_v1
+                            and do not require BLUE REFLECTION (2017) to remain installed.
   --assets-source PATH      BLUE REFLECTION (2017) source game folder (optional DLC bundle rebuild only).
   --assets-second-light-source PATH
                             Standalone BLUE REFLECTION: Second Light source folder.
@@ -315,36 +317,31 @@ for movie in "${MOVIES[@]}"; do
   }
 done
 
-echo "==> Resolve canonical UNCENSOR build source"
-CONFIG_CANONICAL_SOURCE=""
-if [[ -f "$LOCAL_PATHS_FILE" ]]; then
-  set +u
-  # shellcheck disable=SC1090
-  source "$LOCAL_PATHS_FILE"
-  set -u
-  CONFIG_CANONICAL_SOURCE="${BR1_ORIGINAL_ROOT:-}"
+echo "==> Resolve canonical UNCENSOR local source"
+if [[ ! -e "$CANONICAL_PAYLOAD_ROOT" && -d "$LEGACY_CANONICAL_PAYLOAD_ROOT" ]]; then
+  echo "==> Migrate canonical UNCENSOR source out of .local/release"
+  mkdir -p "$(dirname "$CANONICAL_PAYLOAD_ROOT")"
+  mv "$LEGACY_CANONICAL_PAYLOAD_ROOT" "$CANONICAL_PAYLOAD_ROOT"
 fi
-CANONICAL_REQUIRED=("BLUE_REFLECTION.exe" "DATA/PACK00_02.PAK" "DATA/PACK00_03.PAK" "DATA/PACK01.PAK")
-CANONICAL_SOURCE="$(resolve_rebuild_root \
-  "canonical BLUE REFLECTION UNCENSOR build source" "$CANONICAL_SOURCE" "$CANONICAL_SOURCE_STATE" "$CONFIG_CANONICAL_SOURCE" CANONICAL_REQUIRED \
-  "$HOME/.steam/debian-installation/steamapps/common/BLUE REFLECTION" \
-  "$HOME/.steam/steam/steamapps/common/BLUE REFLECTION" \
-  "$HOME/.local/share/Steam/steamapps/common/BLUE REFLECTION")" || exit 1
-CANONICAL_PACK="$CANONICAL_SOURCE/DATA/PACK00_02.PAK"
-if [[ ! -f "$CANONICAL_PACK" ]]; then CANONICAL_PACK="$CANONICAL_SOURCE/Data/PACK00_02.PAK"; fi
-CANONICAL_EXPECTED_SIZE="$(jq -r '.games[] | select(.id=="blue_reflection_2017") | .files[] | select(.path=="DATA/PACK00_02.PAK") | .size' "$ASSET_SOURCE_HASH_CONTRACT")"
-CANONICAL_EXPECTED_SHA="$(jq -r '.games[] | select(.id=="blue_reflection_2017") | .files[] | select(.path=="DATA/PACK00_02.PAK") | .sha256 | ascii_downcase' "$ASSET_SOURCE_HASH_CONTRACT")"
-[[ "$CANONICAL_EXPECTED_SIZE" =~ ^[0-9]+$ && "$CANONICAL_EXPECTED_SHA" =~ ^[0-9a-f]{64}$ ]] || { echo "ERROR: canonical PACK00_02 contract missing" >&2; exit 1; }
-[[ "$(stat -c '%s' -- "$CANONICAL_PACK")" == "$CANONICAL_EXPECTED_SIZE" ]] || { echo "ERROR: canonical BR1 PACK00_02 size drift" >&2; exit 1; }
-[[ "$(sha256sum -- "$CANONICAL_PACK" | awk '{print tolower($1)}')" == "$CANONICAL_EXPECTED_SHA" ]] || { echo "ERROR: canonical BR1 PACK00_02 SHA-256 drift" >&2; exit 1; }
-mkdir -p "$(dirname "$CANONICAL_SOURCE_STATE")"
-printf '%s\n' "$CANONICAL_SOURCE" > "$CANONICAL_SOURCE_STATE"
-echo "    canonical donor source verified (build-time only)"
+if [[ -n "$CANONICAL_SOURCE" ]]; then
+  bash "$PROJECT_ROOT/IMPORT_CANONICAL_UNCENSOR_SOURCE.sh" --source "$CANONICAL_SOURCE"
+fi
+if [[ ! -f "$CANONICAL_PAYLOAD_ROOT/MANIFEST.json" || ! -f "$CANONICAL_PAYLOAD_ROOT/source/DATA/PACK00_02.PAK" ]]; then
+  echo "ERROR: canonical UNCENSOR local source is missing." >&2
+  echo "Run once: ./IMPORT_CANONICAL_UNCENSOR_SOURCE.sh --source /path/to/BLUE_REFLECTION" >&2
+  echo "After import, normal BUILD_RELEASE.sh no longer requires the source game installation." >&2
+  exit 1
+fi
+(
+  cd "$PATCHER_ROOT"
+  go run ./cmd/unburger-canonical-source --verify --input "$CANONICAL_PAYLOAD_ROOT"
+)
+echo "    canonical local source verified (30 wet-school members)"
 
 echo "==> Build canonical Translation record payload"
 (
   cd "$PATCHER_ROOT"
-  go run ./cmd/unburger-release --project-root "$PROJECT_ROOT" --stage-root "$BUNDLE_STAGE" --br1-canonical-source "$CANONICAL_SOURCE"
+  go run ./cmd/unburger-release --project-root "$PROJECT_ROOT" --stage-root "$BUNDLE_STAGE" --wet-school-canonical-payload "$CANONICAL_PAYLOAD_ROOT"
 )
 
 mkdir -p "$BUNDLE_STAGE/meta" "$BUNDLE_STAGE/content/modules" "$BUNDLE_STAGE/docs" "$BUNDLE_STAGE/contracts" "$RELEASE_STAGE/bin/linux-amd64" "$RELEASE_STAGE/bin/windows-amd64" "$BUNDLE_STAGE/content/restoration/movies"
@@ -518,8 +515,15 @@ setlocal
 for %%I in ("%~dp0.") do set "ROOT=%%~fI"
 set "ERRLOG=%ROOT%\UNBURGER_LAST_ERROR.log"
 del /q "%ERRLOG%" >nul 2>nul
+pushd "%ROOT%" >nul 2>nul
+if errorlevel 1 (
+  echo ERROR: could not switch to the UNBURGER release directory: "%ROOT%"
+  pause
+  exit /b 1
+)
 "%ROOT%\bin\windows-amd64\brpatcher.exe" start --project-root "%ROOT%" %* 2>"%ERRLOG%"
 set "RC=%ERRORLEVEL%"
+popd
 if not "%RC%"=="0" (
   echo.
   echo UNBURGER patcher failed with exit code %RC%.

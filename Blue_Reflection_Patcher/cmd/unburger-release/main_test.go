@@ -49,8 +49,8 @@ func minimalProject(t *testing.T) string {
 
 func installCanonicalStageFixture(t *testing.T) {
 	t.Helper()
-	original := buildWetSchoolCanonicalPayload
-	buildWetSchoolCanonicalPayload = func(sourceRoot, payloadRoot string) (br1rebuild.WetSchoolCanonicalSourceManifest, error) {
+	original := copyWetSchoolCanonicalPayload
+	copyWetSchoolCanonicalPayload = func(sourceRoot, payloadRoot string) (br1rebuild.WetSchoolCanonicalSourceManifest, error) {
 		if err := os.MkdirAll(filepath.Join(payloadRoot, "source", "DATA"), 0o755); err != nil {
 			return br1rebuild.WetSchoolCanonicalSourceManifest{}, err
 		}
@@ -59,14 +59,14 @@ func installCanonicalStageFixture(t *testing.T) {
 		members := make([]br1rebuild.SourceAssetMember, 30)
 		return br1rebuild.WetSchoolCanonicalSourceManifest{SourceMembers: members}, nil
 	}
-	t.Cleanup(func() { buildWetSchoolCanonicalPayload = original })
+	t.Cleanup(func() { copyWetSchoolCanonicalPayload = original })
 }
 
 func TestStageReleaseBuildsCanonicalRecordBundle(t *testing.T) {
 	project := minimalProject(t)
 	installCanonicalStageFixture(t)
 	stage := filepath.Join(t.TempDir(), "stage")
-	if err := stageRelease(project, stage, "fixture-source"); err != nil {
+	if err := stageRelease(project, stage, "fixture-canonical-payload"); err != nil {
 		t.Fatalf("stageRelease: %v", err)
 	}
 	for _, rel := range []string{"content/translation/records.v1.json", "content/translation/build-report.json", "RELEASE_MANIFEST.json"} {
@@ -97,7 +97,7 @@ func TestStageReleaseDoesNotRequireLooseOrRepackedArchives(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(project, ".local")); !os.IsNotExist(err) {
 		t.Fatalf("fixture unexpectedly has .local")
 	}
-	if err := stageRelease(project, stage, "fixture-source"); err != nil {
+	if err := stageRelease(project, stage, "fixture-canonical-payload"); err != nil {
 		t.Fatalf("release staging should not require developer repacks: %v", err)
 	}
 }

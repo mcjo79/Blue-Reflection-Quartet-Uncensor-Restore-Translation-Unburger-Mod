@@ -151,7 +151,7 @@ For the restored **BLUE REFLECTION (2017)** DLC path, restoring the Quartet game
 
 When the BLUE REFLECTION source family of **DLC Restoration** is installed, the patcher handles BR1 Save Access as part of the same guided installation flow. After the game files have been prepared, it looks for existing Quartet saves and can process all current save slots found in the selected save location. The update enables access to the expanded 122-entry wardrobe roster and the restored Tropical Island event flag.
 
-Standard native Windows and Steam/Proton save locations are detected automatically where possible. For Heroic, a custom Wine/Proton setup or another loose prefix, the prefix root containing `drive_c` can be selected manually. A save directory or an individual `.pcsave` file can also be selected directly when automatic detection is not suitable.
+Standard native Windows and Steam/Proton save locations are detected automatically where possible. The interactive save-selection screen always keeps an **Enter / paste save folder / `.pcsave` / Wine or Proton prefix manually** option available, even when one or more save locations were detected automatically. For Heroic, a custom Wine/Proton setup or another loose prefix, paste the prefix root containing `drive_c`; a save directory or an individual `.pcsave` file can also be selected directly.
 
 Save files are backed up before they are changed and the result is verified afterwards. Existing backup copies are not treated as live save slots.
 
@@ -167,9 +167,11 @@ Second Light uses a different access strategy from BR1: native Quartet Second Li
 
 One patcher is used for all supported PC installations.
 
-Use the executable for your operating system and point it at the game you want to patch (.sh for Linux and .cmd for Windows). Supported installations are detected automatically where possible. A game directory can also be selected manually.
+Use the launcher for your operating system (`RUN.sh` on Linux or `RUN.cmd` on Windows). Supported installations are detected automatically where possible. In the interactive installer, **Enter / paste game folder manually** is always available alongside detected installations, including when exactly one installation was detected.
 
-If the patcher does not detect the path on its own, place all the files from the archive directly into the main folder of the selected game.
+On Windows, either run `RUN.cmd` normally or pass the game folder explicitly, for example `RUN.cmd --game-dir "D:\Games\BLUE REFLECTION Quartet"`. A single bare path such as `RUN.cmd "D:\Games\BLUE REFLECTION Quartet"` is also accepted as a convenience shorthand. Administrator rights are not required for detection.
+
+If the patcher does not detect the path on its own, place all the files from the archive directly into the main folder of the selected game. The launcher switches to its own release directory before detection, so this works even when Windows starts the command script with a different current working directory.
 
 ### Supported games and modules
 
@@ -251,7 +253,7 @@ The main project areas are:
 - `workstreams/quartet_restoration/` owns the Quartet visual restoration work.
 - `workstreams/quartet_legacy_dlc/` owns the first-game DLC restoration work for Quartet.
 - `docs/` contains project-wide architecture and format documentation.
-- `.local/` contains generated builds, evidence, reports, temporary workspaces and other machine-local state. It is not canonical source content.
+- `.local/` contains generated builds, evidence, reports, temporary workspaces and other machine-local state. It is not tracked/public source content. It also holds the developer's validated canonical wet-school source cache used to reproduce UNCENSOR releases without keeping the standalone BR1 installation present.
 
 Each active workstream has a `VERSION` file. Workstreams that expose a machine-readable state also use `STATUS.json`.
 
@@ -343,11 +345,13 @@ Use the script's built-in help for the options supported by the current branch:
 
 A normal release build runs the Go regression suite, stages the verified module content, builds Linux and Windows patcher binaries and produces the public `Blue-Reflection-Unburger-Mod_<version>.zip` package together with its SHA-256 sidecar. The ZIP contains the platform launchers/binaries and the versioned `.unburger` runtime payload.
 
+The canonical wet-school UNCENSOR donor set is **not rebuilt from an installed BLUE REFLECTION (2017) copy on every release build**. A developer imports it once with `./IMPORT_CANONICAL_UNCENSOR_SOURCE.sh --source PATH`. The importer verifies the approved retail `PACK00_02.PAK`, extracts only the proven 30 PC00-PC14 `SCL_W` donor members, and stores the reduced capability under the ignored project-local `.local/Uncensor/quartet_wet_school_canonical_source_v1/` cache. After that import, ordinary `./BUILD_RELEASE.sh` runs use only this validated local cache; the standalone BR1 installation can be absent. Passing `--canonical-source PATH` to `BUILD_RELEASE.sh` is an explicit convenience refresh/import of that cache before the build, not a normal build-time dependency.
+
 For local testing or repeated DLC builds, `BUILD_RELEASE.sh --assets` also emits the combined `.unburger-assets` source bundle beside the normal release. It **reuses an existing verified bundle by default** instead of rebuilding it from full source games every time. A normal reusable bundle uses its matching SHA-256 sidecar plus the current encrypted-manifest/1,682 BR1 + 2,942 Second Light contract checks. If a compatible older bundle predates sidecar creation, the builder performs one full decrypt/materialize/object/member verification and only then bootstraps the missing sidecar; it does not rebuild from retail sources just to create that sidecar. The last reusable bundle path is remembered under project-local `.local/release/`. If no compatible bundle exists, the builder falls back to source rebuild. On that rebuild path only, the actual BR1 and standalone Second Light retail input files are size/SHA-256 gated against the frozen production provenance contract; remembered source paths are hints and stale ones are rejected before local-config/Steam autodetection fallback. Quartet remains structure/capability-gated rather than whole-file hash-locked. Use `--assets-bundle PATH` to select an existing bundle explicitly and `--assets-rebuild` to force a source rebuild. Source-path flags remain available only for the rebuild path.
 
 A compatible `.unburger-assets` bundle placed beside the normal `.unburger` payload can be detected by the patcher automatically. Capabilities missing from the bundle can fall back to the corresponding user-owned standalone installation.
 
-The release builder must fail closed if required translation content is stale or incomplete or if required source data differs from the verified clean source. Raw proprietary source-game restoration assets must never be embedded in the public mod ZIP or normal `.unburger` payload. The three canonical restored WebM cutscenes are a separate, approved public UNCENSOR payload and are not source-bundle material.
+The release builder must fail closed if required translation content is stale or incomplete or if required source data differs from the verified clean source. Full retail archives and optional DLC source bundles must never be embedded in the public mod ZIP. The normal `.unburger` contains only the explicitly approved canonical runtime restoration payloads: the reduced 30-member wet-school source capability, the three restored WebM cutscenes, Translation content and authored runtime metadata. Optional BR1/Second Light DLC source data remains outside the normal `.unburger` and is supplied through `.unburger-assets` or standalone installations.
 
 ### Validation and local state
 

@@ -34,7 +34,8 @@ python3 "$TOOL" validate-project \
 
 python3 -m unittest -q \
   workstreams.core.tests.test_distribution_catalog_parity \
-  workstreams.core.tests.test_canonical_state_consistency
+  workstreams.core.tests.test_canonical_state_consistency \
+  workstreams.core.tests.test_canonical_uncensor_local_source
 
 rm -f -- "$REPORT_PACKAGE"
 tar -C "$PROJECT_ROOT" --zstd -cf "$REPORT_PACKAGE" \

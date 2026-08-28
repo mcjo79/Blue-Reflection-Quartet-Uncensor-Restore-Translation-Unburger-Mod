@@ -309,38 +309,38 @@ func chooseQuartetSaveSelection(explicit, gameRoot string, prompt bool, in io.Re
 	if err != nil {
 		return quartetSaveSelection{}, err
 	}
-	if len(found) == 1 {
-		fmt.Fprintf(out, "Detected Quartet save folder: %s (%d save(s))\n", found[0].Root, len(found[0].Files))
-		return found[0], nil
-	}
 	if !prompt {
+		if len(found) == 1 {
+			fmt.Fprintf(out, "Detected Quartet save folder: %s (%d save(s))\n", found[0].Root, len(found[0].Files))
+			return found[0], nil
+		}
 		if len(found) == 0 {
 			return quartetSaveSelection{}, fmt.Errorf("no Quartet saves detected automatically; pass --save-path with the save folder, one .pcsave file, or a Wine/Proton prefix containing drive_c")
 		}
 		return quartetSaveSelection{}, fmt.Errorf("detected %d Quartet save folders; pass --save-path with the desired folder or prefix", len(found))
 	}
 
-	if len(found) > 0 {
-		choices := make([]string, 0, len(found)+2)
-		for _, selected := range found {
-			choices = append(choices, fmt.Sprintf("%s (%d save(s), %s)", selected.Root, len(selected.Files), selected.Origin))
-		}
-		choices = append(choices, "Enter another save folder / Wine or Proton prefix")
-		choices = append(choices, "Cancel")
-		index, chooseErr := chooseSimpleMenu("BLUE REFLECTION Quartet saves", choices, in, out)
-		if chooseErr != nil {
-			return quartetSaveSelection{}, chooseErr
-		}
-		if index < len(found) {
-			return found[index], nil
-		}
-		if index == len(found)+1 {
-			return quartetSaveSelection{}, errQuartetSaveAccessCancelled
-		}
+	choices := make([]string, 0, len(found)+2)
+	for _, selected := range found {
+		choices = append(choices, fmt.Sprintf("%s (%d save(s), %s)", selected.Root, len(selected.Files), selected.Origin))
 	}
+	choices = append(choices, "Enter / paste save folder / .pcsave / Wine or Proton prefix manually")
+	choices = append(choices, "Cancel")
+	index, chooseErr := chooseSimpleMenu("BLUE REFLECTION Quartet saves", choices, in, out)
+	if chooseErr != nil {
+		return quartetSaveSelection{}, chooseErr
+	}
+	if index < len(found) {
+		return found[index], nil
+	}
+	if index == len(found)+1 {
+		return quartetSaveSelection{}, errQuartetSaveAccessCancelled
+	}
+	return promptQuartetSaveSelection(in, out)
+}
 
-	fmt.Fprintln(out, "No usable save folder was selected automatically.")
-	fmt.Fprintln(out, "You do not need to choose a specific save file. Paste any one of:")
+func promptQuartetSaveSelection(in io.Reader, out io.Writer) (quartetSaveSelection, error) {
+	fmt.Fprintln(out, "Paste any one of:")
 	fmt.Fprintln(out, "  - the folder containing Quartet .pcsave files")
 	fmt.Fprintln(out, "  - a Wine/Proton prefix folder containing drive_c")
 	fmt.Fprintln(out, "  - one specific .pcsave file if you only want to update that save")

@@ -27,6 +27,22 @@ func (value *rootsFlag) Set(item string) error {
 	return nil
 }
 
+func adoptSinglePositionalGameDir(flags *flag.FlagSet, roots *rootsFlag) error {
+	args := flags.Args()
+	if len(args) == 0 {
+		return nil
+	}
+	if len(*roots) == 0 && len(args) == 1 {
+		path := strings.Trim(strings.TrimSpace(args[0]), `"`)
+		if path == "" {
+			return fmt.Errorf("game directory path is empty")
+		}
+		*roots = append(*roots, path)
+		return nil
+	}
+	return fmt.Errorf("unexpected positional arguments; pass the game directory as --game-dir PATH (a single bare path is also accepted)")
+}
+
 func main() {
 	if len(os.Args) < 2 {
 		if err := commandStart(nil); err != nil {
@@ -190,6 +206,9 @@ func commandStart(args []string) error {
 	if err := flags.Parse(filteredArgs); err != nil {
 		return err
 	}
+	if err := adoptSinglePositionalGameDir(flags, &roots); err != nil {
+		return err
+	}
 	releaseRoot := strings.TrimSpace(projectRoot)
 	if removed, pruneErr := runtimebundle.PruneOlderRuntimeBundles(releaseRoot); pruneErr != nil {
 		return fmt.Errorf("prune older runtime bundles: %w", pruneErr)
@@ -227,15 +246,17 @@ func commandStart(args []string) error {
 	// time, so ask explicitly instead of accidentally composing a multi-target
 	// selection. Repeated explicit --game-dir values retain the older advanced
 	// multi-target behavior.
-	if len(roots) == 0 && len(items) > 1 {
-		if !prompt {
+	if len(roots) == 0 {
+		if !prompt && len(items) > 1 {
 			return fmt.Errorf("multiple supported installations detected automatically; pass --game-dir PATH to choose one")
 		}
-		chosenGame, chooseErr := chooseDetectedInstallation(items, os.Stdin, os.Stdout)
-		if chooseErr != nil {
-			return chooseErr
+		if prompt && len(items) > 0 {
+			chosenGame, chooseErr := chooseDetectedInstallation(specs, items, os.Stdin, os.Stdout)
+			if chooseErr != nil {
+				return chooseErr
+			}
+			items = []model.Detection{chosenGame}
 		}
-		items = []model.Detection{chosenGame}
 	}
 	printHumanDetections(os.Stdout, items)
 	if guidedRemove {
@@ -425,6 +446,9 @@ func commandDetect(args []string) error {
 	flags.StringVar(&output, "json", "", "write JSON result to this file")
 	flags.BoolVar(&prompt, "prompt", false, "ask for a path when automatic detection fails")
 	if err := flags.Parse(args); err != nil {
+		return err
+	}
+	if err := adoptSinglePositionalGameDir(flags, &roots); err != nil {
 		return err
 	}
 	specs, err := targets.Load()

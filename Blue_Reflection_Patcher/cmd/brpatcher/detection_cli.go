@@ -37,11 +37,31 @@ func defaultDetectionCandidates(explicit []string) ([]detect.RootCandidate, erro
 	}
 	candidates := []detect.RootCandidate{{Path: cwd, Source: "current_directory"}}
 	if executable, err := os.Executable(); err == nil {
+		if releaseRoot, ok := releaseRootCandidateFromExecutable(executable); ok {
+			candidates = append(candidates, detect.RootCandidate{Path: releaseRoot, Source: "release_directory"})
+		}
 		candidates = append(candidates, detect.RootCandidate{
 			Path: filepath.Dir(executable), Source: "executable_directory",
 		})
 	}
 	return candidates, nil
+}
+
+func releaseRootCandidateFromExecutable(executable string) (string, bool) {
+	dir := filepath.Dir(filepath.Clean(executable))
+	binDir := filepath.Dir(dir)
+	if !strings.EqualFold(filepath.Base(binDir), "bin") {
+		return "", false
+	}
+	arch := strings.ToLower(filepath.Base(dir))
+	if arch != "windows-amd64" && arch != "linux-amd64" {
+		return "", false
+	}
+	root := filepath.Dir(binDir)
+	if root == "" || root == "." || root == binDir {
+		return "", false
+	}
+	return filepath.Clean(root), true
 }
 
 // detectWithFallback deliberately keeps source-asset discovery separate from
@@ -384,47 +404,98 @@ func detectionPathKey(path string) string {
 	return path
 }
 
-func chooseDetectedInstallation(items []model.Detection, in io.Reader, out io.Writer) (model.Detection, error) {
+func chooseDetectedInstallation(specs []model.TargetSpec, items []model.Detection, in io.Reader, out io.Writer) (model.Detection, error) {
 	if len(items) == 0 {
 		return model.Detection{}, fmt.Errorf("no detected installation to choose")
 	}
-	if len(items) == 1 {
-		return items[0], nil
-	}
 	if terminalIn, terminalOut, ok := terminalMenuAvailable(in, out); ok {
-		return chooseDetectedInstallationTUI(items, terminalIn, terminalOut)
+		index, err := chooseDetectedInstallationTUI(items, terminalIn, terminalOut)
+		if err != nil {
+			return model.Detection{}, err
+		}
+		if index < len(items) {
+			return items[index], nil
+		}
+		if index == len(items)+1 {
+			return model.Detection{}, fmt.Errorf("installation selection cancelled")
+		}
+		return promptForSupportedGameDirectory(specs, in, out)
 	}
-	fmt.Fprintln(out, "\nMultiple supported installations were detected:")
+
+	fmt.Fprintln(out, "\nSupported installations detected:")
 	for index, item := range items {
 		fmt.Fprintf(out, "  %d) %s\n     %s\n", index+1, item.DisplayName, item.Root)
 	}
-	fmt.Fprintf(out, "Choose 1-%d: ", len(items))
-	line, err := bufio.NewReader(in).ReadString('\n')
+	manualIndex := len(items) + 1
+	cancelIndex := len(items) + 2
+	fmt.Fprintf(out, "  %d) Enter / paste game folder manually\n", manualIndex)
+	fmt.Fprintf(out, "  %d) Cancel\n", cancelIndex)
+	fmt.Fprintf(out, "Choose 1-%d: ", cancelIndex)
+	reader := bufio.NewReader(in)
+	line, err := reader.ReadString('\n')
 	if err != nil && err != io.EOF {
 		return model.Detection{}, err
 	}
 	var selected int
-	if _, err := fmt.Sscanf(strings.TrimSpace(line), "%d", &selected); err != nil || selected < 1 || selected > len(items) {
+	if _, err := fmt.Sscanf(strings.TrimSpace(line), "%d", &selected); err != nil || selected < 1 || selected > cancelIndex {
 		return model.Detection{}, fmt.Errorf("invalid installation selection")
 	}
-	return items[selected-1], nil
+	if selected <= len(items) {
+		return items[selected-1], nil
+	}
+	if selected == cancelIndex {
+		return model.Detection{}, fmt.Errorf("installation selection cancelled")
+	}
+	fmt.Fprint(out, "Game folder: ")
+	line, err = reader.ReadString('\n')
+	if err != nil && err != io.EOF {
+		return model.Detection{}, err
+	}
+	return detectPromptedGameDirectory(specs, line)
 }
 
-func chooseDetectedInstallationTUI(items []model.Detection, in *os.File, out *os.File) (model.Detection, error) {
-	restore, err := terminalEnterRawMode(in, out)
+func promptForSupportedGameDirectory(specs []model.TargetSpec, in io.Reader, out io.Writer) (model.Detection, error) {
+	value, err := readPathPrompt(in, out, "Game folder: ")
 	if err != nil {
 		return model.Detection{}, err
+	}
+	return detectPromptedGameDirectory(specs, value)
+}
+
+func detectPromptedGameDirectory(specs []model.TargetSpec, value string) (model.Detection, error) {
+	path := strings.Trim(strings.TrimSpace(value), `"`)
+	if path == "" {
+		return model.Detection{}, fmt.Errorf("game directory path is empty")
+	}
+	items, err := detect.Detect(specs, []detect.RootCandidate{{Path: path, Source: "prompted_path"}})
+	if err != nil {
+		return model.Detection{}, err
+	}
+	if len(items) == 0 {
+		return model.Detection{}, fmt.Errorf("the selected directory does not match a supported Blue Reflection installation: %s", path)
+	}
+	if len(items) != 1 {
+		return model.Detection{}, fmt.Errorf("the selected directory resolves to %d supported installations; select one game folder directly", len(items))
+	}
+	return items[0], nil
+}
+
+func chooseDetectedInstallationTUI(items []model.Detection, in *os.File, out *os.File) (int, error) {
+	restore, err := terminalEnterRawMode(in, out)
+	if err != nil {
+		return 0, err
 	}
 	defer restore()
 	defer fmt.Fprint(out, ansiShowCur, ansiReset)
 	reader := bufio.NewReader(in)
-	cursor := -1
+	cursor := 0
+	cancelIndex := len(items) + 1
 	fmt.Fprint(out, ansiHideCur)
 	for {
 		fmt.Fprint(out, ansiClear)
 		renderTUIFrameTop(out, "GAME SELECTION")
-		renderTUIFrameRow(out, "%sMultiple supported installations were found.%s", ansiBold, ansiReset)
-		renderTUIFrameRow(out, "%sControls%s  ↑/↓ choose explicitly · Enter selects · Q cancels", ansiGray, ansiReset)
+		renderTUIFrameRow(out, "%sChoose the installation to manage.%s", ansiBold, ansiReset)
+		renderTUIFrameRow(out, "%sControls%s  ↑/↓ choose · Enter selects · Q cancels", ansiGray, ansiReset)
 		renderTUIFrameBlank(out)
 		for index, item := range items {
 			pointer := "  "
@@ -438,33 +509,32 @@ func chooseDetectedInstallationTUI(items []model.Detection, in *os.File, out *os
 			renderTUIFrameRow(out, "    %ssource: %s%s", ansiGray, item.Source, ansiReset)
 			renderTUIFrameBlank(out)
 		}
+		for index, label := range []string{"Enter / paste game folder manually", "Cancel"} {
+			choiceIndex := len(items) + index
+			pointer := "  "
+			style := ""
+			if cursor == choiceIndex {
+				pointer = "› "
+				style = ansiYellow + ansiBold
+			}
+			renderTUIFrameRow(out, "%s%s%s%s%s%s", style, pointer, ansiReset, ansiBold, label, ansiReset)
+		}
 		renderTUIFrameBottom(out)
 		key, err := readMenuKey(reader)
 		if err != nil {
-			return model.Detection{}, err
+			return 0, err
 		}
 		switch key {
 		case keyUp:
-			if cursor < 0 {
-				cursor = len(items) - 1
-			} else {
-				cursor = (cursor + len(items) - 1) % len(items)
-			}
+			cursor = (cursor + cancelIndex) % (cancelIndex + 1)
 		case keyDown:
-			if cursor < 0 {
-				cursor = 0
-			} else {
-				cursor = (cursor + 1) % len(items)
-			}
+			cursor = (cursor + 1) % (cancelIndex + 1)
 		case keyEnter, keyToggle:
-			if cursor < 0 {
-				continue
-			}
 			fmt.Fprint(out, ansiClear)
-			return items[cursor], nil
+			return cursor, nil
 		case keyCancel:
 			fmt.Fprint(out, ansiClear)
-			return model.Detection{}, fmt.Errorf("installation selection cancelled")
+			return cancelIndex, nil
 		}
 	}
 }

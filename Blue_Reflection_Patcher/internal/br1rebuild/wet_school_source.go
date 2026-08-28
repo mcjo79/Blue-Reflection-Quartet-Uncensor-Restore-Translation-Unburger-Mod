@@ -3,6 +3,7 @@ package br1rebuild
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -108,6 +109,79 @@ func BuildWetSchoolCanonicalPayload(sourceRoot, payloadRoot string) (WetSchoolCa
 	}
 	if err := ValidateWetSchoolCanonicalPayload(payloadRoot); err != nil {
 		return WetSchoolCanonicalSourceManifest{}, err
+	}
+	return manifest, nil
+}
+
+func readWetSchoolCanonicalManifest(payloadRoot string) (WetSchoolCanonicalSourceManifest, error) {
+	data, err := os.ReadFile(filepath.Join(payloadRoot, "MANIFEST.json"))
+	if err != nil {
+		return WetSchoolCanonicalSourceManifest{}, fmt.Errorf("read wet-school canonical manifest: %w", err)
+	}
+	var manifest WetSchoolCanonicalSourceManifest
+	if err := json.Unmarshal(data, &manifest); err != nil {
+		return WetSchoolCanonicalSourceManifest{}, fmt.Errorf("parse wet-school canonical manifest: %w", err)
+	}
+	return manifest, nil
+}
+
+func copyCanonicalFile(src, dst string) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+		return err
+	}
+	tmp := dst + ".tmp"
+	out, err := os.OpenFile(tmp, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o644)
+	if err != nil {
+		return err
+	}
+	_, copyErr := io.Copy(out, in)
+	closeErr := out.Close()
+	if copyErr != nil {
+		_ = os.Remove(tmp)
+		return copyErr
+	}
+	if closeErr != nil {
+		_ = os.Remove(tmp)
+		return closeErr
+	}
+	if err := os.Rename(tmp, dst); err != nil {
+		_ = os.Remove(tmp)
+		return err
+	}
+	return nil
+}
+
+// CopyWetSchoolCanonicalPayload materializes a previously imported, validated
+// local canonical source cache into release staging. It intentionally copies
+// only the two capability files (manifest + reduced 30-member PACK00_02.PAK),
+// never a retail BR1 installation or unrelated local state.
+func CopyWetSchoolCanonicalPayload(sourcePayloadRoot, destinationPayloadRoot string) (WetSchoolCanonicalSourceManifest, error) {
+	if err := ValidateWetSchoolCanonicalPayload(sourcePayloadRoot); err != nil {
+		return WetSchoolCanonicalSourceManifest{}, fmt.Errorf("validate local wet-school canonical source cache: %w", err)
+	}
+	manifest, err := readWetSchoolCanonicalManifest(sourcePayloadRoot)
+	if err != nil {
+		return WetSchoolCanonicalSourceManifest{}, err
+	}
+	if err := os.RemoveAll(destinationPayloadRoot); err != nil {
+		return WetSchoolCanonicalSourceManifest{}, err
+	}
+	files := [][2]string{
+		{filepath.Join(sourcePayloadRoot, "MANIFEST.json"), filepath.Join(destinationPayloadRoot, "MANIFEST.json")},
+		{filepath.Join(sourcePayloadRoot, "source", "DATA", "PACK00_02.PAK"), filepath.Join(destinationPayloadRoot, "source", "DATA", "PACK00_02.PAK")},
+	}
+	for _, pair := range files {
+		if err := copyCanonicalFile(pair[0], pair[1]); err != nil {
+			return WetSchoolCanonicalSourceManifest{}, fmt.Errorf("copy canonical wet-school cache: %w", err)
+		}
+	}
+	if err := ValidateWetSchoolCanonicalPayload(destinationPayloadRoot); err != nil {
+		return WetSchoolCanonicalSourceManifest{}, fmt.Errorf("validate staged wet-school canonical payload: %w", err)
 	}
 	return manifest, nil
 }

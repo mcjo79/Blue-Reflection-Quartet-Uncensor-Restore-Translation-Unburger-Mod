@@ -195,15 +195,35 @@ func TestChooseDetectedInstallationLineMode(t *testing.T) {
 		{TargetID: "b", DisplayName: "Game B", Root: "/b", Source: "steam_library"},
 	}
 	var output bytes.Buffer
-	chosen, err := chooseDetectedInstallation(items, strings.NewReader("2\n"), &output)
+	chosen, err := chooseDetectedInstallation(nil, items, strings.NewReader("2\n"), &output)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if chosen.TargetID != "b" {
 		t.Fatalf("wrong selection: %+v", chosen)
 	}
-	if !strings.Contains(output.String(), "Multiple supported installations") {
+	if !strings.Contains(output.String(), "Supported installations detected") {
 		t.Fatalf("selection prompt missing: %q", output.String())
+	}
+}
+
+func TestChooseDetectedInstallationOffersManualPathWithSingleDetection(t *testing.T) {
+	autoGame := t.TempDir()
+	manualGame := t.TempDir()
+	writeDetectionMarker(t, autoGame, "Data/PACK02.PAK")
+	writeDetectionMarker(t, manualGame, "Data/PACK02.PAK")
+	specs := []model.TargetSpec{{TargetID: "sl", DisplayName: "Second Light", RequiredFiles: []string{"Data/PACK02.PAK"}}}
+	items := []model.Detection{{TargetID: "sl", DisplayName: "Second Light", Root: autoGame, Source: "steam_library"}}
+	var output bytes.Buffer
+	chosen, err := chooseDetectedInstallation(specs, items, strings.NewReader("2\n"+manualGame+"\n"), &output)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if filepath.Clean(chosen.Root) != filepath.Clean(manualGame) || chosen.Source != "prompted_path" {
+		t.Fatalf("manual selection not used: %+v", chosen)
+	}
+	if !strings.Contains(output.String(), "Enter / paste game folder manually") {
+		t.Fatalf("manual game-path fallback missing from installer UI: %q", output.String())
 	}
 }
 
@@ -308,5 +328,17 @@ func TestRememberedActiveStateOutranksManagedHistory(t *testing.T) {
 	}
 	if items[1].Source != "managed_history" || filepath.Clean(items[1].Path) != filepath.Clean(historyGame) {
 		t.Fatalf("history candidate missing/incorrect: %+v", items)
+	}
+}
+
+func TestReleaseRootCandidateFromPublicBinaryLayout(t *testing.T) {
+	root := t.TempDir()
+	binary := filepath.Join(root, "bin", "windows-amd64", "brpatcher.exe")
+	got, ok := releaseRootCandidateFromExecutable(binary)
+	if !ok || filepath.Clean(got) != filepath.Clean(root) {
+		t.Fatalf("unexpected release root: ok=%v got=%q want=%q", ok, got, root)
+	}
+	if _, ok := releaseRootCandidateFromExecutable(filepath.Join(root, "tools", "brpatcher.exe")); ok {
+		t.Fatal("unexpected release-root inference outside public bin/<platform> layout")
 	}
 }

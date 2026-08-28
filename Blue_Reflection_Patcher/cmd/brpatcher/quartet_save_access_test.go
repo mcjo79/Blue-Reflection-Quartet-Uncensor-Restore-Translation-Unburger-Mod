@@ -1,12 +1,40 @@
 package main
 
 import (
+	"bytes"
+	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"local/blue-reflection-patcher/internal/br1rebuild"
 )
+
+type lineChunksReader struct {
+	chunks []string
+	index  int
+}
+
+func (r *lineChunksReader) Read(p []byte) (int, error) {
+	if r.index >= len(r.chunks) {
+		return 0, io.EOF
+	}
+	chunk := []byte(r.chunks[r.index])
+	r.index++
+	n := copy(p, chunk)
+	if n < len(chunk) {
+		return n, nil
+	}
+	return n, nil
+}
+
+func isolateSaveDiscoveryHome(t *testing.T) {
+	t.Helper()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+}
 
 func writeFakeSaveMarker(t *testing.T, path string) {
 	t.Helper()
@@ -68,6 +96,7 @@ func TestPrefixSaveSelectionsAcceptsSingleSaveFile(t *testing.T) {
 }
 
 func TestDiscoverQuartetSaveSelectionsUsesLocalAppData(t *testing.T) {
+	isolateSaveDiscoveryHome(t)
 	local := t.TempDir()
 	saveDir := filepath.Join(local, "KoeiTecmo", "BLUE REFLECTION Quartet", "BLUE REFLECTION")
 	writeFakeSaveMarker(t, filepath.Join(saveDir, "GAMEDATA05.pcsave"))
@@ -88,6 +117,31 @@ func TestDiscoverQuartetSaveSelectionsUsesLocalAppData(t *testing.T) {
 	}
 	if !seen {
 		t.Fatalf("LOCALAPPDATA save root was not discovered: %#v", found)
+	}
+}
+
+func TestChooseQuartetSaveSelectionAlwaysOffersManualFallback(t *testing.T) {
+	isolateSaveDiscoveryHome(t)
+	local := t.TempDir()
+	autoDir := filepath.Join(local, "KoeiTecmo", "BLUE REFLECTION Quartet", "BLUE REFLECTION")
+	writeFakeSaveMarker(t, filepath.Join(autoDir, "GAMEDATA00.pcsave"))
+	manualDir := t.TempDir()
+	writeFakeSaveMarker(t, filepath.Join(manualDir, "GAMEDATA09.pcsave"))
+	t.Setenv("LOCALAPPDATA", local)
+	t.Setenv("WINEPREFIX", "")
+	t.Setenv("STEAM_COMPAT_DATA_PATH", "")
+
+	input := &lineChunksReader{chunks: []string{"2\n", manualDir + "\n"}}
+	var output bytes.Buffer
+	selected, err := chooseQuartetSaveSelection("", t.TempDir(), true, input, &output)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if filepath.Clean(selected.Root) != filepath.Clean(manualDir) || !strings.Contains(selected.Origin, "prompted") {
+		t.Fatalf("manual save selection not used: %+v", selected)
+	}
+	if !strings.Contains(output.String(), "Enter / paste save folder / .pcsave / Wine or Proton prefix manually") {
+		t.Fatalf("manual save-path fallback missing from installer UI: %q", output.String())
 	}
 }
 

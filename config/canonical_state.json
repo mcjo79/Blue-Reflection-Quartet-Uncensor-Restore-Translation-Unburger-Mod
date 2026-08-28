@@ -1,9 +1,9 @@
 {
   "type": "br_canonical_project_state",
   "format_version": 1,
-  "core_version": "0.0.117",
+  "core_version": "0.0.121",
   "runtime_baseline": "0.0.108",
-  "cleanup_scope": "core 0.0.117 adds repository/release hygiene validation while preserving the 0.0.116 DLC bundle builder and core 0.0.115 self-contained UNCENSOR architecture",
+  "cleanup_scope": "core 0.0.121 keeps 0.0.120 canonical UNCENSOR local-source layout and adds always-available interactive manual game/save path fallbacks while preserving 0.0.118 Windows release-root detection, 0.0.117 release hygiene and the self-contained UNCENSOR/DLC bundle architecture",
   "source_of_truth_order": [
     "current production code and BUILD_RELEASE.sh",
     "config/canonical_state.json",
@@ -114,12 +114,17 @@
     "translation_self_contained": true,
     "uncensor_self_contained": true,
     "unburger_assets_required_for_uncensor": false,
-    "retail_br1_required_for_uncensor_runtime": false
+    "retail_br1_required_for_uncensor_runtime": false,
+    "developer_build_canonical_source_cache": ".local/Uncensor/quartet_wet_school_canonical_source_v1",
+    "retail_br1_required_for_normal_release_build": false,
+    "retail_br1_required_for_canonical_source_import": true
   },
   "release_hygiene": {
     "tracked_and_release_artifacts": "must not contain developer-specific absolute paths, local account identifiers, or other machine-specific environment leakage",
     "local_runtime_state": "machine-specific paths are allowed only in ignored/private runtime state such as .local, cache, temporary outputs, and local configuration",
     "validation": "07_validate_release_hygiene.sh checks Git-tracked and release-facing artifacts and also evaluates constant Python string construction",
-    "release_gate": "BUILD_RELEASE.sh and 04_validate_project_base.sh run the release-hygiene validator"
+    "release_gate": "BUILD_RELEASE.sh and 04_validate_project_base.sh run the release-hygiene validator",
+    "windows_detection": "core 0.0.118: RUN.cmd switches to the release directory before launch; brpatcher also recognizes the public bin/<platform> parent as a release-root candidate and accepts one bare positional game path as --game-dir shorthand",
+    "canonical_uncensor_build_source": "core 0.0.120: normal release builds consume a validated project-local ignored 30-member canonical wet-school source under .local/Uncensor; retail BR1 is needed only for one-time import/refresh of that source"
   }
 }
