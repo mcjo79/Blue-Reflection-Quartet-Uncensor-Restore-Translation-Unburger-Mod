@@ -1604,6 +1604,40 @@ def cmd_self_check(args: argparse.Namespace) -> int:
 # --------------------------------------------------------------------------- #
 
 
+def assert_line_budget(
+    dataset_root: Path, categories: tuple[str, ...] = ("dialogue", "messages")
+) -> None:
+    """Refuse to package a dataset whose in-game boxes would still clip.
+
+    The message box cuts a line in the middle of a word, so a text longer than
+    the box loses its ending.  The two categories that are displayed that way are
+    the event dialogue and the school-map chat, whose measured capacity is 128
+    characters (``br_line_budget``).  The journal and library screens wrap their
+    long texts, and their official English goes up to 603 characters, so they are
+    deliberately not part of this gate.
+    """
+    import br_line_budget as line_budget
+
+    report = line_budget.build_report(
+        dataset_root,
+        max_total=line_budget.LINE_BUDGET,
+        cap_by_source=True,
+        categories=categories,
+    )
+    over = report.over()
+    if not over:
+        print(
+            f"  affichage  : les {len(report.items)} textes de "
+            f"{'/'.join(categories)} tiennent dans la boîte"
+        )
+        return
+    worst = ", ".join(f"{item.source}:{item.key} ({len(item.text)} car.)" for item in over[:5])
+    raise FrenchPatchError(
+        f"{len(over)} texte(s) dépassent encore la capacité d'affichage: {worst} — "
+        "utilisez 'br_line_budget.py report' pour la liste complète"
+    )
+
+
 def cmd_build_bundle(args: argparse.Namespace) -> int:
     """Assemble a self-contained end-user package (distribution/french_patch)."""
     dataset_root = (
@@ -1612,6 +1646,7 @@ def cmd_build_bundle(args: argparse.Namespace) -> int:
         else default_dataset_dir()
     )
     load_dataset(dataset_root)
+    assert_line_budget(dataset_root)
 
     out_root = (
         Path(args.out).expanduser().resolve()

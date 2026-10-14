@@ -48,6 +48,18 @@ MAX_LINES = 2
 #: Line-break token used by the game's text.
 BREAK = "<CR>"
 
+#: Values the canonical database uses where the official English is missing or
+#: redacted: they carry no length information and must not become a target.
+SOURCE_PLACEHOLDERS = {"-", "--", "\uff0d", "\u2014", "\u2013"}
+
+
+def source_limit(en: str) -> Optional[int]:
+    """Length of the official English, or ``None`` for a placeholder/empty value."""
+    stripped = (en or "").strip()
+    if not stripped or stripped in SOURCE_PLACEHOLDERS:
+        return None
+    return len(stripped)
+
 #: Categories of the French dataset, in report order.
 CATEGORIES = ("dialogue", "messages", "other", "items", "names", "places")
 
@@ -101,9 +113,24 @@ class BudgetReport:
     budget: int = LINE_BUDGET
     max_lines: int = MAX_LINES
     items: list[BudgetItem] = field(default_factory=list)
+    #: When set, a text is judged on its total length instead of the simulated
+    #: line breaks (``--max-total 128`` is the rule used for the rework).
+    max_total: Optional[int] = None
+    #: Skip the texts that are not longer than their official English source:
+    #: the source fits the widget, so the translation fits it too.
+    cap_by_source: bool = False
+
+    def is_over(self, item: BudgetItem) -> bool:
+        limit_by_source = source_limit(item.en)
+        if self.cap_by_source and limit_by_source is not None:
+            if len(item.text) <= limit_by_source:
+                return False
+        if self.max_total is not None:
+            return len(item.text) > self.max_total
+        return not item.fits(self.budget, self.max_lines)
 
     def over(self) -> list[BudgetItem]:
-        return [item for item in self.items if not item.fits(self.budget, self.max_lines)]
+        return [item for item in self.items if self.is_over(item)]
 
     def by_source(self) -> dict[str, dict[str, int]]:
         counts: dict[str, dict[str, int]] = {}
@@ -111,7 +138,7 @@ class BudgetReport:
             bucket = counts.setdefault(item.source, {"total": 0, "over": 0, "lines": 0})
             bucket["total"] += 1
             bucket["lines"] += item.needed_lines(self.budget)
-            if not item.fits(self.budget, self.max_lines):
+            if self.is_over(item):
                 bucket["over"] += 1
         return counts
 
@@ -218,29 +245,39 @@ def build_report(
     budget: int = LINE_BUDGET,
     max_lines: int = MAX_LINES,
     categories: Iterable[str] = CATEGORIES,
+    max_total: Optional[int] = None,
+    cap_by_source: bool = False,
 ) -> BudgetReport:
     return BudgetReport(
         budget=budget,
         max_lines=max_lines,
         items=collect_items(dataset, baseline, categories),
+        max_total=max_total,
+        cap_by_source=cap_by_source,
     )
 
 
 def print_summary(report: BudgetReport) -> None:
-    print(
-        f"capacité supposée: {report.budget} caractères x {report.max_lines} ligne(s) "
-        f"= {report.budget * report.max_lines} caractères"
-    )
+    if report.max_total is not None:
+        print(f"règle: texte de plus de {report.max_total} caractères au total")
+    else:
+        print(
+            f"capacité supposée: {report.budget} caractères x {report.max_lines} ligne(s) "
+            f"= {report.budget * report.max_lines} caractères"
+        )
+    if report.cap_by_source:
+        print("filtre: les textes déjà plus courts que l'anglais officiel sont ignorés")
     print(f"textes analysés: {len(report.items)}")
     print("\npar catégorie:")
-    print(f"  {'catégorie':<10} {'textes':>7} {'ne rentrent pas':>16} {'lignes':>8}")
+    print(f"  {'catégorie':<10} {'textes':>7} {'à retoucher':>12} {'lignes':>8}")
     for source, counts in sorted(report.by_source().items()):
-        print(f"  {source:<10} {counts['total']:>7} {counts['over']:>16} {counts['lines']:>8}")
+        print(f"  {source:<10} {counts['total']:>7} {counts['over']:>12} {counts['lines']:>8}")
     total_over = len(report.over())
-    print(f"\ntextes qui ne rentrent pas: {total_over}")
-    print("\nlignes nécessaires (découpe automatique en plein mot):")
-    for count, total in sorted(report.line_histogram().items()):
-        print(f"  {count} ligne(s) : {total}")
+    print(f"\ntextes à retoucher: {total_over}")
+    if report.max_total is None:
+        print("\nlignes nécessaires (découpe automatique en plein mot):")
+        for count, total in sorted(report.line_histogram().items()):
+            print(f"  {count} ligne(s) : {total}")
 
 
 def compare_max_lines(report: BudgetReport, values: Iterable[int]) -> None:
@@ -290,29 +327,109 @@ def write_csv(report: BudgetReport, path: Path) -> None:
             )
 
 
+def write_listing(report: BudgetReport, path: Path, only_over: bool = True) -> int:
+    """Human-readable listing of the texts to rewrite, with their sources."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    items = report.over() if only_over else report.items
+    items = sorted(items, key=lambda item: (-len(item.text), item.source, item.key))
+    target = report.max_total if report.max_total is not None else report.budget * report.max_lines
+    with path.open("w", encoding="utf-8", newline="\n") as handle:
+        handle.write(
+            f"# {len(items)} textes | cible {target} caractères | "
+            f"budget {report.budget} x {report.max_lines} ligne(s)\n"
+        )
+        for item in items:
+            goal = target
+            limit_by_source = source_limit(item.en)
+            if limit_by_source is not None:
+                goal = min(goal, limit_by_source)
+            handle.write(
+                f"\n=== {item.source}:{item.key} | FR {len(item.text)} | "
+                f"EN {len(item.en)} | JP {len(item.jp)} | "
+                f"cible {goal} | à retirer {max(0, len(item.text) - goal)} car.\n"
+            )
+            handle.write(f"FR: {item.text}\n")
+            if item.en:
+                handle.write(f"EN: {item.en}\n")
+            if item.jp:
+                handle.write(f"JP: {item.jp}\n")
+    return len(items)
+
+
+def write_mapping(report: BudgetReport, path: Path) -> int:
+    """JSON skeleton (key -> current text) for a rewrite batch."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    mapping = {f"{item.source}:{item.key}": item.text for item in report.over()}
+    path.write_text(
+        json.dumps(mapping, ensure_ascii=False, indent=1) + "\n", encoding="utf-8"
+    )
+    return len(mapping)
+
+
+def _add_budget_arguments(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--dataset", default=str(DEFAULT_DATASET))
+    parser.add_argument("--baseline", default=str(DEFAULT_BASELINE))
+    parser.add_argument("--budget", type=int, default=LINE_BUDGET)
+    parser.add_argument("--max-lines", type=int, default=MAX_LINES)
+    parser.add_argument("--category", action="append", choices=list(CATEGORIES))
+    parser.add_argument(
+        "--max-total",
+        type=int,
+        help="judge on the total length instead of the simulated line breaks",
+    )
+    parser.add_argument(
+        "--cap-by-source",
+        action="store_true",
+        help="ignore the texts that are not longer than their English source",
+    )
+
+
+def _report_from_args(args: argparse.Namespace) -> BudgetReport:
+    return build_report(
+        Path(args.dataset),
+        None if args.baseline in ("", "none") else Path(args.baseline),
+        args.budget,
+        args.max_lines,
+        tuple(args.category) if args.category else CATEGORIES,
+        max_total=args.max_total,
+        cap_by_source=args.cap_by_source,
+    )
+
+
 def main(argv: Optional[list[str]] = None) -> int:
     parser = argparse.ArgumentParser(description="BLUE REFLECTION line-budget report")
     sub = parser.add_subparsers(dest="command", required=True)
     report = sub.add_parser("report", help="summarise and optionally export the overflows")
-    report.add_argument("--dataset", default=str(DEFAULT_DATASET))
-    report.add_argument("--baseline", default=str(DEFAULT_BASELINE))
-    report.add_argument("--budget", type=int, default=LINE_BUDGET)
-    report.add_argument("--max-lines", type=int, default=MAX_LINES)
-    report.add_argument("--category", action="append", choices=list(CATEGORIES))
+    _add_budget_arguments(report)
     report.add_argument("--csv")
+    report.add_argument("--listing", help="write the texts to rewrite, with their sources")
+    report.add_argument("--mapping", help="write a JSON batch skeleton to fill in")
     report.add_argument("--top", type=int, default=8)
+    check = sub.add_parser(
+        "check", help="exit 1 while texts still do not fit (release gate)"
+    )
+    _add_budget_arguments(check)
+    check.add_argument("--top", type=int, default=5)
     args = parser.parse_args(argv)
 
-    if args.command == "report":
-        data = build_report(
-            Path(args.dataset),
-            None if args.baseline in ("", "none") else Path(args.baseline),
-            args.budget,
-            args.max_lines,
-            tuple(args.category) if args.category else CATEGORIES,
-        )
+    if args.command == "check":
+        data = _report_from_args(args)
+        over = data.over()
+        if not over:
+            print(f"budget respecte: {len(data.items)} textes")
+            return 0
         print_summary(data)
-        compare_max_lines(data, (1, 2, 3, 4))
+        print("\npremiers textes hors budget:")
+        for item in data.worst(args.top):
+            print(f"  [{item.source}:{item.key}] FR {len(item.text)} car.")
+            print(f"    FR: {item.text[:120]}")
+        return 1
+
+    if args.command == "report":
+        data = _report_from_args(args)
+        print_summary(data)
+        if args.max_total is None:
+            compare_max_lines(data, (1, 2, 3, 4))
         print("\nplus longs textes:")
         for item in data.worst(args.top):
             lines = item.wrap(data.budget)
@@ -326,6 +443,12 @@ def main(argv: Optional[list[str]] = None) -> int:
         if args.csv:
             write_csv(data, Path(args.csv))
             print(f"\nrapport écrit: {args.csv}")
+        if args.listing:
+            count = write_listing(data, Path(args.listing))
+            print(f"liste écrite: {args.listing} ({count} textes)")
+        if args.mapping:
+            count = write_mapping(data, Path(args.mapping))
+            print(f"lot vierge écrit: {args.mapping} ({count} textes)")
         return 0
     return 1
 

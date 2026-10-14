@@ -670,6 +670,189 @@ class RewriteBatchTests(unittest.TestCase):
             self.assertEqual((root / "messages.xml").read_bytes(), before)
 
 
+class BudgetCheckTests(unittest.TestCase):
+    """The release gate: `br_line_budget.py check` fails while texts overflow."""
+
+    def _dataset(self, tmp: str) -> Path:
+        root = Path(tmp)
+        tx.write_translation(
+            {
+                "game": "blue_reflection",
+                "lang": "fr",
+                "messages": {"1": "a" * 40, "2": "court"},
+            },
+            root / "messages.xml",
+        )
+        return root
+
+    def test_check_fails_then_passes(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self._dataset(tmp)
+            strict = budget.main(
+                [
+                    "check",
+                    "--dataset",
+                    str(root),
+                    "--baseline",
+                    "none",
+                    "--max-total",
+                    "30",
+                    "--category",
+                    "messages",
+                ]
+            )
+            self.assertEqual(strict, 1)
+            relaxed = budget.main(
+                [
+                    "check",
+                    "--dataset",
+                    str(root),
+                    "--baseline",
+                    "none",
+                    "--max-total",
+                    "128",
+                    "--category",
+                    "messages",
+                ]
+            )
+            self.assertEqual(relaxed, 0)
+
+
+class BatchStyleTests(unittest.TestCase):
+    """The charset rule: never introduce a character the original did not use."""
+
+    def _dataset(self, tmp: str) -> Path:
+        root = Path(tmp)
+        tx.write_translation(
+            {
+                "game": "blue_reflection",
+                "lang": "fr",
+                "other": {
+                    "1": "\u3010Degats\u3011 sur un ennemi",
+                    "2": "Texte simple",
+                },
+            },
+            root / "other.xml",
+        )
+        return root
+
+    def test_keeps_brackets_the_original_uses(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self._dataset(tmp)
+            problems = rewrite.check_mapping(
+                {"other:1": "\u3010Degats\u3011 sur l'ennemi"},
+                root,
+                max_total=128,
+                cap_by_source=False,
+            )
+            self.assertEqual(problems, [])
+
+    def test_rejects_new_accented_characters(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self._dataset(tmp)
+            problems = rewrite.check_mapping(
+                {"other:2": "Une soiree agreable a Paris"},
+                root,
+                max_total=128,
+                cap_by_source=False,
+            )
+            self.assertEqual(problems, [])
+            problems = rewrite.check_mapping(
+                {"other:2": "Une soir\u00e9e agr\u00e9able \u00e0 Paris"},
+                root,
+                max_total=128,
+                cap_by_source=False,
+            )
+            self.assertEqual(len(problems), 1)
+            self.assertIn("font cannot render", problems[0])
+
+    def test_button_tokens_must_survive(self) -> None:
+        """The Quartet patch keeps the English when a token disappears."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            tx.write_translation(
+                {
+                    "game": "blue_reflection",
+                    "lang": "fr",
+                    "other": {"3": "Ajoutez avec <IM10> puis <IM05>, et <IM05> pour retirer."},
+                },
+                root / "other.xml",
+            )
+            kept = rewrite.check_mapping(
+                {"other:3": "Ajoutez avec <IM10>, puis <IM05> et <IM05> pour retirer."},
+                root,
+                max_total=128,
+                cap_by_source=False,
+            )
+            self.assertEqual(kept, [])
+            dropped = rewrite.check_mapping(
+                {"other:3": "Ajoutez avec <IM10>, puis <IM05> pour retirer."},
+                root,
+                max_total=128,
+                cap_by_source=False,
+            )
+            self.assertEqual(len(dropped), 1)
+            self.assertIn("button tokens changed", dropped[0])
+
+
+class PackagingBudgetGateTests(unittest.TestCase):
+    """`build-bundle` refuses a dataset whose dialogue box would still clip."""
+
+    def _dataset(self, tmp: str, text: str) -> Path:
+        root = Path(tmp)
+        tx.write_translation(
+            {
+                "game": "blue_reflection",
+                "lang": "fr",
+                "dialogue": [
+                    {
+                        "id": "aa01",
+                        "events": [
+                            {
+                                "file": "aa01/x.ebm",
+                                "messages": [{"msg_id": 0, "name_id": 1, "text": text}],
+                            }
+                        ],
+                    }
+                ],
+            },
+            root / "dialogue.xml",
+        )
+        return root
+
+    def test_short_dataset_passes(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self._dataset(tmp, "Une replique courte.")
+            patch.assert_line_budget(root, categories=("dialogue",))
+
+    def test_long_dataset_is_refused(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self._dataset(tmp, "a" * 200)
+            with self.assertRaises(patch.FrenchPatchError):
+                patch.assert_line_budget(root, categories=("dialogue",))
+
+
+class SourceLimitTests(unittest.TestCase):
+    """A redacted English entry must not become a one-character target."""
+
+    def test_placeholder_values_carry_no_target(self) -> None:
+        for placeholder in ("-", "--", "", "   ", "\uff0d", "\u2014", "\u2013"):
+            self.assertIsNone(budget.source_limit(placeholder), placeholder)
+
+    def test_real_source_gives_its_length(self) -> None:
+        self.assertEqual(budget.source_limit("  Hello there  "), 11)
+
+    def test_item_with_placeholder_source_is_judged_on_the_budget(self) -> None:
+        report = budget.BudgetReport(
+            budget=128, max_lines=2, max_total=128, cap_by_source=True,
+            items=[budget.BudgetItem("dialogue", "x#0", "a" * 100, "", "-")],
+        )
+        self.assertEqual([item.key for item in report.over()], [])
+        long_item = budget.BudgetItem("dialogue", "x#1", "a" * 200, "", "-")
+        report.items.append(long_item)
+        self.assertEqual([item.key for item in report.over()], ["x#1"])
+
+
 class CommittedDatasetHygieneTests(unittest.TestCase):
     """Guard the shipped datasets: no text node may wrap across lines."""
     DATASETS = (

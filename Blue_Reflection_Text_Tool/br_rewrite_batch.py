@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 import xml.etree.ElementTree as ET
 from pathlib import Path
@@ -43,6 +44,14 @@ import br_translation_xml as tx  # noqa: E402
 
 class RewriteError(RuntimeError):
     """Raised when a batch cannot be applied safely."""
+
+
+_BUTTON_TOKEN = re.compile(r"<IM\d+>|<KEY_ASSIGN_[A-Z0-9_]+>")
+
+
+def _button_tokens(text: str) -> list[str]:
+    """Button/technical tokens in order: the patch requires the same sequence."""
+    return _BUTTON_TOKEN.findall(text)
 
 
 def parse_key(key: str) -> tuple[str, str]:
@@ -150,19 +159,119 @@ def _targets(tree: ET.ElementTree, category: str) -> dict[str, ET.Element]:
     return {element.get("string_no", ""): element for element in section.findall("string")}
 
 
+def check_mapping(
+    mapping: dict[str, str],
+    dataset: Path = lb.DEFAULT_DATASET,
+    budget: int = lb.LINE_BUDGET,
+    max_total: Optional[int] = None,
+    cap_by_source: bool = False,
+) -> list[str]:
+    """Validate a batch before it is applied; return the list of problems.
+
+    Checks that every key exists, that the text stays inside the box, and that it
+    respects the dataset's conventions: the game font only renders ASCII plus
+    ``é``/``…``/``'``, so any *new* accented character would show as a placeholder
+    in game, and a stray line break or double space is exactly the artifact this
+    toolchain exists to keep out.  Characters the original text already uses
+    (``【】`` in skill descriptions, for instance) are legitimate and may stay.
+    """
+    allowed_extra = {"\u00e9", "\u2026", "\u2019"}
+    problems: list[str] = []
+    items = {f"{item.source}:{item.key}": item for item in lb.collect_items(dataset, lb.DEFAULT_BASELINE)}
+    for key, text in mapping.items():
+        try:
+            category, _rest = parse_key(key)
+        except RewriteError as exc:
+            problems.append(str(exc))
+            continue
+        item = items.get(key)
+        if item is None:
+            problems.append(f"{key}: key not found in the dataset")
+            continue
+        limit = max_total if max_total is not None else budget
+        limit_by_source = lb.source_limit(item.en)
+        if cap_by_source and limit_by_source is not None:
+            limit = min(limit, limit_by_source)
+        if len(text) > limit:
+            problems.append(f"{key}: {len(text)} characters, limit {limit}")
+        if text != text.strip():
+            problems.append(f"{key}: leading or trailing space")
+        if "  " in text:
+            problems.append(f"{key}: double space")
+        for char in ("\n", "\r", "\t"):
+            if char in text:
+                problems.append(f"{key}: raw control character {char!r}")
+        bad = sorted(
+            {
+                ch
+                for ch in text
+                if ord(ch) > 126 and ch not in allowed_extra and ch not in item.text
+            }
+        )
+        if bad:
+            problems.append(
+                f"{key}: characters the game font cannot render: {''.join(bad)}"
+            )
+        if not text:
+            problems.append(f"{key}: empty text")
+        if "<CR></CR>" in text or "<CR><CR>" in text:
+            problems.append(f"{key}: doubled line break")
+        # The Quartet patch refuses a text whose technical-token sequence differs
+        # from the source (it then keeps the English), so the count of button
+        # tokens must survive the rewriting.
+        if _button_tokens(text) != _button_tokens(item.text):
+            problems.append(
+                f"{key}: button tokens changed: {_button_tokens(item.text)} -> "
+                f"{_button_tokens(text)}"
+            )
+    return problems
+
+
 def main(argv: Optional[list[str]] = None) -> int:
     parser = argparse.ArgumentParser(description="Apply a rewritten-lines batch")
     parser.add_argument("mapping", help="JSON mapping file")
+    parser.add_argument(
+        "action",
+        nargs="?",
+        default="apply",
+        choices=("apply", "check"),
+        help="apply the batch (default) or only validate it",
+    )
     parser.add_argument("--dataset", default=str(lb.DEFAULT_DATASET))
     parser.add_argument("--budget", type=int, default=lb.LINE_BUDGET)
     parser.add_argument("--max-lines", type=int, default=lb.MAX_LINES)
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument(
+        "--max-total", type=int, help="verify with the total-length rule"
+    )
+    parser.add_argument(
+        "--cap-by-source",
+        action="store_true",
+        help="verify against the English source length",
+    )
     parser.add_argument("--strict", action="store_true", help="fail when a text still overflows")
     args = parser.parse_args(argv)
 
     # utf-8-sig: a batch edited in Notepad may carry a BOM.
     mapping = json.loads(Path(args.mapping).read_text(encoding="utf-8-sig"))
     dataset = Path(args.dataset)
+
+    if args.action == "check":
+        problems = check_mapping(
+            mapping,
+            dataset,
+            budget=args.budget,
+            max_total=args.max_total,
+            cap_by_source=args.cap_by_source,
+        )
+        if problems:
+            print(f"{len(problems)} problème(s) dans {args.mapping}:")
+            for problem in problems[:40]:
+                print(f"  {problem}")
+            return 1
+        print(f"lot valide: {len(mapping)} textes")
+        return 0
+
     try:
         changed = apply_batch(mapping, dataset, dry_run=args.dry_run)
     except RewriteError as exc:
@@ -173,7 +282,13 @@ def main(argv: Optional[list[str]] = None) -> int:
         print("dry run: rien n'a été écrit")
         return 0
 
-    report = lb.build_report(dataset, budget=args.budget, max_lines=args.max_lines)
+    report = lb.build_report(
+        dataset,
+        budget=args.budget,
+        max_lines=args.max_lines,
+        max_total=args.max_total,
+        cap_by_source=args.cap_by_source,
+    )
     lb.print_summary(report)
     offending = {f"{item.source}:{item.key}" for item in report.over()}
     touched = set(mapping)
