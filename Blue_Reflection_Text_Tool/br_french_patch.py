@@ -1615,6 +1615,11 @@ def cmd_build_bundle(args: argparse.Namespace) -> int:
     ):
         shutil.copy2(TOOL_DIR / name, out_root / name)
 
+    launcher = TOOL_DIR.parent / "br_launcher.py"
+    if not launcher.is_file():
+        raise FrenchPatchError(f"General launcher is missing: {launcher}")
+    shutil.copy2(launcher, out_root / "br_launcher.py")
+
     template_dir = TOOL_DIR / "french_patch_bundle"
     for name in ("RUN.cmd", "RUN.sh", "README.md"):
         source = template_dir / name

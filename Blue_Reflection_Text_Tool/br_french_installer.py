@@ -260,7 +260,35 @@ def _dispatch(action) -> None:
         print("Aucune modification n'a été appliquée en cas d'échec.")
 
 
+QUARTET_KEYS = ("quartet", "second_light_quartet")
+
+
+def install_all(entries: list[tuple[Target, Path]], assume_yes: bool = False) -> int:
+    """Apply the French patch to Quartet only (b1 + b4). Older games are just sources."""
+    entries = [e for e in entries if e[0].key in QUARTET_KEYS]
+    if not entries:
+        print("Quartet non détecté.")
+        return 1
+    print("Quartet à traduire :")
+    for target, game_dir in entries:
+        print(f"  - {target.label}  [{game_dir}]")
+    if not assume_yes and not yes_no("Installer le français sur Quartet (b1 + b4) ? (o/N) : "):
+        return 0
+    failures = 0
+    for target, game_dir in entries:
+        print(f"\n=== {target.label} ===")
+        force = is_patched(target, game_dir)
+        try:
+            run_apply(target, game_dir, force)
+        except Exception as exc:  # noqa: BLE001
+            failures += 1
+            print(f"Erreur : {exc}")
+    print(f"\nTerminé : {len(entries) - failures}/{len(entries)} jeu(x) traduit(s).")
+    return 1 if failures else 0
+
+
 def main() -> int:
+    run_all = "--all" in sys.argv[1:]
     print()
     print("=" * 62)
     print("  Patch de traduction française — BLUE REFLECTION")
@@ -273,6 +301,9 @@ def main() -> int:
         if game_dir is not None:
             entries.append((target, game_dir))
 
+    if run_all:
+        return install_all(entries, assume_yes="--yes" in sys.argv[1:])
+
     while True:
         print()
         print("Jeux détectés :")
@@ -283,12 +314,17 @@ def main() -> int:
             print("  (aucun jeu détecté automatiquement)")
         manual_number = len(entries) + 1
         print(f"  [{manual_number}] Entrer un dossier de jeu manuellement")
+        all_number = manual_number + 1
+        print(f"  [{all_number}] Installer tout Quartet (b1 + b4)")
         print("  [0] Quitter")
 
-        choice = prompt_choice("Votre choix : ", 0, manual_number)
+        choice = prompt_choice("Votre choix : ", 0, all_number)
         print()
         if choice == 0:
             break
+        if choice == all_number:
+            install_all(entries)
+            continue
         if choice == manual_number:
             manual = manual_entry()
             if manual is not None:

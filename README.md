@@ -275,13 +275,30 @@ Ne l'installez pas en même temps que la traduction anglaise sur la même partit
 | **BLUE REFLECTION Quartet**, partition b4 (Second Light) | Bêta fan pour une partie, **traduction automatique** pour le reste |
 | **BLUE REFLECTION: Second Light** (version isolée) | Idem, dialogues seulement (l'interface est déjà en français grâce à la bêta fan) |
 
+### Lanceur général
+
+`RUN.cmd` (Windows) et `./RUN.sh` (Linux), à la racine du dépôt, donnent accès à chaque étape. Sans argument, ils ouvrent un shell interactif (`br>`) où l'on tape les commandes les unes après les autres, avec leurs arguments optionnels (`help`, `quit`, numéro 1-9 accepté) ; avec un argument, ils exécutent la commande puis quittent :
+
+| Commande | Étape |
+| --- | --- |
+| `RUN.cmd french [ARGS]` | Patch français : installeur interactif, ou `apply` / `revert` / `status` / `self-check` avec `--game-dir` |
+| `RUN.cmd all` | Installation complète : mods UNBURGER si une release est trouvée (`.local/release` ou `UNBURGER_DIR`), puis français sur Quartet (b1 + b4) ; les anciens jeux ne sont jamais patchés, ils servent seulement de sources. Désactivez la traduction anglaise UNBURGER si vous installez le français |
+| `RUN.cmd fetch-release [TAG]` | Télécharge la release publique UNBURGER depuis GitHub (dernière, ~250 Mo, SHA-256 vérifié) dans `.local/release/` ; proposé par `all` seulement s'il n'y a aucune release locale. Une release construite par `release` est extraite et utilisée en priorité : inutile de télécharger |
+| `RUN.cmd package` | Construit l'asset de release GitHub `dist/Blue-Reflection-Quartet-FR_<version>.zip` (+ `.sha256`), version dans `config/fr_release_version` : patch français, dataset et lanceur ; les mods UNBURGER viennent de la release publique déjà construite. Rien à installer à part Python ; `RUN.cmd setup` télécharge `gust_pak`, `RUN.cmd all` télécharge la release UNBURGER |
+| `RUN.cmd setup` | Télécharge `gust_pak` (gust_tools v1.58, SHA-256 vérifié) dans `.local/vendor/gust_tools/` ; proposé automatiquement si `french` ne le trouve pas (Windows ; sous Linux, voir ci-dessous) |
+| `RUN.cmd build-french` | Construit le paquet français dans `distribution/french_patch/` |
+| `RUN.cmd validate` | Lance les scripts de validation (nécessite bash : Git Bash ou WSL sous Windows) |
+| `RUN.cmd release [ARGS]` | Construit la release UNBURGER via `BUILD_RELEASE.sh` (bash et outils de build requis) |
+| `RUN.cmd info` | Versions et état du projet |
+
 ### Installer le patch français
 
-Le patch français s'installe avec son propre lanceur, dans le paquet construit par `python Blue_Reflection_Text_Tool/br_french_patch.py build-bundle` :
+Le patch français s'installe avec son propre lanceur. Le plus simple : `RUN.cmd french` à la racine (voir ci-dessus). Le paquet autonome, à distribuer, contient son propre `RUN.cmd` / `RUN.sh` et se construit une fois.
 
-1. Installez **Python 3.8+** (sous Linux, rendez aussi `gust_pak` disponible ; sous Windows il est fourni).
-2. Lancez `RUN.cmd` (Windows) ou `./RUN.sh` (Linux) **sans argument**.
-3. Choisissez le jeu détecté (un dossier Quartet apparaît deux fois : « partition b1 » et « partition b4 : Second Light »), puis **Installer la traduction française** ou **Restaurer l'anglais**.
+1. Installez **Python 3.8+** (sous Linux, rendez aussi `gust_pak` disponible ; sous Windows, `RUN.cmd setup` le télécharge).
+2. Construisez le paquet : `python Blue_Reflection_Text_Tool/br_french_patch.py build-bundle`. Il est créé dans `distribution/french_patch/` et contient `RUN.cmd`, `RUN.sh` et le dataset.
+3. Dans ce dossier, lancez `RUN.cmd` (Windows) ou `./RUN.sh` (Linux) **sans argument**. Sans construire le paquet, `python Blue_Reflection_Text_Tool/br_french_installer.py` ouvre le même menu interactif.
+4. Choisissez le jeu détecté (un dossier Quartet apparaît deux fois : « partition b1 » et « partition b4 : Second Light »), puis **Installer la traduction française** ou **Restaurer l'anglais**.
 
 Chaque patch garde ses propres sauvegardes dans le dossier du jeu : vous pouvez revenir à l'anglais puis repasser en français à tout moment.
 
@@ -738,6 +755,31 @@ Translation is applied last. Restoring DLC therefore does not put the original r
 ## French translation patch
 
 A separate, text-only **French** patch is available for the PC games: **BLUE REFLECTION (2017)**, **BLUE REFLECTION Quartet** (first game and **Second Light** partitions) and the standalone **Second Light**. It is independent of the UNBURGER English modules and must not be installed together with the English translation on the same partition. See the [French part](#français) of this README (which comes first) or the [full bilingual documentation](Blue_Reflection_Text_Tool/french_patch_bundle/README.md).
+
+### General launcher
+
+`RUN.cmd` (Windows) and `./RUN.sh` (Linux), at the repository root give access to every step. Without arguments they open an interactive shell (`br>`) where you type commands one after another, with optional arguments (`help`, `quit`, number 1-9 accepted); with an argument they run that command and exit:
+
+| Command | Step |
+| --- | --- |
+| `RUN.cmd french [ARGS]` | French patch: interactive installer, or `apply` / `revert` / `status` / `self-check` with `--game-dir` |
+| `RUN.cmd all` | Full install: UNBURGER mods if a release is found (`.local/release` or `UNBURGER_DIR`), then French on Quartet (b1 + b4); older games are never patched, only used as sources. Disable the UNBURGER English translation if you install French |
+| `RUN.cmd fetch-release [TAG]` | Downloads the public UNBURGER release from GitHub (latest, ~250 MB, SHA-256 checked) into `.local/release/`; offered by `all` only when no local release exists. A release built with `release` is extracted and used first: no download needed |
+| `RUN.cmd package` | Builds the GitHub release asset `dist/Blue-Reflection-Quartet-FR_<version>.zip` (+ `.sha256`), version in `config/fr_release_version`: French patch, dataset and launcher; UNBURGER mods come from the already-built public release. Nothing to install except Python; `RUN.cmd setup` downloads `gust_pak`, `RUN.cmd all` downloads the UNBURGER release |
+| `RUN.cmd setup` | Downloads `gust_pak` (gust_tools v1.58, SHA-256 checked) into `.local/vendor/gust_tools/`; offered automatically when `french` cannot find it (Windows; on Linux see below) |
+| `RUN.cmd build-french` | Builds the French bundle in `distribution/french_patch/` |
+| `RUN.cmd validate` | Runs the validation scripts (needs bash: Git Bash or WSL on Windows) |
+| `RUN.cmd release [ARGS]` | Builds the UNBURGER release via `BUILD_RELEASE.sh` (bash and build tools required) |
+| `RUN.cmd info` | Project versions and state |
+
+### Install the French patch
+
+The French patch has its own launcher. Simplest: `RUN.cmd french` at the root (see above). The standalone bundle, meant for distribution, has its own `RUN.cmd` / `RUN.sh` and is built once.
+
+1. Install **Python 3.8+** (on Linux also make `gust_pak` available; on Windows `RUN.cmd setup` downloads it).
+2. Build the bundle: `python Blue_Reflection_Text_Tool/br_french_patch.py build-bundle`. It is created in `distribution/french_patch/` and contains `RUN.cmd`, `RUN.sh` and the dataset.
+3. In that folder, run `RUN.cmd` (Windows) or `./RUN.sh` (Linux) **with no argument**. Without building the bundle, `python Blue_Reflection_Text_Tool/br_french_installer.py` opens the same interactive menu.
+4. Pick the detected game, then **Install the French translation** or **Restore English**.
 
 ## Current status and limitations
 
