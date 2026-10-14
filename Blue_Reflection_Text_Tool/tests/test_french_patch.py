@@ -22,6 +22,8 @@ if str(TOOL_DIR) not in sys.path:
 
 import br_french_cleanup as cleanup  # noqa: E402
 import br_french_patch as patch  # noqa: E402
+import br_line_budget as budget  # noqa: E402
+import br_rewrite_batch as rewrite  # noqa: E402
 import br_text_envelope as envelope  # noqa: E402
 import br_text_tool as bt  # noqa: E402
 import br_translation_categories as categories  # noqa: E402
@@ -556,9 +558,120 @@ class WrapArtifactTests(unittest.TestCase):
         self.assertNotIn("  ", written[0])
 
 
+class LineBudgetTests(unittest.TestCase):
+    """The message box breaks a line inside a word and clips the rest."""
+
+    def test_wrap_breaks_mid_word(self) -> None:
+        item = budget.BudgetItem("messages", "1", "a" * 130)
+        self.assertEqual(item.wrap(128), ["a" * 128, "aa"])
+        self.assertEqual(item.needed_lines(128), 2)
+
+    def test_explicit_cr_starts_a_new_line(self) -> None:
+        item = budget.BudgetItem("dialogue", "x#0", "court<CR>" + "b" * 5)
+        self.assertEqual(item.wrap(128), ["court", "bbbbb"])
+
+    def test_empty_segments_are_kept(self) -> None:
+        item = budget.BudgetItem("dialogue", "x#1", "a<CR><CR>b")
+        self.assertEqual(item.wrap(128), ["a", "", "b"])
+
+    def test_chars_over_counts_only_the_clipped_tail(self) -> None:
+        item = budget.BudgetItem("messages", "1", "a" * 260)
+        # 128 + 128 visible on two lines, the 4 remaining characters are lost
+        self.assertEqual(item.chars_over(128, 2), 4)
+        self.assertTrue(item.fits(128, 3))
+        self.assertFalse(item.fits(128, 2))
+
+    def test_reference_line_is_over_the_observed_budget(self) -> None:
+        text = (
+            "Du soda et du pain. Compris ! Je reviens... Attends. Pourquoi c'est "
+            "moi qui vais les chercher ? C'est devenu quoi le respect des ainés... ?"
+        )
+        item = budget.BudgetItem("messages", "33882113", text)
+        self.assertEqual(len(text), 139)
+        self.assertFalse(item.fits(128, 1))
+        self.assertTrue(item.fits(139, 1))
+
+
+class RewriteBatchTests(unittest.TestCase):
+    def _dataset(self, tmp: str) -> Path:
+        root = Path(tmp)
+        tx.write_translation(
+            {
+                "game": "blue_reflection",
+                "lang": "fr",
+                "messages": {"33882113": "Du soda et du pain."},
+            },
+            root / "messages.xml",
+        )
+        tx.write_translation(
+            {
+                "game": "blue_reflection",
+                "lang": "fr",
+                "dialogue": [
+                    {
+                        "id": "aa01",
+                        "events": [
+                            {
+                                "file": "aa01/x.ebm",
+                                "messages": [{"msg_id": 0, "name_id": 1, "text": "Trop long ici"}],
+                            }
+                        ],
+                    }
+                ],
+            },
+            root / "dialogue.xml",
+        )
+        return root
+
+    def test_applies_a_batch_to_both_categories(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self._dataset(tmp)
+            changed = rewrite.apply_batch(
+                {
+                    "messages:33882113": "Du soda et du pain. Compris !",
+                    "dialogue:aa01/x.ebm#0": "Court",
+                },
+                root,
+            )
+            self.assertEqual(changed, {"messages": 1, "dialogue": 1})
+            parsed = tx.parse_translation(root / "messages.xml")
+            self.assertEqual(parsed["messages"]["33882113"], "Du soda et du pain. Compris !")
+            dialogue = tx.parse_translation(root / "dialogue.xml")
+            written = dialogue["dialogue"][0]["events"][0]["messages"][0]["text"]
+            self.assertEqual(written, "Court")
+            # the dataset stays free of wrap artifacts
+            self.assertEqual(tx.find_wrap_artifacts(root / "messages.xml"), [])
+            self.assertEqual(tx.find_wrap_artifacts(root / "dialogue.xml"), [])
+
+    def test_unknown_key_is_refused_without_writing(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self._dataset(tmp)
+            before = (root / "messages.xml").read_bytes()
+            with self.assertRaises(rewrite.RewriteError):
+                rewrite.apply_batch({"messages:1": "x"}, root)
+            self.assertEqual((root / "messages.xml").read_bytes(), before)
+
+    def test_expected_text_guard(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self._dataset(tmp)
+            with self.assertRaises(rewrite.RewriteError):
+                rewrite.apply_batch(
+                    {"messages:33882113": "nouveau"},
+                    root,
+                    expect={"messages:33882113": "un autre texte"},
+                )
+
+    def test_dry_run_writes_nothing(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self._dataset(tmp)
+            before = (root / "messages.xml").read_bytes()
+            changed = rewrite.apply_batch({"messages:33882113": "court"}, root, dry_run=True)
+            self.assertEqual(changed, {"messages": 1})
+            self.assertEqual((root / "messages.xml").read_bytes(), before)
+
+
 class CommittedDatasetHygieneTests(unittest.TestCase):
     """Guard the shipped datasets: no text node may wrap across lines."""
-
     DATASETS = (
         "titles/blue_reflection/translation_fr",
         "titles/second_light/translation_fr",
