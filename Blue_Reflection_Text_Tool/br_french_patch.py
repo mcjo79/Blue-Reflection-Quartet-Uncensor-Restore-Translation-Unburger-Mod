@@ -361,6 +361,27 @@ def dataset_paths(root: Path) -> dict[str, Path]:
     }
 
 
+def warn_about_dataset_formatting(root: Path) -> None:
+    """Report dataset XML whose text nodes wrap across physical lines.
+
+    A committed dataset that was re-indented by an XML formatter still applies
+    correctly, because the reader collapses the wrapping, but it must be cleaned
+    up: the raw newline and the indentation after it are not part of the
+    translation and make both the diff and the proofreading view misleading.
+    """
+    dirty = []
+    for path in sorted(root.glob("*.xml")):
+        found = tx.find_wrap_artifacts(path)
+        if found:
+            dirty.append(f"{path.name}: {len(found)}")
+    if dirty:
+        print(
+            "warning     : dataset XML wraps text across lines "
+            f"({', '.join(dirty)}); text is normalised on read, but run "
+            f"'python br_translation_xml.py normalize {root}' to clean the files"
+        )
+
+
 def load_dataset(root: Path) -> dict[str, Any]:
     paths = dataset_paths(root)
     if not paths["manifest"].is_file():
@@ -402,6 +423,8 @@ def load_dataset(root: Path) -> dict[str, Any]:
         "encoding": None,
         "strings": strings,
     }
+
+    warn_about_dataset_formatting(root)
 
     return {
         "root": root,

@@ -467,5 +467,121 @@ class SecondLightSourceTests(unittest.TestCase):
         self.assertEqual(slpatch.pristine_source(game, self.REL, state), (game / self.REL, False))
 
 
+WRAPPED_DOCUMENT = """<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE translation SYSTEM "../translation_fr.dtd">
+<translation game="blue_reflection" lang="fr">
+    <names>
+        <string string_no="1">Hinako</string>
+    </names>
+    <dialogue>
+        <chapter id="aa01">
+            <event file="aa01/x.ebm">
+                <message msg_id="0" name_id="1">Non, je parlais de nous... Est-ce que nous
+                    allons... ?</message>
+                <message msg_id="1" name_id="1">Tu n'es pas encore morte, n'est-ce pas ?
+                    &lt;CR&gt;Et tu ne veux pas mourir ICI, si ?</message>
+            </event>
+        </chapter>
+    </dialogue>
+</translation>
+""".encode("utf-8")
+
+
+class WrapArtifactTests(unittest.TestCase):
+    """A re-formatted dataset must never leak stray spaces into the game text.
+
+    Commit 08580c36 re-indented the BLUE REFLECTION French dataset with an XML
+    formatter, which wrapped 9223 long text nodes across lines.  The reader used
+    to hand those raw newlines and their 20-space indentation to the EBM writer,
+    so the dialogs showed bogus line breaks and runs of useless spaces.
+    """
+
+    def _write_wrapped(self, tmp: str) -> Path:
+        path = Path(tmp) / "dialogue.xml"
+        path.write_bytes(WRAPPED_DOCUMENT)
+        return path
+
+    def test_reader_collapses_wrap_artifacts(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            parsed = tx.parse_translation(self._write_wrapped(tmp))
+        messages = parsed["dialogue"][0]["events"][0]["messages"]
+        self.assertEqual(
+            messages[0]["text"], "Non, je parlais de nous... Est-ce que nous allons... ?"
+        )
+        for message in messages:
+            self.assertNotIn("\n", message["text"])
+            self.assertNotIn("\t", message["text"])
+
+    def test_reader_keeps_the_cr_token(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            parsed = tx.parse_translation(self._write_wrapped(tmp))
+        text = parsed["dialogue"][0]["events"][0]["messages"][1]["text"]
+        self.assertEqual(
+            text,
+            "Tu n'es pas encore morte, n'est-ce pas ? <CR>Et tu ne veux pas mourir ICI, si ?",
+        )
+        self.assertEqual(text.count("<CR>"), 1)
+
+    def test_string_sections_are_normalised_too(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            parsed = tx.parse_translation(self._write_wrapped(tmp))
+        self.assertEqual(parsed["names"], {"1": "Hinako"})
+
+    def test_normalize_file_rewrites_and_is_idempotent(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = self._write_wrapped(tmp)
+            self.assertEqual(len(tx.find_wrap_artifacts(path)), 2)
+            self.assertEqual(tx.normalize_file(path), 2)
+            self.assertEqual(tx.find_wrap_artifacts(path), [])
+            self.assertEqual(tx.normalize_file(path), 0)
+            self.assertIn(
+                b'<!DOCTYPE translation SYSTEM "../translation_fr.dtd">', path.read_bytes()
+            )
+            reparsed = tx.parse_translation(path)
+        self.assertTrue(reparsed["dialogue"])
+
+    def test_patched_ebm_text_has_no_control_characters(self) -> None:
+        """The end-to-end guarantee: what reaches the game file is clean."""
+        with tempfile.TemporaryDirectory() as tmp:
+            parsed = tx.parse_translation(self._write_wrapped(tmp))
+        messages = parsed["dialogue"][0]["events"][0]["messages"]
+        data = make_ebm([m["text"] for m in messages])
+        written = [m.text for m in bt.parse_ebm_bytes(data, Path("synthetic.ebm")).messages]
+        self.assertEqual(written, [m["text"] for m in messages])
+        for text in written:
+            self.assertFalse(
+                [ch for ch in text if ord(ch) < 32 and ch not in "\n\r\t"],
+                f"control character in {text!r}",
+            )
+        self.assertNotIn("  ", written[0])
+
+
+class CommittedDatasetHygieneTests(unittest.TestCase):
+    """Guard the shipped datasets: no text node may wrap across lines."""
+
+    DATASETS = (
+        "titles/blue_reflection/translation_fr",
+        "titles/second_light/translation_fr",
+    )
+
+    def test_datasets_contain_no_wrap_artifacts(self) -> None:
+        repo_root = TOOL_DIR.parent
+        checked = 0
+        for relative in self.DATASETS:
+            root = repo_root / relative
+            if not root.is_dir():
+                continue
+            for path in sorted(root.rglob("*.xml")):
+                checked += 1
+                found = tx.find_wrap_artifacts(path)
+                if found:
+                    self.fail(
+                        f"{path.relative_to(repo_root)}: {len(found)} text node(s) wrap "
+                        f"across lines (first: {found[0][1][:80]!r}); run "
+                        f"`python br_translation_xml.py normalize {relative}`"
+                    )
+        self.assertGreater(checked, 0, "no dataset files found to check")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

@@ -52,10 +52,6 @@ ROOT_TAG = "translation"
 STRING_SECTIONS = ("names", "places", "items", "messages", "other")
 
 
-def _text(node: ET.Element) -> str:
-    return node.text if node.text is not None else ""
-
-
 # XML 1.0 forbids most C0 control characters.  The game text normally uses the
 # literal "<CR>" sequence for line breaks, but a stray raw control byte (for
 # example the file separator 0x1C in a Second Light voice-continuation stub)
@@ -67,10 +63,38 @@ _XML_ILLEGAL_CONTROL = set(range(0x20)) - {0x09, 0x0A, 0x0D}
 # indentation) is a formatting artifact and collapses to a single space.
 _NEWLINE_RUN = re.compile(r"\s*\n\s*")
 
+# Text-bearing elements of the translation DTD.
+_TEXT_TAGS = ("message", "string")
+
+# Optional XML declaration + DOCTYPE prologue, preserved verbatim when a
+# dataset file is rewritten so its DTD reference is not lost.
+_XML_PROLOGUE = re.compile(rb"^\s*<\?xml[^>]*\?>\s*(?:<!DOCTYPE[^>]*>\s*)?")
+
+
+def normalize_wrap_artifacts(text: str) -> str:
+    """Collapse the line wrapping an indented dataset document introduces.
+
+    The XML files are kept indented for manual proofreading, so a long message
+    is stored across several lines::
+
+        <message msg_id="1" name_id="3">Bonjour, je suis
+                        revenue.</message>
+
+    The line break and the indentation after it are pure formatting.  The games
+    break lines with the literal ``<CR>`` token, so a raw newline must never
+    reach the game text: written verbatim into an ``.ebm`` dialog, it shows up
+    as a bogus line break followed by a run of stray spaces.
+    """
+    return _NEWLINE_RUN.sub(" ", text)
+
+
+def _text(node: ET.Element) -> str:
+    return normalize_wrap_artifacts(node.text or "")
+
 
 def _sanitize_text(text: str) -> str:
     """Normalise formatting artifacts and XML-illegal control characters."""
-    text = _NEWLINE_RUN.sub(" ", text)
+    text = normalize_wrap_artifacts(text)
     if all(ord(ch) not in _XML_ILLEGAL_CONTROL for ch in text):
         return text
     return "".join(
@@ -233,3 +257,119 @@ def read_numbered(root: Path, stem: str) -> list[dict[str, Any]]:
             break
         parsed.append(parse_translation(path))
     return parsed
+
+
+# --------------------------------------------------------------------------- #
+# Dataset hygiene
+#
+# Rewriting a dataset file with an XML formatter (or an editor's "format
+# document") wraps long text nodes across lines.  The reader now collapses that
+# wrapping, but the committed data must stay clean too: the raw newline and the
+# indentation after it inflate the string, and both the file diff and the
+# proofreading view then contain noise that is not in the translation.  These
+# helpers normalise a file in place and let the test suite (or a release check)
+# fail when the artifacts come back.
+# --------------------------------------------------------------------------- #
+
+
+def iter_text_nodes(root: ET.Element):
+    """Yield the DTD's text-bearing elements (``<message>``/``<string>``)."""
+    for element in root.iter():
+        if element.tag in _TEXT_TAGS:
+            yield element
+
+
+def find_wrap_artifacts(path: Path | str) -> list[tuple[str, str]]:
+    """Return ``(tag, text)`` for every text node that still wraps across lines."""
+    root = ET.parse(str(path)).getroot()
+    found: list[tuple[str, str]] = []
+    for element in iter_text_nodes(root):
+        text = element.text or ""
+        if "\n" in text:
+            found.append((element.tag, text))
+    return found
+
+
+def normalize_file(path: Path | str, write: bool = True) -> int:
+    """Collapse wrap artifacts in ``path``; return the number of fixed nodes.
+
+    The XML prologue (declaration + DOCTYPE reference) is preserved verbatim and
+    the element tree is re-indented, so section order and every attribute stay
+    untouched.  Nothing is written when the file is already clean.
+    """
+    path = Path(path)
+    raw = path.read_bytes()
+    match = _XML_PROLOGUE.match(raw)
+    if match is None:
+        raise ValueError(f"{path}: no XML declaration found")
+    root = ET.fromstring(raw)
+    changed = 0
+    for element in iter_text_nodes(root):
+        text = element.text or ""
+        fixed = normalize_wrap_artifacts(text)
+        if fixed != text:
+            element.text = fixed
+            changed += 1
+    if write and changed:
+        ET.indent(root, space="    ")
+        path.write_bytes(match.group(0) + ET.tostring(root, encoding="utf-8") + b"\n")
+    return changed
+
+
+def _resolve_targets(paths: list[str]) -> list[Path]:
+    targets: list[Path] = []
+    for raw in paths:
+        path = Path(raw)
+        if path.is_dir():
+            targets.extend(sorted(path.rglob("*.xml")))
+        else:
+            targets.append(path)
+    return targets
+
+
+def main(argv: list[str] | None = None) -> int:
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        description="Check or normalise translation dataset formatting"
+    )
+    sub = parser.add_subparsers(dest="command", required=True)
+    for name in ("check", "normalize"):
+        child = sub.add_parser(name)
+        child.add_argument("paths", nargs="+", help="XML files or dataset folders")
+        if name == "normalize":
+            child.add_argument(
+                "--dry-run",
+                action="store_true",
+                help="report what would change without writing",
+            )
+    args = parser.parse_args(argv)
+
+    problems = 0
+    for path in _resolve_targets(args.paths):
+        if args.command == "check":
+            found = find_wrap_artifacts(path)
+            if found:
+                problems += len(found)
+                print(f"{path}: {len(found)} text node(s) with wrap artifacts")
+                for tag, text in found[:3]:
+                    print(f"    <{tag}> {text[:120]!r}")
+            continue
+        changed = normalize_file(path, write=not args.dry_run)
+        problems += changed
+        verb = "would normalise" if args.dry_run else "normalised"
+        if changed:
+            print(f"{path}: {verb} {changed} text node(s)")
+
+    if args.command == "check":
+        if problems:
+            print(f"\n{problems} text node(s) still contain raw line breaks")
+            return 1
+        print("clean: no wrap artifacts in the checked files")
+        return 0
+    print(f"{problems} text node(s) {'to fix' if args.dry_run else 'fixed'}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
