@@ -1,0 +1,61 @@
+<!--
+  Shared schema for the French translation files of the BLUE REFLECTION games.
+
+  The translation is split into one file per category, each a standalone
+  <translation> document conforming to this DTD:
+
+    * names.xml    - character / creature names (chara, monster, race);
+    * places.xml   - location names (school map, field map, library);
+    * items.xml    - object / crafting names (items, treasure, fragments, costumes);
+    * dialogue.xml - the event dialogue, grouped by <chapter> (one per event
+                     folder, e.g. "aa01" prologue, "ce01" chapter 1, ...);
+    * other.xml    - every remaining string (UI, battle, tutorial, NPC messages,
+                     missions, ...).
+
+  Text content is plain UTF-8.  Inline control sequences (for example "<CR>"
+  for a line break) appear as literal text and are escaped as XML entities.
+
+  msg_id and name_id are decimal unsigned 32-bit integers; 4294967295
+  (0xFFFFFFFF) means "no identifier".  string_no is the game's String_No key.
+-->
+<!ELEMENT translation (meta?, names?, places?, items?, messages?, dialogue?, other?)>
+<!ATTLIST translation
+    game  CDATA #REQUIRED
+    lang  CDATA #REQUIRED
+>
+
+<!ELEMENT meta EMPTY>
+<!ATTLIST meta
+    release        CDATA #IMPLIED
+    version        CDATA #IMPLIED
+    source         CDATA #IMPLIED
+    generated_utc  CDATA #IMPLIED
+>
+
+<!ELEMENT names (string*)>
+<!ELEMENT places (string*)>
+<!ELEMENT items (string*)>
+<!ELEMENT messages (string*)>
+<!ELEMENT other (string*)>
+
+<!ELEMENT string (#PCDATA)>
+<!ATTLIST string
+    string_no  CDATA #REQUIRED
+>
+
+<!ELEMENT dialogue (chapter*)>
+<!ELEMENT chapter (event*)>
+<!ATTLIST chapter
+    id  CDATA #REQUIRED
+>
+
+<!ELEMENT event (message*)>
+<!ATTLIST event
+    file  CDATA #REQUIRED
+>
+
+<!ELEMENT message (#PCDATA)>
+<!ATTLIST message
+    msg_id   CDATA #IMPLIED
+    name_id  CDATA #IMPLIED
+>

@@ -64,6 +64,8 @@
 *.dds
 *.DDS
 *.xml
+# ...but keep the DTD-validated French translation datasets.
+!titles/*/translation_fr/*.xml
 *.bin
 *.dat
 *.cat
@@ -105,3 +107,8 @@ Thumbs.db
 # Local audit/history scratch files
 repo-history.txt
 /workstreams/translation/CONTENT_CHANGELOG.json
+
+# French translation patch: local input and generated bundle
+/translation/
+/distribution/french_patch/
+.dsh/

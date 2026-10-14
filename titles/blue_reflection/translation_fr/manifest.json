@@ -1,0 +1,228 @@
+{
+  "cleanup": {
+    "accent_chars_replaced": 15682,
+    "accent_fallback_map": {
+      "«": "\"",
+      "»": "\"",
+      "À": "A",
+      "Â": "A",
+      "Ç": "C",
+      "È": "E",
+      "É": "E",
+      "Ê": "E",
+      "Ë": "E",
+      "Î": "I",
+      "Ï": "I",
+      "Ô": "O",
+      "×": "x",
+      "Ù": "U",
+      "Û": "U",
+      "Ü": "U",
+      "à": "a",
+      "â": "a",
+      "ç": "c",
+      "è": "e",
+      "ê": "e",
+      "ë": "e",
+      "î": "i",
+      "ï": "i",
+      "ô": "o",
+      "ö": "o",
+      "ù": "u",
+      "û": "u",
+      "ü": "u",
+      "Œ": "OE",
+      "œ": "oe",
+      "—": "-"
+    },
+    "description": "Normalise la terminologie '原種' (Sephira singulier / Sephirot pluriel, masculin) et corrige trois fautes ; voir Blue_Reflection_Text_Tool/br_french_cleanup.py.",
+    "forbidden_remaining": [],
+    "records_changed": 15,
+    "rules": [
+      {
+        "find": "un Sephiroth",
+        "reason": "terminology: singular",
+        "replace": "un Sephira"
+      },
+      {
+        "find": "du Sephiroth",
+        "reason": "terminology: singular",
+        "replace": "du Sephira"
+      },
+      {
+        "find": "Ce Sephiroth",
+        "reason": "terminology: singular",
+        "replace": "Ce Sephira"
+      },
+      {
+        "find": "les Sephiroth",
+        "reason": "terminology: plural",
+        "replace": "les Sephirot"
+      },
+      {
+        "find": "tous les Sephira",
+        "reason": "terminology: plural",
+        "replace": "tous les Sephirot"
+      },
+      {
+        "find": "des Sephira",
+        "reason": "terminology: plural",
+        "replace": "des Sephirot"
+      },
+      {
+        "find": "les Sephira",
+        "reason": "terminology: plural",
+        "replace": "les Sephirot"
+      },
+      {
+        "find": "Cette Sephira",
+        "reason": "terminology: gender",
+        "replace": "Ce Sephira"
+      },
+      {
+        "find": "Une Sephira",
+        "reason": "terminology: gender",
+        "replace": "Un Sephira"
+      },
+      {
+        "find": "La Sephira",
+        "reason": "terminology: gender",
+        "replace": "Le Sephira"
+      },
+      {
+        "find": "On peut vraiment la vaincre",
+        "reason": "terminology: gender",
+        "replace": "On peut vraiment le vaincre"
+      },
+      {
+        "find": "Est-ce possible de la vaincre",
+        "reason": "terminology: gender",
+        "replace": "Est-ce possible de le vaincre"
+      },
+      {
+        "find": "un Sephirot",
+        "reason": "terminology: singular",
+        "replace": "un Sephira"
+      },
+      {
+        "find": "Le Sephirot",
+        "reason": "terminology: singular",
+        "replace": "Le Sephira"
+      },
+      {
+        "find": "j'ai le droit à",
+        "reason": "grammar: 'avoir droit à' (no article)",
+        "replace": "j'ai droit à"
+      },
+      {
+        "find": "affroentes",
+        "reason": "typo",
+        "replace": "affrontes"
+      },
+      {
+        "find": "combattre Sephirot",
+        "reason": "grammar: missing article",
+        "replace": "combattre les Sephirot"
+      }
+    ],
+    "rules_applied": {
+      "grammar: 'avoir droit à' (no article)": 1,
+      "grammar: missing article": 1,
+      "terminology: gender": 6,
+      "terminology: plural": 6,
+      "terminology: singular": 8,
+      "typo": 1
+    },
+    "system_strings_changed": 6
+  },
+  "content": {
+    "event_member_root": "event/event_en",
+    "system_envelope_member": "saves_en/text/strcombineall.xml.e",
+    "system_member": "saves_en/text/strcombineall.xml"
+  },
+  "counts": {
+    "events": {
+      "records": 19549,
+      "records_changed_from_official_english": 17790,
+      "records_identical_to_official_english": 1750,
+      "structural_differences": [
+        {
+          "baseline_messages": 11,
+          "dataset_messages": 1,
+          "unit": "fe08/event_message_fe08_150.ebm"
+        },
+        {
+          "baseline_messages": 17,
+          "dataset_messages": 1,
+          "unit": "fe08/event_message_fe08_160.ebm"
+        },
+        {
+          "baseline_messages": 32,
+          "dataset_messages": 1,
+          "unit": "fe08/event_message_fe08_170.ebm"
+        },
+        {
+          "baseline_messages": 11,
+          "dataset_messages": 1,
+          "unit": "fe08/event_message_fe08_180.ebm"
+        },
+        {
+          "baseline_messages": 1,
+          "dataset_messages": 2,
+          "unit": "yy03/event_message_yy03_060.ebm"
+        },
+        {
+          "baseline_messages": 2,
+          "dataset_messages": 1,
+          "unit": "yy03/event_message_yy03_130.ebm"
+        },
+        {
+          "baseline_messages": 2,
+          "dataset_messages": 1,
+          "unit": "yy03/event_message_yy03_140.ebm"
+        },
+        {
+          "baseline_messages": 2,
+          "dataset_messages": 1,
+          "unit": "yy03/event_message_yy03_150.ebm"
+        }
+      ],
+      "units": 1758,
+      "units_baseline_metadata_mismatch": 0,
+      "units_with_baseline": 1758,
+      "units_with_structural_difference": 8
+    },
+    "system": {
+      "conflicting_duplicate_keys": 0,
+      "envelope_present": true,
+      "rows": 13820,
+      "rows_without_key": 2,
+      "strings": 13818
+    }
+  },
+  "field_notes": {
+    "names.xml": "Character / creature names (chara, monster, event_chara, race).",
+    "places.xml": "Location names (school map, field map area, library map).",
+    "items.xml": "Object / crafting names (items, treasure, fragments, costumes).",
+    "messages.xml": "Spoken dialogue tables (NPC messages, chat, conversation topics).",
+    "dialogue.xml": "Event dialogue, grouped by <chapter> (one per event folder).",
+    "other.xml": "Every remaining string (UI, battle, tutorial, missions, ...).",
+    "system/strcombineall.xml.e": "Original French release envelope, kept for provenance."
+  },
+  "format_version": 1,
+  "generated_utc": "2026-10-14T01:48:14Z",
+  "language": "fr",
+  "source": {
+    "gust_pak_sha256": "fea9cf32ce64a6b842ecd663bcc281845570550314cbbbf9a37ad7962e66bcc6",
+    "pack01_bytes": 19411109,
+    "pack01_name": "PACK01.pak",
+    "pack01_sha256": "4eb082bbfd413fd58b23f6391ffdb1b2894624ac785a875db3130bfb59a30a39",
+    "pack02_1_bytes": 16911883,
+    "pack02_1_name": "PACK02_1.pak",
+    "pack02_1_sha256": "a852f1e4e0c06111dcffb6f2304b69e871fd508f8e8b24ad518a06d5925d6310",
+    "release_directory": "Blue Reflection French Translation 8 1.1 2026-08-21T07-02Z YUzj5sMpX"
+  },
+  "target": "blue_reflection_original",
+  "tool_version": "fr-patch-0.1.0",
+  "type": "br_french_translation_dataset"
+}
