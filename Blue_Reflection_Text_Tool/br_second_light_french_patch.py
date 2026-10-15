@@ -349,11 +349,15 @@ def _apply(
     state_dir = game_dir / STATE_DIRNAME
     backup_dir = state_dir / BACKUP_DIRNAME
     backup_dir.mkdir(parents=True, exist_ok=True)
+    originals: dict[str, str] = {}
     for relative, new_pak in installs:
         target = game_dir / relative
         backup = backup_dir / target.name
         if not backup.is_file() or sources[relative][1]:
             shutil.copy2(target, backup)
+        # the backup folder now holds the pre-patch archive: record its hash so a
+        # later revert can prove the file it restores is the original one
+        originals[relative] = bp.sha256_file(backup)
         shutil.copy2(new_pak, target)
 
     state = {
@@ -366,6 +370,7 @@ def _apply(
         "scripts_skipped": skipped,
         "archive": game_archive,
         "archives": [relative for relative, _new in installs],
+        "original_sha256": originals,
         "layout": layout,
         "system": system_stats,
         "archive_sha256_after": bp.sha256_file(archive),
@@ -379,16 +384,146 @@ def _apply(
     return 0
 
 
+def _state(game_dir: Path) -> tuple[Path, dict[str, Any]]:
+    state_file = game_dir / STATE_DIRNAME / STATE_FILE
+    if not state_file.is_file():
+        raise FrenchPatchError(
+            f"Aucun état enregistré ({state_file}) : rien à restaurer. "
+            f"Utilisez 'forget' pour vider le dossier de sauvegarde."
+        )
+    return state_file, json.loads(state_file.read_text(encoding="utf-8"))
+
+
+def backup_report(game_dir: Path, state: dict[str, Any]) -> list[tuple[str, str]]:
+    """(archive, verdict) for every archive the state claims to have replaced."""
+    backup_dir = game_dir / STATE_DIRNAME / BACKUP_DIRNAME
+    originals = dict(state.get("original_sha256") or {})
+    report: list[tuple[str, str]] = []
+    for relative in state.get("archives") or []:
+        backup = backup_dir / Path(relative).name
+        expected = originals.get(relative)
+        if not backup.is_file():
+            verdict = "sauvegarde absente"
+        elif not expected:
+            verdict = "non vérifiable (état antérieur, sans empreinte)"
+        elif bp.sha256_file(backup) == expected:
+            verdict = "ok"
+        else:
+            verdict = "INCOHÉRENTE (empreinte différente)"
+        report.append((relative, verdict))
+    return report
+
+
 def cmd_revert(args: argparse.Namespace) -> int:
+    """Restore the archives the patch replaced, without undoing a foreign change.
+
+    Only two situations are handled silently: the archive is exactly the one we
+    installed (safe to restore after verifying the backup) or it is already the
+    original (nothing to do).  Anything else - typically a Steam update - is a
+    conflict and goes through ``bp.resolve_conflict``: adopt the current files,
+    restore ours anyway, or stop without writing.  A backup that cannot be verified
+    is never written into the game.
+    """
+    game_dir = Path(args.game_dir).expanduser().resolve()
+    force = bool(getattr(args, "force", False))
+    policy = "restore" if force else getattr(args, "on_conflict", "ask")
+    interactive = sys.stdin.isatty() and not getattr(args, "yes", False)
+    state_file, state = _state(game_dir)
+    archives = list(state.get("archives") or [])
+    if not archives:
+        raise FrenchPatchError(f"{state_file} ne liste aucune archive à restaurer")
+    originals = dict(state.get("original_sha256") or {})
+    patched = dict(state.get("sha256_after") or {})
+    backup_dir = game_dir / STATE_DIRNAME / BACKUP_DIRNAME
+    restored = 0
+    adopted: list[str] = []
+    for relative in archives:
+        name = Path(relative).name
+        target = game_dir / relative
+        backup = backup_dir / name
+        original = originals.get(relative)
+        current = bp.sha256_file(target) if target.is_file() else None
+        if current is not None and original and current == original:
+            print(f"  already   {name} (original)")
+            continue
+        installed = patched.get(relative)
+        if installed is not None and current == installed:
+            decision = "restore"
+        else:
+            decision = bp.resolve_conflict(
+                name,
+                policy,
+                interactive,
+                "le fichier du jeu n'est ni la version patchée, ni l'originale sauvegardée",
+            )
+        if decision == "abort":
+            raise FrenchPatchError(
+                f"{relative}: arrêt demandé, rien de plus n'a été écrit (l'état est conservé). "
+                f"Relancez avec --on-conflict adopt pour garder les fichiers actuels."
+            )
+        if decision == "adopt":
+            print(f"  adopté    {name} (fichier actuel conservé)")
+            adopted.append(name)
+            continue
+        if not backup.is_file():
+            if force:
+                print(f"  absente   {name} (ignorée)")
+                continue
+            raise FrenchPatchError(
+                f"Sauvegarde absente : {backup}. Rien n'est écrit ; "
+                f"utilisez --force pour l'ignorer ou 'forget' pour repartir des fichiers actuels."
+            )
+        if original is None:
+            if not force:
+                raise FrenchPatchError(
+                    f"{relative}: l'état ne contient pas l'empreinte d'origine (état antérieur). "
+                    f"Relancez avec --on-conflict adopt pour garder les fichiers actuels, ou "
+                    f"--force pour restaurer sans vérification."
+                )
+            print(f"  non vérifiée {name}")
+        elif bp.sha256_file(backup) != original:
+            if force:
+                print(f"  incohérente {name} (ignorée)")
+                continue
+            raise FrenchPatchError(
+                f"Sauvegarde incohérente pour {relative} : elle ne correspond pas à l'archive "
+                f"d'origine enregistrée. Rien n'est écrit ; utilisez --on-conflict adopt pour "
+                f"garder les fichiers actuels, ou --force pour l'ignorer."
+            )
+        shutil.copy2(backup, target)
+        print(f"  restored  {name}")
+        restored += 1
+    state_file.unlink(missing_ok=True)
+    if adopted:
+        print(f"conservé(s) tel quel : {', '.join(adopted)}")
+        print("ces fichiers sont la nouvelle référence : réappliquez le patch français par-dessus.")
+    print(f"Reverted {restored} archive(s) in {game_dir}")
+    return 0
+
+
+def cmd_forget(args: argparse.Namespace) -> int:
+    """Drop the recorded patch state without touching the game files.
+
+    The archives currently in the game become the new reference: the patch can no
+    longer be reverted, but re-installing and the UNBURGER composition start from
+    what is really on disk.  ``--purge`` also deletes the stored backups.
+    """
     game_dir = Path(args.game_dir).expanduser().resolve()
     state_dir = game_dir / STATE_DIRNAME
-    backups = sorted((state_dir / BACKUP_DIRNAME).glob("*.PAK"))
-    if not backups:
-        raise FrenchPatchError(f"No backup found in {state_dir / BACKUP_DIRNAME}")
-    for backup in backups:
-        shutil.copy2(backup, game_dir / "Data" / backup.name)
-        print(f"restored Data/{backup.name}")
-    shutil.rmtree(state_dir, ignore_errors=True)
+    state_file = state_dir / STATE_FILE
+    backup_dir = state_dir / BACKUP_DIRNAME
+    if state_file.is_file():
+        state_file.unlink()
+        print(f"état supprimé     : {state_file}")
+    else:
+        print(f"aucun état        : {state_file}")
+    if getattr(args, "purge", False) and backup_dir.is_dir():
+        count = sum(1 for _ in backup_dir.iterdir())
+        shutil.rmtree(backup_dir, ignore_errors=True)
+        print(f"sauvegardes       : {count} fichier(s) supprimé(s) ({backup_dir})")
+    elif backup_dir.is_dir():
+        print(f"sauvegardes       : conservées dans {backup_dir} (--purge pour les supprimer)")
+    print("fichiers du jeu   : inchangés")
     return 0
 
 
@@ -401,13 +536,20 @@ def cmd_status(args: argparse.Namespace) -> int:
     state = json.loads(state_file.read_text(encoding="utf-8"))
     print(f"installed : {state.get('installed_utc')}")
     print(f"scripts   : {state.get('scripts_patched')} ({state.get('messages_written')} messages)")
+    for relative, verdict in backup_report(game_dir, state):
+        print(f"  {Path(relative).name}: {verdict}")
     return 0
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="French patch for BLUE REFLECTION Second Light")
     sub = parser.add_subparsers(dest="command", required=True)
-    for name, func in (("apply", cmd_apply), ("revert", cmd_revert), ("status", cmd_status)):
+    for name, func in (
+        ("apply", cmd_apply),
+        ("revert", cmd_revert),
+        ("status", cmd_status),
+        ("forget", cmd_forget),
+    ):
         p = sub.add_parser(name)
         p.add_argument("--game-dir", required=True)
         if name == "apply":
@@ -415,6 +557,16 @@ def build_parser() -> argparse.ArgumentParser:
             p.add_argument("--gust-pak")
             p.add_argument("--work-dir")
             p.add_argument("--timeout", type=int, default=3600)
+        if name == "revert":
+            p.add_argument("--force", action="store_true",
+                           help="restore anyway, skipping the backups that cannot be verified")
+            p.add_argument("--on-conflict", choices=bp.CONFLICT_POLICIES, default="ask",
+                           help="what to do when an archive changed outside the patch "
+                                "(default: ask; adopt keeps the current files)")
+            p.add_argument("--yes", action="store_true",
+                           help="never prompt: an unanswered conflict aborts")
+        if name == "forget":
+            p.add_argument("--purge", action="store_true", help="also delete the stored backups")
         p.set_defaults(func=func)
     return parser
 

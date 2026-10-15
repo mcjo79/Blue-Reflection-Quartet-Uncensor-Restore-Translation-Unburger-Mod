@@ -328,6 +328,49 @@ def tree_hashes(root: Path) -> dict[str, str]:
 
 
 # --------------------------------------------------------------------------- #
+# Restore conflicts
+# --------------------------------------------------------------------------- #
+
+CONFLICT_POLICIES = ("ask", "adopt", "restore", "abort")
+
+
+def resolve_conflict(
+    name: str, policy: str, interactive: bool, detail: str = ""
+) -> str:
+    """Decide what to do with a managed archive that changed outside the patch.
+
+    A Steam update, a file verification or another tool leaves a file that is
+    neither the version we installed nor the original we saved.  Restoring our
+    backup would silently undo that external change, so the revert asks instead of
+    guessing: "adopt" keeps the current file as the new reference, "restore" writes
+    our backup back (losing the external change), "abort" writes nothing at all.
+    """
+    if policy not in CONFLICT_POLICIES:
+        raise FrenchPatchError(f"politique de conflit inconnue : {policy}")
+    if policy != "ask":
+        return policy
+    if not interactive:
+        return "abort"
+    print(f"\n  {name} a changé depuis le patch : ce n'est ni notre version, ni l'originale.")
+    if detail:
+        print(f"    {detail}")
+    print("    [a] adopter les fichiers actuels (recommandé après une mise à jour Steam)")
+    print("    [r] restaurer notre sauvegarde (cela annule la mise à jour)")
+    print("    [q] arrêter sans rien écrire")
+    while True:
+        try:
+            answer = input("  Votre choix [a/r/q] : ").strip().lower()
+        except (EOFError, KeyboardInterrupt):
+            return "abort"
+        if answer in ("", "a", "adopter", "adopt"):
+            return "adopt"
+        if answer in ("r", "restaurer", "restore"):
+            return "restore"
+        if answer in ("q", "quitter", "abort", "n", "non"):
+            return "abort"
+
+
+# --------------------------------------------------------------------------- #
 # Dataset layout
 # --------------------------------------------------------------------------- #
 
@@ -1492,66 +1535,92 @@ def cmd_status(args: argparse.Namespace) -> int:
 
 
 def cmd_revert(args: argparse.Namespace) -> int:
+    """Take the patch off, without ever undoing a change we did not make.
+
+    Only an archive that is exactly the one we installed (or already the original)
+    is handled silently.  Anything else - typically a Steam update - goes through
+    :func:`resolve_conflict`, and no backup is ever written when its hash does not
+    match the original recorded at install time.
+    """
     game_dir = Path(args.game_dir).expanduser().resolve()
     state = load_state(game_dir)
     if state is None:
         raise FrenchPatchError(f"No French patch state recorded in {game_dir}")
 
+    force = bool(getattr(args, "force", False))
+    policy = "restore" if force else getattr(args, "on_conflict", "ask")
+    interactive = sys.stdin.isatty() and not getattr(args, "yes", False)
     restored = 0
     skipped = 0
-    for archive in state.get("archives", []):
-        target = game_dir / archive["relative"]
-        backup = game_dir / archive["backup"]
-        if not backup.is_file():
-            if args.force:
-                print(f"  skipping  {archive['name']}: backup missing")
-                skipped += 1
-                continue
-            raise FrenchPatchError(f"Backup is missing: {backup}")
-        if sha256_file(backup) != archive["original_sha256"]:
-            raise FrenchPatchError(
-                f"Backup {backup} does not match the recorded original hash"
-            )
-        if target.is_file() and sha256_file(target) == archive["original_sha256"]:
-            print(f"  already   {archive['name']} is the original")
+    adopted: list[str] = []
+
+    def handle(entry: dict[str, Any], label: str) -> None:
+        nonlocal restored, skipped
+        target = game_dir / entry["relative"]
+        backup_rel = entry.get("backup")
+        original = entry.get("original_sha256")
+        current = sha256_file(target) if target.is_file() else None
+        if current is not None and original and current == original:
+            print(f"  already   {label} is the original")
             restored += 1
-            continue
+            return
+        installed = entry.get("patched_sha256")
+        if installed is not None and current == installed:
+            decision = "restore"
+        else:
+            decision = resolve_conflict(
+                label,
+                policy,
+                interactive,
+                "le fichier du jeu n'est ni la version patchée, ni l'originale sauvegardée",
+            )
+        if decision == "abort":
+            raise FrenchPatchError(
+                f"{entry['relative']}: arrêt demandé, rien de plus n'a été écrit "
+                f"(l'état est conservé). Relancez avec --on-conflict adopt pour garder "
+                f"les fichiers actuels."
+            )
+        if decision == "adopt":
+            print(f"  adopté    {label} (fichier actuel conservé)")
+            adopted.append(entry["name"])
+            return
+        backup = game_dir / backup_rel if backup_rel else None
+        if backup is None or not backup.is_file():
+            if force:
+                print(f"  skipping  {label}: backup missing")
+                skipped += 1
+                return
+            raise FrenchPatchError(f"Backup is missing: {backup}")
+        if original and sha256_file(backup) != original:
+            if force:
+                print(f"  skipping  {label}: backup does not match the recorded hash")
+                skipped += 1
+                return
+            raise FrenchPatchError(
+                f"Sauvegarde incohérente pour {entry['relative']} : elle ne correspond pas à "
+                f"l'original enregistré. Rien n'est écrit ; utilisez --on-conflict adopt pour "
+                f"garder les fichiers actuels, ou --force pour l'ignorer."
+            )
         staged = target.with_name(target.name + ".br_french_patch_restore")
         shutil.copy2(backup, staged)
         atomic_replace_file(staged, target)
-        print(f"  restored  {archive['name']}")
+        print(f"  restored  {label}")
         restored += 1
 
+    for archive in state.get("archives", []):
+        handle(archive, archive["name"])
     for movie in state.get("movies", []):
-        target = game_dir / movie["relative"]
-        backup_rel = movie.get("backup")
-        if not backup_rel:
+        if not movie.get("backup"):
             continue
-        backup = game_dir / backup_rel
-        if not backup.is_file():
-            if args.force:
-                print(f"  skipping  movie {movie['name']}: backup missing")
-                skipped += 1
-                continue
-            raise FrenchPatchError(f"Backup is missing: {backup}")
-        if sha256_file(backup) != movie["original_sha256"]:
-            raise FrenchPatchError(
-                f"Backup {backup} does not match the recorded original hash"
-            )
-        if target.is_file() and sha256_file(target) == movie["original_sha256"]:
-            print(f"  already   movie {movie['name']} is the original")
-            restored += 1
-            continue
-        staged = target.with_name(target.name + ".br_french_patch_restore")
-        shutil.copy2(backup, staged)
-        atomic_replace_file(staged, target)
-        print(f"  restored  movie {movie['name']}")
-        restored += 1
+        handle(movie, f"movie {movie['name']}")
 
     state_file = state_paths(game_dir)["state"]
     state_file.unlink(missing_ok=True)
     print()
     print(f"Reverted {restored} item(s) in {game_dir} ({skipped} skipped)")
+    if adopted:
+        print(f"conservé(s) tel quel : {', '.join(adopted)}")
+        print("ces fichiers sont la nouvelle référence : réappliquez le patch français par-dessus.")
     print("Backups were kept; delete the .br_french_patch folder to remove them.")
     return 0
 
@@ -1795,6 +1864,14 @@ def build_parser() -> argparse.ArgumentParser:
     revert_parser = subparsers.add_parser("revert", help="restore original archives")
     revert_parser.add_argument("--game-dir", required=True)
     revert_parser.add_argument("--force", action="store_true")
+    revert_parser.add_argument(
+        "--on-conflict", choices=CONFLICT_POLICIES, default="ask",
+        help="what to do when an archive changed outside the patch "
+             "(default: ask; adopt keeps the current files)",
+    )
+    revert_parser.add_argument(
+        "--yes", action="store_true", help="never prompt: an unanswered conflict aborts"
+    )
     revert_parser.set_defaults(func=cmd_revert)
 
     check_parser = subparsers.add_parser(

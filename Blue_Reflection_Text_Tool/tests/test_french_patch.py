@@ -23,6 +23,7 @@ if str(TOOL_DIR) not in sys.path:
 import br_french_cleanup as cleanup  # noqa: E402
 import br_french_patch as patch  # noqa: E402
 import br_line_budget as budget  # noqa: E402
+import br_quartet_french_patch as qp  # noqa: E402
 import br_rewrite_batch as rewrite  # noqa: E402
 import br_text_envelope as envelope  # noqa: E402
 import br_text_tool as bt  # noqa: E402
@@ -851,6 +852,201 @@ class SourceLimitTests(unittest.TestCase):
         long_item = budget.BudgetItem("dialogue", "x#1", "a" * 200, "", "-")
         report.items.append(long_item)
         self.assertEqual([item.key for item in report.over()], ["x#1"])
+
+
+class RevertConflictTests(unittest.TestCase):
+    """A revert must never undo a change we did not make (Steam update, other tool).
+
+    Only an archive that is exactly the one the patch installed, or already the
+    original, is handled silently.  Everything else goes through the conflict
+    policy: adopt the current files, restore ours anyway, or abort.
+    """
+
+    PATCHED = b"patched by us"
+    ORIGINAL = b"original"
+    FOREIGN = b"steam update"
+
+    @staticmethod
+    def _ns(game: Path, **kwargs):
+        import argparse
+
+        base = dict(game_dir=str(game), force=False, on_conflict="ask", yes=True)
+        base.update(kwargs)
+        return argparse.Namespace(**base)
+
+    def _second_light(self, tmp: str, current: bytes, *, corrupt_backup=False, hashes=True):
+        game = Path(tmp)
+        (game / "Data").mkdir()
+        (game / "Data/PACK01_03.PAK").write_bytes(current)
+        state_dir = game / slpatch.STATE_DIRNAME
+        backup_dir = state_dir / slpatch.BACKUP_DIRNAME
+        backup_dir.mkdir(parents=True)
+        (backup_dir / "PACK01_03.PAK").write_bytes(
+            b"tampered" if corrupt_backup else self.ORIGINAL
+        )
+        state: dict = {"archives": ["Data/PACK01_03.PAK"]}
+        if hashes:
+            state["original_sha256"] = {
+                "Data/PACK01_03.PAK": hashlib.sha256(self.ORIGINAL).hexdigest()
+            }
+            state["sha256_after"] = {
+                "Data/PACK01_03.PAK": hashlib.sha256(self.PATCHED).hexdigest()
+            }
+        (state_dir / slpatch.STATE_FILE).write_text(json.dumps(state), encoding="utf-8")
+        return game, state_dir
+
+    def _quartet(self, tmp: str, current: bytes, *, corrupt_backup=False, hashes=True):
+        game = Path(tmp)
+        (game / "Data").mkdir()
+        target = game / "Data/PACK11.PAK"
+        target.write_bytes(current)
+        state_root = game / qp.STATE_DIR_NAME
+        backup = state_root / "backup"
+        backup.mkdir(parents=True)
+        (backup / "PACK11.PAK").write_bytes(b"tampered" if corrupt_backup else self.ORIGINAL)
+        archive = {
+            "relative": "Data/PACK11.PAK",
+            "name": "PACK11.PAK",
+            "backup": f"{qp.STATE_DIR_NAME}/backup/PACK11.PAK",
+        }
+        if hashes:
+            archive["original_sha256"] = hashlib.sha256(self.ORIGINAL).hexdigest()
+            archive["patched_sha256"] = hashlib.sha256(self.PATCHED).hexdigest()
+        (state_root / "state.json").write_text(
+            json.dumps({"archives": [archive]}), encoding="utf-8"
+        )
+        return game, state_root
+
+    def _data(self, game: Path) -> bytes:
+        return (game / "Data/PACK11.PAK").read_bytes()
+
+    # -- Second Light -------------------------------------------------------
+
+    def test_second_light_restores_our_own_patched_file(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            game, state_dir = self._second_light(tmp, self.PATCHED)
+            slpatch.cmd_revert(self._ns(game))
+            self.assertEqual((game / "Data/PACK01_03.PAK").read_bytes(), self.ORIGINAL)
+            self.assertFalse((state_dir / slpatch.STATE_FILE).is_file())
+
+    def test_second_light_leaves_a_steam_update_alone_by_default(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            game, state_dir = self._second_light(tmp, self.FOREIGN)
+            with self.assertRaises(slpatch.FrenchPatchError):
+                slpatch.cmd_revert(self._ns(game))  # non-interactive "ask" => abort
+            self.assertEqual((game / "Data/PACK01_03.PAK").read_bytes(), self.FOREIGN)
+            self.assertTrue((state_dir / slpatch.STATE_FILE).is_file())
+
+    def test_second_light_adopts_a_steam_update(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            game, state_dir = self._second_light(tmp, self.FOREIGN)
+            slpatch.cmd_revert(self._ns(game, on_conflict="adopt"))
+            self.assertEqual((game / "Data/PACK01_03.PAK").read_bytes(), self.FOREIGN)
+            self.assertFalse((state_dir / slpatch.STATE_FILE).is_file())
+
+    def test_second_light_can_force_the_restore(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            game, _state = self._second_light(tmp, self.FOREIGN)
+            slpatch.cmd_revert(self._ns(game, on_conflict="restore"))
+            self.assertEqual((game / "Data/PACK01_03.PAK").read_bytes(), self.ORIGINAL)
+
+    def test_second_light_corrupt_backup_is_never_written(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            game, state_dir = self._second_light(tmp, self.PATCHED, corrupt_backup=True)
+            with self.assertRaises(slpatch.FrenchPatchError):
+                slpatch.cmd_revert(self._ns(game))
+            self.assertEqual((game / "Data/PACK01_03.PAK").read_bytes(), self.PATCHED)
+            self.assertTrue((state_dir / slpatch.STATE_FILE).is_file())
+
+    def test_second_light_legacy_state_asks_before_restoring(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            game, _state = self._second_light(tmp, self.PATCHED, hashes=False)
+            with self.assertRaises(slpatch.FrenchPatchError):
+                slpatch.cmd_revert(self._ns(game))
+            slpatch.cmd_revert(self._ns(game, force=True))
+            self.assertEqual((game / "Data/PACK01_03.PAK").read_bytes(), self.ORIGINAL)
+
+    def test_second_light_missing_state_points_at_forget(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            game = Path(tmp)
+            (game / "Data").mkdir()
+            with self.assertRaises(slpatch.FrenchPatchError) as ctx:
+                slpatch.cmd_revert(self._ns(game))
+            self.assertIn("forget", str(ctx.exception))
+
+    # -- Quartet (b1) -------------------------------------------------------
+
+    def test_quartet_restores_our_own_patched_file(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            game, state_root = self._quartet(tmp, self.PATCHED)
+            qp.cmd_revert(self._ns(game))
+            self.assertEqual(self._data(game), self.ORIGINAL)
+            self.assertFalse((state_root / "state.json").is_file())
+
+    def test_quartet_leaves_a_steam_update_alone_by_default(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            game, state_root = self._quartet(tmp, self.FOREIGN)
+            with self.assertRaises(patch.FrenchPatchError):
+                qp.cmd_revert(self._ns(game))
+            self.assertEqual(self._data(game), self.FOREIGN)
+            self.assertTrue((state_root / "state.json").is_file())
+
+    def test_quartet_adopts_a_steam_update(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            game, state_root = self._quartet(tmp, self.FOREIGN)
+            qp.cmd_revert(self._ns(game, on_conflict="adopt"))
+            self.assertEqual(self._data(game), self.FOREIGN)
+            self.assertFalse((state_root / "state.json").is_file())
+
+    def test_quartet_corrupt_backup_is_never_written(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            game, _state = self._quartet(tmp, self.PATCHED, corrupt_backup=True)
+            with self.assertRaises(patch.FrenchPatchError):
+                qp.cmd_revert(self._ns(game))
+            self.assertEqual(self._data(game), self.PATCHED)
+
+
+class ForgetStateTests(unittest.TestCase):
+    """`forget` drops the recorded state and never touches the game files."""
+
+    def test_second_light_forget_keeps_backups_until_purge(self) -> None:
+        import argparse
+
+        with tempfile.TemporaryDirectory() as tmp:
+            game = Path(tmp)
+            (game / "Data").mkdir()
+            (game / "Data/PACK01_03.PAK").write_bytes(b"installed")
+            state_dir = game / slpatch.STATE_DIRNAME
+            backup_dir = state_dir / slpatch.BACKUP_DIRNAME
+            backup_dir.mkdir(parents=True)
+            (backup_dir / "PACK01_03.PAK").write_bytes(b"original")
+            (state_dir / slpatch.STATE_FILE).write_text("{}", encoding="utf-8")
+
+            slpatch.cmd_forget(argparse.Namespace(game_dir=str(game), purge=False))
+            self.assertFalse((state_dir / slpatch.STATE_FILE).is_file())
+            self.assertTrue(backup_dir.is_dir())
+            self.assertEqual((game / "Data/PACK01_03.PAK").read_bytes(), b"installed")
+
+            slpatch.cmd_forget(argparse.Namespace(game_dir=str(game), purge=True))
+            self.assertFalse(backup_dir.is_dir())
+            self.assertEqual((game / "Data/PACK01_03.PAK").read_bytes(), b"installed")
+
+    def test_quartet_forget_drops_the_state_only(self) -> None:
+        import argparse
+
+        with tempfile.TemporaryDirectory() as tmp:
+            game = Path(tmp)
+            (game / "Data").mkdir()
+            (game / "Data/PACK11.PAK").write_bytes(b"installed")
+            state_root = game / qp.STATE_DIR_NAME
+            (state_root / "backup").mkdir(parents=True)
+            (state_root / "backup/PACK11.PAK").write_bytes(b"original")
+            (state_root / "state.json").write_text("{}", encoding="utf-8")
+
+            qp.cmd_forget(argparse.Namespace(game_dir=str(game), purge=False))
+            self.assertFalse((state_root / "state.json").is_file())
+            self.assertTrue((state_root / "backup").is_dir())
+            self.assertEqual((game / "Data/PACK11.PAK").read_bytes(), b"installed")
 
 
 class CommittedDatasetHygieneTests(unittest.TestCase):

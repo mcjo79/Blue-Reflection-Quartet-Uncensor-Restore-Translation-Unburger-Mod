@@ -11,6 +11,7 @@ import shlex
 import shutil
 import hashlib
 import json
+import re
 import subprocess
 import sys
 import urllib.request
@@ -187,7 +188,33 @@ def find_unburger_release_in(d):
     return (d, exe) if os.path.isfile(exe) else None
 
 
-QUARTET_MODULES = "quartet_restoration,quartet_movie_restoration,quartet_legacy_dlc"
+# quartet_movie_restoration is a *default-enabled child* of quartet_restoration:
+# requesting both plans the three restored WebM files twice and the patcher stops
+# with "duplicate final artifact path: Data/B1/x64/Movie/CNG_PC00_00.webm".
+# Only the parent is requested; the child follows on its own.
+QUARTET_MODULES = "quartet_restoration,quartet_legacy_dlc"
+
+
+def release_modules(release_dir):
+    """Module ids the release declares (meta/MODULE_VERSIONS.tsv), or None if unreadable."""
+    path = os.path.join(release_dir, "meta", "MODULE_VERSIONS.tsv")
+    try:
+        with open(path, encoding="utf-8") as fh:
+            return {line.split("\t", 1)[0].strip() for line in fh if line.strip()}
+    except OSError:
+        return None
+
+
+def quartet_modules_for(release_dir):
+    """The module list to request, limited to what this release actually ships."""
+    requested = [m.strip() for m in QUARTET_MODULES.split(",") if m.strip()]
+    declared = release_modules(release_dir)
+    if declared is None:
+        return ",".join(requested), []
+    return (
+        ",".join(m for m in requested if m in declared),
+        [m for m in requested if m not in declared],
+    )
 
 
 def find_games():
@@ -203,6 +230,104 @@ def find_games():
         sys.path.remove(TOOL)
 
 
+#: The patcher reports whether an installation may proceed ("Automatic prepare").
+#: When it is false, its recorded baseline no longer matches the game files (Steam
+#: verification, an interrupted attempt, the French patch...) and it aborts with
+#: "managed target changed before update"; adopting the current files fixes it.
+def yes_no(prompt):
+    if not sys.stdin.isatty():
+        return False
+    return input(prompt).strip().lower() in ("o", "oui", "y", "yes")
+
+
+def patcher_status(exe, release_dir, game_dir):
+    """(status, installation_allowed) from the patcher, or (None, None) if unreadable."""
+    try:
+        proc = subprocess.run(
+            [exe, "installation-status", "-game-dir", str(game_dir)],
+            cwd=release_dir, capture_output=True, text=True, timeout=300,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None, None
+    status = None
+    allowed = None
+    for line in proc.stdout.splitlines():
+        plain = re.sub(r"\x1b\[[0-9;]*m", "", line).strip()
+        low = plain.lower()
+        if low.startswith("status:"):
+            status = plain.split(":", 1)[1].strip()
+        elif low.startswith("automatic prepare:"):
+            allowed = plain.split(":", 1)[1].strip().lower() == "true"
+    return status, allowed
+
+
+def adopt_current_baseline(exe, release_dir, game_dir, assume_yes):
+    """Adopt the current game files as the patcher's new baseline (game files untouched).
+
+    ``installation-reset-state --adopt-current`` archives the previous state and
+    records what is on disk now, which is exactly what is needed after a Steam
+    verification or an interrupted run.
+    """
+    if not assume_yes and not yes_no("  Adopter les fichiers actuels comme nouvelle base ? [o/N] "):
+        return False
+    rc = subprocess.call(
+        [exe, "installation-reset-state", "-game-dir", str(game_dir), "--adopt-current", "--yes"],
+        cwd=release_dir,
+    )
+    return rc == 0
+
+
+def quartet_entries(games):
+    """(Target, game_dir) for the Quartet partitions, in installer order."""
+    sys.path.insert(0, TOOL)
+    try:
+        import br_french_installer as inst
+    except Exception:  # noqa: BLE001
+        return []
+    finally:
+        sys.path.remove(TOOL)
+    return [
+        (target, games[target.key])
+        for target in inst.TARGETS
+        if target.key in inst.QUARTET_KEYS and target.key in games
+    ]
+
+
+def revert_french(entries):
+    """Restore the original archives the French patch had replaced.
+
+    The composition order is restoration first, translation last, so an already
+    installed French patch has to come off before the UNBURGER mods run.
+    Returns how many targets were reverted.
+    """
+    sys.path.insert(0, TOOL)
+    try:
+        import br_french_installer as inst
+    except Exception as exc:  # noqa: BLE001
+        print("Revert du français impossible :", exc)
+        return 0
+    finally:
+        sys.path.remove(TOOL)
+    reverted = 0
+    for target, game_dir in entries:
+        if not (game_dir / target.state_dir / "state.json").is_file():
+            continue
+        print("Français déjà installé sur %s : restauration de l'anglais d'abord." % target.label)
+        try:
+            # with a human at the keyboard, ask when an archive changed outside the
+            # patch (typically a Steam update); otherwise keep the current files,
+            # which never destroys anything and lets the flow continue
+            inst.run_revert(
+                target, game_dir, on_conflict=("ask" if sys.stdin.isatty() else "adopt")
+            )
+            reverted += 1
+        except Exception as exc:  # noqa: BLE001
+            print("  Erreur au revert : %s" % exc)
+            print("  Si la sauvegarde est inutilisable, l'état peut être vidé :")
+            print("  menu du patch, option 3, ou `python br_launcher.py forget-french`.")
+    return reverted
+
+
 def run_all(args):
     """Quartet only: UNBURGER mods (older games are used as asset sources), then French on b1 + b4."""
     found = find_unburger_release()
@@ -212,15 +337,38 @@ def run_all(args):
             found = find_unburger_release()
     if found:
         d, exe = found
-        print("=== 1/2  Mods UNBURGER (%s) ===" % d)
         games = find_games()
         quartet = games.get("quartet")
         if quartet is None:
             print("Quartet introuvable : rien n'est patché. Lancez `french` pour saisir le dossier à la main.")
             return 1
+        print("=== 1/2  Mods UNBURGER (%s) ===" % d)
         print("Quartet : %s (seul jeu modifié ; les anciens jeux ne servent que de sources en lecture)" % quartet)
-        print("Modules : %s (sans la traduction anglaise)" % QUARTET_MODULES)
-        cmd = [exe, "start", "--project-root", d, "-game-dir", str(quartet), "-modules", QUARTET_MODULES]
+        modules, skipped = quartet_modules_for(d)
+        if skipped:
+            print("Modules non fournis par cette release (ignorés) : %s" % ", ".join(skipped))
+        print("Modules : %s (sans la traduction anglaise)" % modules)
+        # restoration first, translation last: take an installed French patch off
+        reverted = revert_french(quartet_entries(games))
+        status, allowed = patcher_status(exe, d, quartet)
+        if status:
+            print("État UNBURGER : %s" % status)
+        if reverted:
+            # our own revert moved the archives away from the recorded baseline, so
+            # the patcher must take the current files as their new truth; no need to
+            # bother the user with it, nothing in the game is modified
+            if adopt_current_baseline(exe, d, quartet, assume_yes=True):
+                print("Base UNBURGER réenregistrée après la restauration du français.")
+        elif allowed is False:
+            print("L'état enregistré par le patcher ne correspond plus aux fichiers du jeu")
+            print("(vérification Steam, tentative interrompue, autre outil...).")
+            print("Sans remise à zéro il refuse d'installer : \"managed target changed before update\".")
+            print("Cette remise à zéro ne modifie aucun fichier du jeu.")
+            if adopt_current_baseline(exe, d, quartet, assume_yes=("--yes" in args or not sys.stdin.isatty())):
+                print("Base UNBURGER réenregistrée depuis les fichiers actuels.")
+            else:
+                print("Remise à zéro ignorée : l'étape mods risque d'échouer.")
+        cmd = [exe, "start", "--project-root", d, "-game-dir", str(quartet), "-modules", modules]
         sources = []
         if games.get("2017"):
             cmd += ["-legacy-source", str(games["2017"])]
@@ -234,6 +382,8 @@ def run_all(args):
         rc = run_cmd(cmd)
         if rc:
             print("UNBURGER a échoué ou a été bloqué (code %s)." % rc)
+            print("Commande à relancer si besoin :")
+            print("  " + " ".join(cmd))
             answer = input("Continuer quand même avec le français ? [o/N] ") if sys.stdin.isatty() else ""
             if answer.strip().lower() not in ("o", "oui", "y", "yes"):
                 return rc
@@ -241,7 +391,7 @@ def run_all(args):
         print("Aucune release UNBURGER trouvée (.local/release ou variable UNBURGER_DIR) : "
               "étape mods ignorée. Construisez-la avec `release`, ou extrayez le ZIP public.")
     print("=== %s  Patch français Quartet (b1 + b4) ===" % ("2/2" if found else "1/1"))
-    return run_cmd(ensure_gust() or py("br_french_installer.py", ["--all"] + args))
+    return run_cmd(ensure_gust() or py("br_french_installer.py", ["--all", "--yes"] + args))
 
 
 def ensure_gust():
@@ -282,6 +432,35 @@ def package(args):
     return 0
 
 
+def forget_french(args):
+    """Drop the recorded French state on the Quartet partitions (game files untouched).
+
+    What is in the game right now becomes the new reference: the patch can no longer
+    be reverted, but a re-install and the UNBURGER composition start from reality.
+    ``--purge`` also deletes the stored backups.
+    """
+    purge = "--purge" in args
+    entries = quartet_entries(find_games())
+    if not entries:
+        print("Quartet non détecté : lancez `french` pour saisir le dossier à la main.")
+        return 1
+    sys.path.insert(0, TOOL)
+    try:
+        import br_french_installer as inst
+    except Exception as exc:  # noqa: BLE001
+        print("Impossible de charger l'installeur :", exc)
+        return 1
+    finally:
+        sys.path.remove(TOOL)
+    for target, game_dir in entries:
+        print("--- %s" % target.label)
+        try:
+            inst.run_forget(target, game_dir, purge)
+        except Exception as exc:  # noqa: BLE001
+            print("  Erreur : %s" % exc)
+    return 0
+
+
 def build_french(args):
     return py("br_french_patch.py", ["build-bundle"] + args)
 
@@ -299,6 +478,9 @@ COMMANDS = {
     "package": (package, "Build the release ZIP for GitHub (French patch + launcher) in dist/"),
     "setup": (setup, "Download gust_pak (needed by the French patch) into .local/vendor/gust_tools"),
     "info": (lambda a: bash("START_HERE.sh", a), "Project versions and state"),
+    "forget-french": (forget_french,
+                      "Forget the recorded French patch state on Quartet "
+                      "(game files untouched; --purge deletes the backups)"),
 }
 if BUNDLE:  # developer-only steps need the repository
     for _name in ("build-french", "validate", "release", "info", "package"):

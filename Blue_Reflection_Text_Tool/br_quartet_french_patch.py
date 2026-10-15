@@ -557,32 +557,103 @@ def cmd_status(args: argparse.Namespace) -> int:
 
 
 def cmd_revert(args: argparse.Namespace) -> int:
+    """Take the patch off, without ever undoing a change we did not make.
+
+    Only two situations are handled silently: the archive is exactly the one we
+    installed (safe to restore from the backup) or it is already the original one
+    (nothing to do).  Anything else - typically a Steam update - is a conflict and
+    goes through ``bp.resolve_conflict``: adopt the current files, restore ours
+    anyway, or stop without writing.
+    """
     game_dir = Path(args.game_dir).expanduser().resolve()
     state_file = game_dir / STATE_DIR_NAME / "state.json"
     if not state_file.is_file():
         raise bp.FrenchPatchError(f"No Quartet French patch state recorded in {game_dir}")
     state = json.loads(state_file.read_text(encoding="utf-8"))
+    force = bool(getattr(args, "force", False))
+    policy = "restore" if force else getattr(args, "on_conflict", "ask")
+    interactive = sys.stdin.isatty() and not getattr(args, "yes", False)
     restored = 0
+    adopted: list[str] = []
     for archive in state.get("archives", []):
-        target = game_dir / archive["relative"]
+        relative = archive["relative"]
+        name = archive.get("name", relative)
+        target = game_dir / relative
         backup = game_dir / archive["backup"]
+        original = archive.get("original_sha256")
+        current = bp.sha256_file(target) if target.is_file() else None
+        if current is not None and original and current == original:
+            print(f"  already   {name} (original)")
+            continue
+        patched = archive.get("patched_sha256")
+        if patched is not None and current == patched:
+            decision = "restore"
+        else:
+            decision = bp.resolve_conflict(
+                name,
+                policy,
+                interactive,
+                "le fichier du jeu n'est ni la version patchée, ni l'originale sauvegardée",
+            )
+        if decision == "abort":
+            raise bp.FrenchPatchError(
+                f"{relative}: arrêt demandé, rien de plus n'a été écrit (l'état est conservé). "
+                f"Relancez avec --on-conflict adopt pour garder les fichiers actuels."
+            )
+        if decision == "adopt":
+            print(f"  adopté    {name} (fichier actuel conservé)")
+            adopted.append(name)
+            continue
         if not backup.is_file():
-            if args.force:
+            if force:
+                print(f"  absente   {name} (ignorée)")
                 continue
             raise bp.FrenchPatchError(f"Backup missing: {backup}")
-        if bp.sha256_file(backup) != archive["original_sha256"]:
-            raise bp.FrenchPatchError(f"Backup hash mismatch: {backup}")
-        if target.is_file() and bp.sha256_file(target) == archive["original_sha256"]:
-            print(f"  already   {archive['name']}")
-            restored += 1
-            continue
+        if original and bp.sha256_file(backup) != original:
+            if force:
+                print(f"  incohérente {name} (ignorée)")
+                continue
+            raise bp.FrenchPatchError(
+                f"Sauvegarde incohérente pour {relative} : elle ne correspond pas à l'original "
+                f"enregistré. Rien n'a été écrit ; utilisez --on-conflict adopt pour garder les "
+                f"fichiers actuels."
+            )
         staged = target.with_name(target.name + ".br_restore")
         shutil.copy2(backup, staged)
         bp.atomic_replace_file(staged, target)
-        print(f"  restored  {archive['name']}")
+        print(f"  restored  {name}")
         restored += 1
     state_file.unlink(missing_ok=True)
     print(f"Reverted {restored} archive(s) in {game_dir}")
+    if adopted:
+        print(f"conservé(s) tel quel : {', '.join(adopted)}")
+        print("ces fichiers sont la nouvelle référence : réappliquez le patch français par-dessus.")
+    return 0
+
+
+def cmd_forget(args: argparse.Namespace) -> int:
+    """Drop the recorded state without touching the game files ("clear the cache").
+
+    The archives currently in the game become the new reference: the patch can no
+    longer be reverted, but a re-install and the UNBURGER composition then start
+    from what is really on disk.  ``--purge`` also deletes the stored backups.
+    """
+    game_dir = Path(args.game_dir).expanduser().resolve()
+    state_root = game_dir / STATE_DIR_NAME
+    state_file = state_root / "state.json"
+    backup_dir = state_root / "backup"
+    if state_file.is_file():
+        state_file.unlink()
+        print(f"état supprimé     : {state_file}")
+    else:
+        print(f"aucun état        : {state_file}")
+    if getattr(args, "purge", False) and backup_dir.is_dir():
+        count = sum(1 for _ in backup_dir.iterdir())
+        shutil.rmtree(backup_dir, ignore_errors=True)
+        print(f"sauvegardes       : {count} fichier(s) supprimé(s) ({backup_dir})")
+    elif backup_dir.is_dir():
+        print(f"sauvegardes       : conservées dans {backup_dir} (--purge pour les supprimer)")
+    print("fichiers du jeu   : inchangés")
     return 0
 
 
@@ -612,8 +683,19 @@ def build_parser() -> argparse.ArgumentParser:
 
     revert = sub.add_parser("revert", help="restore original archives")
     revert.add_argument("--game-dir", required=True)
-    revert.add_argument("--force", action="store_true")
+    revert.add_argument("--force", action="store_true",
+                        help="restore anyway, skipping the backups that cannot be verified")
+    revert.add_argument("--on-conflict", choices=bp.CONFLICT_POLICIES, default="ask",
+                        help="what to do when an archive changed outside the patch "
+                             "(default: ask; adopt keeps the current files)")
+    revert.add_argument("--yes", action="store_true",
+                        help="never prompt: an unanswered conflict aborts")
     revert.set_defaults(func=cmd_revert)
+
+    forget = sub.add_parser("forget", help="drop the recorded state (game files untouched)")
+    forget.add_argument("--game-dir", required=True)
+    forget.add_argument("--purge", action="store_true", help="also delete the stored backups")
+    forget.set_defaults(func=cmd_forget)
 
     return parser
 

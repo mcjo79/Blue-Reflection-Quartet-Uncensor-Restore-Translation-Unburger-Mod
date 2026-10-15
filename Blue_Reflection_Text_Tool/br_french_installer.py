@@ -156,14 +156,33 @@ def run_apply(target: Target, game_dir: Path, force: bool) -> None:
         qp.cmd_apply(args)
 
 
-def run_revert(target: Target, game_dir: Path) -> None:
-    args = argparse.Namespace(game_dir=str(game_dir), force=False)
+def run_revert(target: Target, game_dir: Path, on_conflict: str = "ask") -> None:
+    """Take the patch off; ``on_conflict`` decides what to do with foreign changes.
+
+    "ask" (default) prompts when an archive is neither our patched version nor the
+    original - the case of a Steam update - while "adopt" keeps such files without
+    prompting, which is what an automated flow wants.
+    """
+    args = argparse.Namespace(
+        game_dir=str(game_dir), force=False, on_conflict=on_conflict, yes=False
+    )
     if target.key == "2017":
         bp.cmd_revert(args)
     elif target.key in ("second_light", "second_light_quartet"):
         slp.cmd_revert(args)
     else:
         qp.cmd_revert(args)
+
+
+def run_forget(target: Target, game_dir: Path, purge: bool) -> None:
+    """Drop the recorded patch state so the current files become the reference."""
+    if target.key == "2017":
+        raise RuntimeError("cette commande n'est pas prise en charge pour BLUE REFLECTION (2017)")
+    args = argparse.Namespace(game_dir=str(game_dir), purge=purge)
+    if target.key in ("second_light", "second_light_quartet"):
+        slp.cmd_forget(args)
+    else:
+        qp.cmd_forget(args)
 
 
 def prompt_choice(prompt: str, minimum: int, maximum: int) -> int:
@@ -229,9 +248,10 @@ def action_menu(target: Target, game_dir: Path) -> None:
     print()
     print("  1. Installer la traduction française")
     print("  2. Restaurer l'anglais (d'origine)")
+    print("  3. Oublier l'état du patch (vider le cache ; le jeu n'est pas modifié)")
     print("  0. Retour")
 
-    choice = prompt_choice("  Votre choix : ", 0, 2)
+    choice = prompt_choice("  Votre choix : ", 0, 3)
     print()
     if choice == 0:
         return
@@ -250,6 +270,11 @@ def action_menu(target: Target, game_dir: Path) -> None:
         if not yes_no("  Restaurer l'anglais d'origine ? (o/N) : "):
             return
         _dispatch(lambda: run_revert(target, game_dir))
+    elif choice == 3:
+        print("  Les fichiers actuellement dans le jeu deviennent la nouvelle référence :")
+        print("  le patch ne pourra plus être annulé, mais une réinstallation repartira de là.")
+        purge = yes_no("  Supprimer aussi les sauvegardes stockées ? (o/N) : ")
+        _dispatch(lambda: run_forget(target, game_dir, purge))
 
 
 def _dispatch(action) -> None:
